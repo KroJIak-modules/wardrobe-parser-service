@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse
 from app.api.v1 import api_router
 from app.core.config import settings
 from app.core.exceptions import IntegrityError, NotFoundError, ValidationError
-from app.services.sync_worker import SyncWorker
+from app.services.parser_worker import ParserWorker
 
 app = FastAPI(title="Wardrobe Parser Service API")
 
@@ -48,13 +48,13 @@ app.include_router(api_router)
 
 @app.on_event("startup")
 def start_sync_worker() -> None:
-    worker = SyncWorker(settings.sync_interval_sec)
-    worker.start()
-    app.state.sync_worker = worker
+    parser_worker = ParserWorker(settings.parser_interval_sec)
+    parser_worker.start()
+    app.state.parser_worker = parser_worker
 
 
 @app.on_event("shutdown")
 def stop_sync_worker() -> None:
-    worker = getattr(app.state, "sync_worker", None)
-    if worker:
-        worker.stop()
+    parser_worker = getattr(app.state, "parser_worker", None)
+    if parser_worker:
+        parser_worker.stop()
