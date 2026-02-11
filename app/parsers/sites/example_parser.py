@@ -1,16 +1,16 @@
 from pathlib import Path
 
-import requests
-
 from app.core.config import settings
+from app.parsers.http_client import HttpClient
 from app.parsers.selector_parser import SelectorConfig, SelectorParser
 from app.parsers.types import ParsedProduct
 
-_FIXTURE_PATH = Path(__file__).resolve().parent / "fixtures" / "example_site.html"
+_FIXTURE_PATH = Path(__file__).resolve().parent.parent / "fixtures" / "example_site.html"
 
 
 class ExampleParser:
     def __init__(self) -> None:
+        self.client = HttpClient("example")
         self.config = SelectorConfig(
             listing_url=settings.example_site_url,
             item_selector=".product-card",
@@ -31,6 +31,6 @@ class ExampleParser:
     def _load_html(self) -> str:
         if settings.example_site_use_fixture and _FIXTURE_PATH.exists():
             return _FIXTURE_PATH.read_text(encoding="utf-8")
-        response = requests.get(self.config.listing_url, timeout=settings.request_timeout_sec)
+        response = self.client.get(self.config.listing_url, timeout_sec=settings.request_timeout_sec)
         response.raise_for_status()
         return response.text

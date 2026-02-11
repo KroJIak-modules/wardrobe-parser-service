@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     enabled_sites: str = Field(default="example", env="SERVICE_ENABLED_SITES")
     example_site_url: str = Field(default="https://example.com", env="EXAMPLE_SITE_URL")
     example_site_use_fixture: bool = Field(default=True, env="EXAMPLE_SITE_USE_FIXTURE")
+    cookies_dir: str = Field(default="app/parsers/cookies", env="SERVICE_COOKIES_DIR")
 
     @model_validator(mode="after")
     def build_database_url(self) -> "Settings":

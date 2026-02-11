@@ -1,7 +1,7 @@
 from collections.abc import Iterable
 
 from app.core.config import settings
-from app.parsers.example_parser import ExampleParser
+from app.parsers.sites.example_parser import ExampleParser
 
 
 class ParserRegistry:
