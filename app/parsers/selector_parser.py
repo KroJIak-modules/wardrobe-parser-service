@@ -48,10 +48,13 @@ class SelectorParser:
                     category=category,
                     price=price,
                     currency=currency,
+                    size=None,
+                    additional_info=None,
+                    size_data=None,
+                    image_urls=[image_url] if image_url else [],
                     product_url=link,
                     image_url=image_url,
                     description=description,
-                    raw_data=None,
                 )
             )
         return parsed

@@ -21,11 +21,14 @@ class Settings(BaseSettings):
     sync_interval_sec: int = Field(default=60, env="SERVICE_SYNC_INTERVAL_SEC")
     sync_batch_size: int = Field(default=50, env="SERVICE_SYNC_BATCH_SIZE")
     request_timeout_sec: int = Field(default=15, env="SERVICE_REQUEST_TIMEOUT_SEC")
-    parser_interval_sec: int = Field(default=300, env="SERVICE_PARSER_INTERVAL_SEC")
-    enabled_sites: str = Field(default="example", env="SERVICE_ENABLED_SITES")
+    enabled_sites: str = Field(default="example", validation_alias="SERVICE_ENABLED_SITES")
     example_site_url: str = Field(default="https://example.com", env="EXAMPLE_SITE_URL")
     example_site_use_fixture: bool = Field(default=True, env="EXAMPLE_SITE_USE_FIXTURE")
     cookies_dir: str = Field(default="app/parsers/cookies", env="SERVICE_COOKIES_DIR")
+    nofaithstudios_base_url: str = Field(
+        default="https://nofaithstudios.com",
+        env="NOFAITHSTUDIOS_BASE_URL",
+    )
 
     @model_validator(mode="after")
     def build_database_url(self) -> "Settings":

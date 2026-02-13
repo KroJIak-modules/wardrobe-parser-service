@@ -72,8 +72,11 @@ class SyncService:
             "category": product.category,
             "price": float(product.price) if product.price is not None else None,
             "currency": product.currency,
+            "size": product.size,
+            "additional_info": product.additional_info,
+            "size_data": product.size_data,
+            "image_urls": product.image_urls,
             "product_url": product.product_url,
             "image_url": product.image_url,
             "description": product.description,
-            "raw_data": product.raw_data,
         }

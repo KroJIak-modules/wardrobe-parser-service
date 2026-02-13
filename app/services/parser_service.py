@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import logging
 
 from sqlalchemy.orm import Session
 
@@ -33,10 +34,19 @@ class ParserService:
             created, updated = ParserService._upsert_products(db, site.id, parsed_items, now)
             SiteRepository.update(db, site, last_success_at=now, last_error=None, last_error_at=None)
             db.commit()
+            logging.info(
+                "Parsed site: site_key=%s created=%s updated=%s",
+                site_key,
+                created,
+                updated,
+            )
             return created, updated
         except Exception as exc:  # noqa: BLE001
             db.rollback()
-            SiteRepository.update(db, site, last_error=str(exc), last_error_at=now)
+            fresh_site = SiteRepository.get_by_key(db, site_key)
+            if fresh_site is None:
+                fresh_site = SiteRepository.create(db, key=site_key, name=site_key)
+            SiteRepository.update(db, fresh_site, last_error=str(exc), last_error_at=now)
             db.commit()
             raise
 
@@ -58,10 +68,13 @@ class ParserService:
                 "category": item.category,
                 "price": item.price,
                 "currency": item.currency,
+                "size": item.size,
+                "additional_info": item.additional_info,
+                "size_data": item.size_data,
+                "image_urls": item.image_urls,
                 "product_url": item.product_url,
                 "image_url": item.image_url,
                 "description": item.description,
-                "raw_data": item.raw_data,
                 "parsed_at": parsed_at,
                 "pending_sync": True,
             }

@@ -14,6 +14,7 @@ class ParserWorker:
         self._thread = threading.Thread(target=self._run, daemon=True)
 
     def start(self) -> None:
+        logging.info("Parser worker starting: interval_sec=%s", self._interval_sec)
         self._thread.start()
 
     def stop(self) -> None:
@@ -25,11 +26,15 @@ class ParserWorker:
         while not self._stop_event.is_set():
             try:
                 with SessionLocal() as db:
-                    for site_key in registry.enabled_sites():
+                    site_keys = registry.enabled_sites()
+                    logging.info("Parser cycle: sites=%s", site_keys)
+                    for site_key in site_keys:
                         try:
+                            logging.info("Parser start: site_key=%s", site_key)
                             ParserService.parse_site(db, site_key)
+                            logging.info("Parser done: site_key=%s", site_key)
                         except Exception:  # noqa: BLE001
-                            logging.exception("Parser failed", extra={"site_key": site_key})
+                            logging.exception("Parser failed: site_key=%s", site_key)
                     SyncService.send_pending_products(db)
                     SyncService.send_site_statuses(db)
             except Exception:  # noqa: BLE001

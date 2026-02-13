@@ -2,12 +2,14 @@ from collections.abc import Iterable
 
 from app.core.config import settings
 from app.parsers.sites.example_parser import ExampleParser
+from app.parsers.sites.nofaithstudios_parser import NoFaithStudiosParser
 
 
 class ParserRegistry:
     def __init__(self) -> None:
         self._parsers = {
             "example": ExampleParser(),
+            "nofaithstudios": NoFaithStudiosParser(),
         }
 
     def enabled_sites(self) -> list[str]:

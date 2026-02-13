@@ -11,6 +11,10 @@ class ProductResponse(BaseModel):
     category: str | None = None
     price: float | None = None
     currency: str | None = None
+    size: str | None = None
+    additional_info: str | None = None
+    size_data: list[dict] | None = None
+    image_urls: list[str] | None = None
     product_url: str
     image_url: str | None = None
     description: str | None = None

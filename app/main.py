@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -8,6 +10,8 @@ from app.core.exceptions import IntegrityError, NotFoundError, ValidationError
 from app.services.parser_worker import ParserWorker
 
 app = FastAPI(title="Wardrobe Parser Service API")
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
 
 
 @app.get("/health", summary="Health check")
@@ -48,7 +52,7 @@ app.include_router(api_router)
 
 @app.on_event("startup")
 def start_sync_worker() -> None:
-    parser_worker = ParserWorker(settings.parser_interval_sec)
+    parser_worker = ParserWorker(settings.sync_interval_sec)
     parser_worker.start()
     app.state.parser_worker = parser_worker
 
