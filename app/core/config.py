@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     sync_interval_sec: int = Field(default=60, env="SERVICE_SYNC_INTERVAL_SEC")
     sync_batch_size: int = Field(default=50, env="SERVICE_SYNC_BATCH_SIZE")
     request_timeout_sec: int = Field(default=15, env="SERVICE_REQUEST_TIMEOUT_SEC")
+    scheduler_max_workers: int = Field(default=8, env="SERVICE_SCHEDULER_MAX_WORKERS")
+    scheduler_alpha: float = Field(default=0.3, env="SERVICE_SCHEDULER_ALPHA")
     enabled_sites: str = Field(default="example", validation_alias="SERVICE_ENABLED_SITES")
     example_site_url: str = Field(default="https://example.com", env="EXAMPLE_SITE_URL")
     example_site_use_fixture: bool = Field(default=True, env="EXAMPLE_SITE_USE_FIXTURE")

@@ -1,4 +1,4 @@
-from sqlalchemy import BigInteger, Boolean, Column, DateTime, String, Text, UniqueConstraint, func
+from sqlalchemy import BigInteger, Boolean, Column, DateTime, Float, String, Text, UniqueConstraint, func
 
 from app.core.database import Base
 
@@ -16,6 +16,7 @@ class Site(Base):
     last_success_at = Column(DateTime(timezone=True), nullable=True)
     last_error = Column(Text, nullable=True)
     last_error_at = Column(DateTime(timezone=True), nullable=True)
+    avg_parse_time_sec = Column(Float, nullable=False, server_default="0")
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
     is_deleted = Column(Boolean, nullable=False, server_default="false")
