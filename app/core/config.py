@@ -5,7 +5,9 @@ from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings
 
 
-_env_file = Path.cwd().parent.parent / ".env"
+_service_root = Path(__file__).resolve().parents[2]
+_repo_root = _service_root.parent
+_env_file = _repo_root / ".env"
 
 
 class Settings(BaseSettings):
@@ -16,20 +18,30 @@ class Settings(BaseSettings):
     postgres_port: int = Field(default=5432, env="POSTGRES_PORT")
     postgres_db: str = Field(default="wardrobe", env="POSTGRES_DB")
     cors_allowed_origins: str = Field(default="", env="CORS_ALLOWED_ORIGINS")
-    backend_base_url: str = Field(default="http://backend:8000", env="BACKEND_BASE_URL")
-    service_token: str = Field(default="", env="SERVICE_TOKEN")
-    sync_interval_sec: int = Field(default=60, env="SERVICE_SYNC_INTERVAL_SEC")
-    sync_batch_size: int = Field(default=50, env="SERVICE_SYNC_BATCH_SIZE")
-    request_timeout_sec: int = Field(default=15, env="SERVICE_REQUEST_TIMEOUT_SEC")
-    scheduler_max_workers: int = Field(default=8, env="SERVICE_SCHEDULER_MAX_WORKERS")
-    scheduler_alpha: float = Field(default=0.3, env="SERVICE_SCHEDULER_ALPHA")
-    enabled_sites: str = Field(default="example", validation_alias="SERVICE_ENABLED_SITES")
-    example_site_url: str = Field(default="https://example.com", env="EXAMPLE_SITE_URL")
-    example_site_use_fixture: bool = Field(default=True, env="EXAMPLE_SITE_USE_FIXTURE")
-    cookies_dir: str = Field(default="app/parsers/cookies", env="SERVICE_COOKIES_DIR")
-    nofaithstudios_base_url: str = Field(
-        default="https://nofaithstudios.com",
-        env="NOFAITHSTUDIOS_BASE_URL",
+    parser_sources_file: str = Field(
+        default=str(_service_root / "config" / "sources.json"),
+        env="PARSER_SOURCES_FILE",
+    )
+    parser_default_timeout_sec: float = Field(default=12.0, ge=3.0, le=120.0, env="PARSER_DEFAULT_TIMEOUT_SEC")
+    parser_default_max_products: int = Field(default=5000, ge=1, le=100000, env="PARSER_DEFAULT_MAX_PRODUCTS")
+    parser_default_sample_products: int = Field(default=5, ge=1, le=1000, env="PARSER_DEFAULT_SAMPLE_PRODUCTS")
+    parser_default_parallel_workers: int = Field(default=12, ge=1, le=64, env="PARSER_DEFAULT_PARALLEL_WORKERS")
+    parser_default_max_retries: int = Field(default=2, ge=0, le=10, env="PARSER_DEFAULT_MAX_RETRIES")
+    parser_default_retry_backoff_sec: float = Field(
+        default=0.4,
+        ge=0.0,
+        le=5.0,
+        env="PARSER_DEFAULT_RETRY_BACKOFF_SEC",
+    )
+    parser_default_second_pass_enabled: bool = Field(
+        default=True,
+        env="PARSER_DEFAULT_SECOND_PASS_ENABLED",
+    )
+    parser_default_second_pass_timeout_sec: float = Field(
+        default=20.0,
+        ge=3.0,
+        le=240.0,
+        env="PARSER_DEFAULT_SECOND_PASS_TIMEOUT_SEC",
     )
 
     @model_validator(mode="after")

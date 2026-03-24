@@ -1,0 +1,263 @@
+{
+  "sources": [
+    {
+      "key": "jadedldn",
+      "name": "Jaded LDN",
+      "base_url": "https://jadedldn.com",
+      "parser_type": "shopify",
+      "enabled": true,
+      "notes": "15% discount, not for already discounted items"
+    },
+    {
+      "key": "racerworldwide",
+      "name": "Racer Worldwide",
+      "base_url": "https://www.racerworldwide.net",
+      "parser_type": "shopify",
+      "enabled": true,
+      "notes": "10% discount"
+    },
+    {
+      "key": "nofaithstudios",
+      "name": "NoFaithStudios",
+      "base_url": "https://nofaithstudios.com",
+      "parser_type": "shopify",
+      "enabled": true,
+      "notes": "+10 EUR buyout surcharge"
+    },
+    {
+      "key": "professor_e",
+      "name": "Professor.E",
+      "base_url": "https://professor-e.com",
+      "parser_type": "shopify",
+      "enabled": true,
+      "notes": "+20 USD buyout surcharge"
+    },
+    {
+      "key": "essxnyc",
+      "name": "ESSX NYC",
+      "base_url": "https://essxnyc.com",
+      "parser_type": "shopify",
+      "enabled": true
+    },
+    {
+      "key": "paradoxeparis",
+      "name": "Paradoxe Paris",
+      "base_url": "https://paradoxeparis.com",
+      "parser_type": "shopify",
+      "enabled": true
+    },
+    {
+      "key": "thelastconspiracy",
+      "name": "The Last Conspiracy",
+      "base_url": "https://thelastconspiracy.com",
+      "parser_type": "shopify",
+      "enabled": true
+    },
+    {
+      "key": "julius_garden",
+      "name": "Julius Garden",
+      "base_url": "https://julius-garden.online",
+      "parser_type": "shopify",
+      "enabled": true
+    },
+    {
+      "key": "addiction14",
+      "name": "14th Addiction",
+      "base_url": "https://14thaddiction.com",
+      "parser_type": "shopify",
+      "enabled": true
+    },
+    {
+      "key": "prayingg",
+      "name": "Prayingg",
+      "base_url": "https://prayingg.com",
+      "parser_type": "shopify",
+      "enabled": true,
+      "notes": "10% discount"
+    },
+    {
+      "key": "fourtwofour",
+      "name": "FourTwoFour",
+      "base_url": "https://fourtwofour.com",
+      "parser_type": "shopify",
+      "enabled": true
+    },
+    {
+      "key": "remnantsvintage",
+      "name": "Remnants Vintage",
+      "base_url": "https://remnantsvintage.com",
+      "parser_type": "shopify",
+      "enabled": true,
+      "notes": "10% always, 25% for non-sale items in current period"
+    },
+    {
+      "key": "misssixty",
+      "name": "Miss Sixty",
+      "base_url": "https://misssixty.com",
+      "parser_type": "shopify",
+      "enabled": true,
+      "notes": "10% discount"
+    },
+    {
+      "key": "hlorenzo",
+      "name": "H.Lorenzo",
+      "base_url": "https://www.hlorenzo.com",
+      "parser_type": "shopify",
+      "enabled": true
+    },
+    {
+      "key": "simonerocha",
+      "name": "Simone Rocha",
+      "base_url": "https://simonerocha.com",
+      "parser_type": "shopify",
+      "enabled": true
+    },
+    {
+      "key": "orimono",
+      "name": "Orimono",
+      "base_url": "https://orimono.eu",
+      "parser_type": "shopify",
+      "enabled": true
+    },
+    {
+      "key": "pauleasterlin",
+      "name": "Paul Easterlin",
+      "base_url": "https://pauleasterlin.com",
+      "parser_type": "shopify",
+      "enabled": true
+    },
+    {
+      "key": "driewgarments",
+      "name": "Driew Garments",
+      "base_url": "https://driewgarments.com",
+      "parser_type": "shopify",
+      "enabled": true
+    },
+    {
+      "key": "junalyx",
+      "name": "Junalyx",
+      "base_url": "https://junalyx.com",
+      "parser_type": "shopify",
+      "enabled": true
+    },
+    {
+      "key": "archived",
+      "name": "Archived",
+      "base_url": "https://archived.co",
+      "parser_type": "shopify",
+      "enabled": true
+    },
+    {
+      "key": "dolcevitahub",
+      "name": "Dolce Vita Hub",
+      "base_url": "https://dolcevitahub.com",
+      "parser_type": "shopify",
+      "enabled": true
+    },
+    {
+      "key": "remagine",
+      "name": "Remagine",
+      "base_url": "https://www.remagine.online",
+      "parser_type": "custom",
+      "enabled": false
+    },
+    {
+      "key": "store_backlash",
+      "name": "Store Backlash",
+      "base_url": "https://store-backlash.jp",
+      "parser_type": "custom",
+      "enabled": false
+    },
+    {
+      "key": "farfetch",
+      "name": "Farfetch",
+      "base_url": "https://www.farfetch.com",
+      "parser_type": "custom",
+      "enabled": false
+    },
+    {
+      "key": "ssense",
+      "name": "SSENSE",
+      "base_url": "https://www.ssense.com/en-ru",
+      "parser_type": "custom",
+      "enabled": false
+    },
+    {
+      "key": "vinted",
+      "name": "Vinted",
+      "base_url": "https://www.vinted.com",
+      "parser_type": "custom",
+      "enabled": false
+    },
+    {
+      "key": "grailed",
+      "name": "Grailed",
+      "base_url": "https://www.grailed.com",
+      "parser_type": "custom",
+      "enabled": false
+    },
+    {
+      "key": "hystericglamour",
+      "name": "Hysteric Glamour Store",
+      "base_url": "https://store.hystericglamour.jp",
+      "parser_type": "custom",
+      "enabled": false
+    },
+    {
+      "key": "rickowens_eu",
+      "name": "Rick Owens EU",
+      "base_url": "https://www.rickowens.eu",
+      "parser_type": "custom",
+      "enabled": false
+    },
+    {
+      "key": "mytheresa",
+      "name": "Mytheresa",
+      "base_url": "https://www.mytheresa.com",
+      "parser_type": "custom",
+      "enabled": false
+    },
+    {
+      "key": "newrock",
+      "name": "New Rock",
+      "base_url": "https://www.newrock.com/ru",
+      "parser_type": "custom",
+      "enabled": false
+    },
+    {
+      "key": "stockx",
+      "name": "StockX",
+      "base_url": "https://stockx.com",
+      "parser_type": "custom",
+      "enabled": false
+    },
+    {
+      "key": "goat",
+      "name": "GOAT",
+      "base_url": "https://www.goat.com",
+      "parser_type": "custom",
+      "enabled": false
+    },
+    {
+      "key": "viviennewestwood",
+      "name": "Vivienne Westwood",
+      "base_url": "https://www.viviennewestwood.com",
+      "parser_type": "custom",
+      "enabled": false
+    },
+    {
+      "key": "zadig_et_voltaire",
+      "name": "Zadig & Voltaire",
+      "base_url": "https://zadig-et-voltaire.com/eu/en",
+      "parser_type": "custom",
+      "enabled": false
+    },
+    {
+      "key": "protocol_index",
+      "name": "Protocol Index",
+      "base_url": "https://intl-protocol-index.com/index.html",
+      "parser_type": "custom",
+      "enabled": false
+    }
+  ]
+}
