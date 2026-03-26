@@ -21,6 +21,7 @@ from app.repositories import (
     ParserJobRepository,
     ParserSourceRepository,
     ParserProductRepository,
+    ParserImageAssetRepository,
 )
 
 
@@ -32,6 +33,7 @@ class ParserJobService:
         self.job_repo = ParserJobRepository(session)
         self.source_repo = ParserSourceRepository(session)
         self.product_repo = ParserProductRepository(session)
+        self.image_repo = ParserImageAssetRepository(session)
 
     @staticmethod
     def _to_float(value: str | None) -> float | None:
@@ -47,7 +49,6 @@ class ParserJobService:
         if source:
             source.name = name
             source.parser_type = parser_type
-            source.enabled = enabled
             return source
 
         return self.source_repo.create_source(
@@ -71,8 +72,9 @@ class ParserJobService:
         total_429 = 0
         total_5xx = 0
 
-        sources = [s for s in list_sources(parser_type="shopify") if s.enabled]
-        sources = sources[: settings.parser_sync_max_sources]
+        sources = list_sources(parser_type="shopify")
+        if settings.parser_sync_max_sources > 0:
+            sources = sources[: settings.parser_sync_max_sources]
 
         if not sources:
             self.job_repo.mark_completed(job, total_products=0, new_products=0, updated_products=0)
@@ -87,6 +89,9 @@ class ParserJobService:
                 enabled=source_item.enabled,
             )
             self.session.flush()
+
+            if not source.enabled:
+                continue
 
             source_run = self.create_source_run(job.id, source.id)
             if not source_run:
@@ -119,6 +124,9 @@ class ParserJobService:
                     parsed_price = self._to_float(preview.price)
 
                     if existing is None:
+                        preview_image_urls = preview.image_urls or []
+                        assets = self.image_repo.ensure_assets(preview_image_urls)
+                        preview_image_asset_ids = [asset.id for asset in assets]
                         self.product_repo.create_product(
                             source_id=source.id,
                             handle=preview.handle,
@@ -128,17 +136,25 @@ class ParserJobService:
                             product_type=None,
                             price=parsed_price,
                             currency=preview.currency or "USD",
-                            image_count=0,
+                            image_count=len(preview_image_urls),
+                            image_urls=preview_image_urls,
+                            image_asset_ids=preview_image_asset_ids,
                             status=ProductStatus.AVAILABLE,
                         )
                         created_for_source += 1
                     else:
+                        preview_image_urls = preview.image_urls or []
+                        assets = self.image_repo.ensure_assets(preview_image_urls)
+                        preview_image_asset_ids = [asset.id for asset in assets]
                         changed = (
                             existing.title != (preview.title or preview.handle)
                             or existing.url != preview.product_url
                             or existing.vendor != preview.vendor
                             or existing.price != parsed_price
                             or existing.currency != (preview.currency or "USD")
+                            or (existing.image_urls or []) != preview_image_urls
+                            or (existing.image_asset_ids or []) != preview_image_asset_ids
+                            or existing.image_count != len(preview_image_urls)
                             or existing.status != ProductStatus.AVAILABLE
                         )
                         if changed:
@@ -149,6 +165,9 @@ class ParserJobService:
                                 vendor=preview.vendor,
                                 price=parsed_price,
                                 currency=preview.currency or "USD",
+                                image_count=len(preview_image_urls),
+                                image_urls=preview_image_urls,
+                                image_asset_ids=preview_image_asset_ids,
                                 status=ProductStatus.AVAILABLE,
                                 deleted_at=None,
                             )

@@ -137,7 +137,17 @@ def create_category(payload: CategoryCreateRequest, db: Session = Depends(get_db
     tree = _build_tree(categories, keyword_repo)
     created_node = _find_node(tree, category.id)
     if not created_node:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Не удалось построить дерево категорий")
+        own_keywords = [item.keyword for item in keyword_repo.get_by_category(category.id)]
+        return CategoryTreeNodeResponse(
+            id=category.id,
+            name=category.name,
+            slug=category.slug,
+            parent_id=category.parent_id,
+            is_fallback=category.is_fallback,
+            keywords=own_keywords,
+            effective_keywords=own_keywords,
+            children=[],
+        )
     return created_node
 
 
@@ -177,7 +187,17 @@ def update_category(category_id: int, payload: CategoryUpdateRequest, db: Sessio
     tree = _build_tree(categories, keyword_repo)
     updated_node = _find_node(tree, category.id)
     if not updated_node:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Не удалось построить дерево категорий")
+        own_keywords = [item.keyword for item in keyword_repo.get_by_category(category.id)]
+        return CategoryTreeNodeResponse(
+            id=category.id,
+            name=category.name,
+            slug=category.slug,
+            parent_id=category.parent_id,
+            is_fallback=category.is_fallback,
+            keywords=own_keywords,
+            effective_keywords=own_keywords,
+            children=[],
+        )
     return updated_node
 
 

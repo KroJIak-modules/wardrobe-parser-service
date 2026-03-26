@@ -44,11 +44,15 @@ class Settings(BaseSettings):
         env="PARSER_DEFAULT_SECOND_PASS_TIMEOUT_SEC",
     )
     parser_sync_max_sources: int = Field(
-        default=5,
-        ge=1,
+        default=0,
+        ge=0,
         le=200,
         env="PARSER_SYNC_MAX_SOURCES",
     )
+    image_proxy_timeout_sec: float = Field(default=10.0, ge=1.0, le=60.0, env="IMAGE_PROXY_TIMEOUT_SEC")
+    image_proxy_max_bytes: int = Field(default=8_000_000, ge=100_000, le=50_000_000, env="IMAGE_PROXY_MAX_BYTES")
+    image_cache_max_age_sec: int = Field(default=86400, ge=0, le=604800, env="IMAGE_CACHE_MAX_AGE_SEC")
+    image_rate_limit_per_minute: int = Field(default=120, ge=10, le=5000, env="IMAGE_RATE_LIMIT_PER_MINUTE")
 
     @model_validator(mode="after")
     def build_database_url(self) -> "Settings":

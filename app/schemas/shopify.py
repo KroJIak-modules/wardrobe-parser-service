@@ -115,6 +115,26 @@ class ShopifySourceResponse(BaseModel):
     notes: str | None
 
 
+class ShopifySourceAdminResponse(BaseModel):
+    """Source record for admin UI with runtime stats."""
+
+    key: str
+    source_id: int | None = None
+    name: str
+    base_url: str
+    parser_type: str
+    enabled: bool
+    notes: str | None
+    products_count: int = 0
+    categories_count: int = 0
+
+
+class ShopifySourceToggleRequest(BaseModel):
+    """Toggle source state for admin UI."""
+
+    enabled: bool
+
+
 class ShopifyDiscoveryResponse(BaseModel):
     """Discovery diagnostic response."""
 

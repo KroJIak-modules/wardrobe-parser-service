@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 class ProductResponse(BaseModel):
     """Product entity response."""
     id: int
+    source_id: int
     handle: str
     title: str
     vendor: Optional[str] = None
@@ -19,6 +20,8 @@ class ProductResponse(BaseModel):
     currency: str
     status: str
     image_count: int
+    image_urls: list[str] = Field(default_factory=list)
+    image_ids: list[int] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 
@@ -131,6 +134,7 @@ class ProductUrlPreviewResponse(BaseModel):
     product_url: str
     price: Optional[float] = None
     currency: str = "USD"
+    image_urls: list[str] = Field(default_factory=list)
 
 
 class ProductManualCreateRequest(BaseModel):

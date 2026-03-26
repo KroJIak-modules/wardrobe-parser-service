@@ -27,6 +27,8 @@ class ParserProductRepository(BaseRepository[ParserProduct]):
         price: Optional[float] = None,
         currency: str = "USD",
         image_count: int = 0,
+        image_urls: Optional[List[str]] = None,
+        image_asset_ids: Optional[List[int]] = None,
         status: str = ProductStatus.AVAILABLE,
     ) -> ParserProduct:
         """Create new product."""
@@ -40,6 +42,8 @@ class ParserProductRepository(BaseRepository[ParserProduct]):
             price=price,
             currency=currency,
             image_count=image_count,
+            image_urls=image_urls or [],
+            image_asset_ids=image_asset_ids or [],
             status=status,
         )
         self.flush()

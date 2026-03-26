@@ -11,6 +11,7 @@ from sqlalchemy import (
     String,
     Integer,
     Float,
+    JSON,
     DateTime,
     Boolean,
     ForeignKey,
@@ -190,6 +191,8 @@ class ParserProduct(Base):
         default=ProductStatus.AVAILABLE,
     )
     image_count = Column(Integer, nullable=False, default=0)
+    image_urls = Column(JSON, nullable=False, default=list)
+    image_asset_ids = Column(JSON, nullable=False, default=list)
     
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())

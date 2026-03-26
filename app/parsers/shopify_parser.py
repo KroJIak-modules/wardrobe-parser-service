@@ -44,6 +44,7 @@ class ShopifyProductPreview:
     vendor: str | None
     price: str | None
     currency: str | None
+    image_urls: list[str]
     payload_source: str
 
 
@@ -957,6 +958,7 @@ class ShopifyParser:
         vendor = cls._safe_str(payload.get("vendor"))
         price = cls._extract_price(payload)
         currency = cls._extract_currency(payload)
+        image_urls = cls._extract_image_urls(payload)
         return ShopifyProductPreview(
             product_url=product_url,
             handle=handle,
@@ -965,8 +967,48 @@ class ShopifyParser:
             vendor=vendor,
             price=price,
             currency=currency,
+            image_urls=image_urls,
             payload_source=payload_source,
         )
+
+    @classmethod
+    def _extract_image_urls(cls, payload: dict[str, Any]) -> list[str]:
+        candidates: list[str] = []
+
+        images = payload.get("images")
+        if isinstance(images, list):
+            for item in images:
+                if isinstance(item, str):
+                    value = item.strip()
+                    if value:
+                        candidates.append(value)
+                    continue
+                if isinstance(item, dict):
+                    for key in ("src", "url", "originalSrc"):
+                        raw = item.get(key)
+                        if isinstance(raw, str) and raw.strip():
+                            candidates.append(raw.strip())
+                            break
+
+        for key in ("featured_image", "image"):
+            raw_image = payload.get(key)
+            if isinstance(raw_image, str) and raw_image.strip():
+                candidates.append(raw_image.strip())
+            elif isinstance(raw_image, dict):
+                for dict_key in ("src", "url", "originalSrc"):
+                    raw = raw_image.get(dict_key)
+                    if isinstance(raw, str) and raw.strip():
+                        candidates.append(raw.strip())
+                        break
+
+        seen: set[str] = set()
+        ordered: list[str] = []
+        for url in candidates:
+            if url in seen:
+                continue
+            seen.add(url)
+            ordered.append(url)
+        return ordered
 
     @classmethod
     def _extract_price(cls, payload: dict[str, Any]) -> str | None:

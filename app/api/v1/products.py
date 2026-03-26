@@ -21,12 +21,34 @@ from app.schemas.parser import (
     ProductListResponse,
     ProductUrlPreviewResponse,
 )
-from app.repositories import ParserProductRepository, ParserSourceRepository
+from app.repositories import ParserProductRepository, ParserSourceRepository, ParserImageAssetRepository
 from app.models import ProductStatus
 from app.parsers.shopify_parser import ShopifyParser
 
 router = APIRouter(tags=["products"])
 _upload_dir = Path("/app/uploads")
+
+
+def _build_product_response(product) -> ProductResponse:
+    image_urls = product.image_urls or []
+    image_ids = product.image_asset_ids or []
+    return ProductResponse(
+        id=product.id,
+        source_id=product.source_id,
+        handle=product.handle,
+        title=product.title,
+        vendor=product.vendor,
+        product_type=product.product_type,
+        url=product.url,
+        price=product.price,
+        currency=product.currency,
+        status=product.status,
+        image_count=product.image_count,
+        image_urls=image_urls,
+        image_ids=image_ids,
+        created_at=product.created_at,
+        updated_at=product.updated_at,
+    )
 
 
 def _clean_host(url: str) -> str:
@@ -122,6 +144,7 @@ def preview_product_by_url(payload: ProductAddByUrlRequest):
         product_url=preview.product_url,
         price=_normalize_preview_price(preview.price, preview.payload_source),
         currency=(preview.currency or "USD").upper(),
+        image_urls=preview.image_urls,
     )
 
 
@@ -160,6 +183,7 @@ def get_products(
     GET /api/v1/products?source_id=1&vendor=RickOwens&price_min=100&price_max=1000&limit=20
     """
     product_repo = ParserProductRepository(db)
+    image_repo = ParserImageAssetRepository(db)
     
     # Parse vendors and product_types (may be comma-separated from frontend)
     vendors = [v.strip() for v in vendor.split(",")] if vendor else None
@@ -222,8 +246,18 @@ def get_products(
         ],
     }
     
+    products_image_urls: list[str] = []
+    for product in products:
+        products_image_urls.extend(product.image_urls or [])
+    assets = image_repo.get_by_source_urls(products_image_urls)
+    url_to_id = {asset.source_url: asset.id for asset in assets}
+
+    for product in products:
+        if product.image_urls:
+            product.image_asset_ids = [url_to_id[url] for url in product.image_urls if url in url_to_id]
+
     return ProductListResponse(
-        items=[ProductResponse.model_validate(p) for p in products],
+        items=[_build_product_response(p) for p in products],
         total=total,
         limit=limit,
         offset=offset,
@@ -243,7 +277,11 @@ def get_product(product_id: int, db: Session = Depends(get_db)):
             detail=f"Product {product_id} not found"
         )
     
-    return ProductResponse.model_validate(product)
+    image_repo = ParserImageAssetRepository(db)
+    assets = image_repo.get_by_source_urls(product.image_urls or [])
+    by_url = {asset.source_url: asset.id for asset in assets}
+    product.image_asset_ids = [by_url[url] for url in (product.image_urls or []) if url in by_url]
+    return _build_product_response(product)
 
 
 @router.post("/products/add-by-url", response_model=ProductResponse)
@@ -253,13 +291,17 @@ def add_product_by_url(payload: ProductAddByUrlRequest, db: Session = Depends(ge
 
     source = _resolve_or_create_source(db, preview.product_url)
     product_repo = ParserProductRepository(db)
+    image_repo = ParserImageAssetRepository(db)
     existing = product_repo.get_by_source_and_handle(source.id, preview.handle)
     price = payload.price if payload.price is not None else _normalize_preview_price(preview.price, preview.payload_source)
     final_title = payload.title.strip() if payload.title else (preview.title or preview.handle)
     final_vendor = payload.vendor if payload.vendor is not None else preview.vendor
     final_product_type = payload.product_type.strip() if payload.product_type else None
     final_currency = (payload.currency or preview.currency or "USD").upper()
-    final_image_count = payload.image_count if payload.image_count is not None else None
+    resolved_image_urls = preview.image_urls or []
+    assets = image_repo.ensure_assets(resolved_image_urls)
+    resolved_image_asset_ids = [asset.id for asset in assets]
+    final_image_count = payload.image_count if payload.image_count is not None else len(resolved_image_urls)
 
     if existing:
         existing.title = final_title or existing.title
@@ -270,10 +312,12 @@ def add_product_by_url(payload: ProductAddByUrlRequest, db: Session = Depends(ge
         existing.currency = final_currency or existing.currency
         if final_image_count is not None:
             existing.image_count = final_image_count
+        existing.image_urls = resolved_image_urls
+        existing.image_asset_ids = resolved_image_asset_ids
         existing.deleted_at = None
         db.commit()
         db.refresh(existing)
-        return ProductResponse.model_validate(existing)
+        return _build_product_response(existing)
 
     product = product_repo.create_product(
         source_id=source.id,
@@ -285,11 +329,13 @@ def add_product_by_url(payload: ProductAddByUrlRequest, db: Session = Depends(ge
         price=price,
         currency=final_currency,
         image_count=final_image_count or 0,
+        image_urls=resolved_image_urls,
+        image_asset_ids=resolved_image_asset_ids,
         status=ProductStatus.AVAILABLE,
     )
     db.commit()
     db.refresh(product)
-    return ProductResponse.model_validate(product)
+    return _build_product_response(product)
 
 
 @router.post("/products/manual", response_model=ProductResponse)
@@ -326,7 +372,7 @@ def create_manual_product(payload: ProductManualCreateRequest, db: Session = Dep
     )
     db.commit()
     db.refresh(product)
-    return ProductResponse.model_validate(product)
+    return _build_product_response(product)
 
 
 @router.post("/products/upload-image")
