@@ -12,12 +12,10 @@ from app.schemas.parser import (
     JobLatestResponse,
     JobCreateRequest,
     JobCreateResponse,
-    ErrorResponse,
 )
 from app.services.parser_job import ParserJobService
-from app.models import JobStatus
 
-router = APIRouter(prefix="/api/v1", tags=["sync"])
+router = APIRouter(tags=["sync"])
 
 
 @router.post("/jobs", response_model=JobCreateResponse, status_code=status.HTTP_201_CREATED)
@@ -127,7 +125,7 @@ def get_jobs_history(
     
     jobs = (
         repo.query()
-        .filter(ParserJobService.__dict__['job_repo'].__class__.model_class.deleted_at.is_(None))
+        .filter(repo.model_class.deleted_at.is_(None))
         .order_by(repo.model_class.created_at.desc())
         .offset(offset)
         .limit(limit)

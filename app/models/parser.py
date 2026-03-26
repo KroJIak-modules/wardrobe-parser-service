@@ -25,6 +25,11 @@ from sqlalchemy.sql import func
 from app.core.database import Base
 
 
+def _enum_values(enum_cls: type[Enum]) -> list[str]:
+    """Return enum values for SQLAlchemy enum binding, not member names."""
+    return [member.value for member in enum_cls]
+
+
 class JobStatus(str, Enum):
     """Status of a parser job."""
     PENDING = "pending"
@@ -73,7 +78,6 @@ class ParserSource(Base):
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
     deleted_at = Column(DateTime(timezone=True), nullable=True)  # Soft delete
 
-    jobs = relationship("ParserJob", back_populates="source")
     products = relationship("ParserProduct", back_populates="source")
     fingerprints = relationship("ParserProductFingerprint", back_populates="source")
 
@@ -88,7 +92,11 @@ class ParserJob(Base):
     __tablename__ = "parser_job"
 
     id = Column(String(36), primary_key=True)  # UUID
-    status = Column(SQLEnum(JobStatus), nullable=False, default=JobStatus.PENDING)
+    status = Column(
+        SQLEnum(JobStatus, values_callable=_enum_values),
+        nullable=False,
+        default=JobStatus.PENDING,
+    )
     triggered_by = Column(String(50), nullable=False)  # "scheduled" or "manual"
     
     total_products = Column(Integer, nullable=True)
@@ -125,7 +133,11 @@ class ParserJobSourceRun(Base):
     job_id = Column(String(36), ForeignKey("parser_job.id"), nullable=False)
     source_id = Column(Integer, ForeignKey("parser_source.id"), nullable=False)
     
-    status = Column(SQLEnum(SourceRunStatus), nullable=False, default=SourceRunStatus.PENDING)
+    status = Column(
+        SQLEnum(SourceRunStatus, values_callable=_enum_values),
+        nullable=False,
+        default=SourceRunStatus.PENDING,
+    )
     
     products_discovered = Column(Integer, nullable=False, default=0)
     products_fetched = Column(Integer, nullable=False, default=0)
@@ -165,7 +177,11 @@ class ParserProduct(Base):
     price = Column(Float, nullable=True)
     currency = Column(String(3), nullable=False, default="USD")
     
-    status = Column(SQLEnum(ProductStatus), nullable=False, default=ProductStatus.AVAILABLE)
+    status = Column(
+        SQLEnum(ProductStatus, values_callable=_enum_values),
+        nullable=False,
+        default=ProductStatus.AVAILABLE,
+    )
     image_count = Column(Integer, nullable=False, default=0)
     
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
@@ -217,13 +233,13 @@ class ParserProductDelta(Base):
     job_id = Column(String(36), ForeignKey("parser_job.id"), nullable=False)
     product_id = Column(Integer, ForeignKey("parser_product.id"), nullable=False)
     
-    delta_type = Column(SQLEnum(DeltaType), nullable=False)
+    delta_type = Column(SQLEnum(DeltaType, values_callable=_enum_values), nullable=False)
     
     old_price = Column(Float, nullable=True)
     new_price = Column(Float, nullable=True)
     
-    old_status = Column(SQLEnum(ProductStatus), nullable=True)
-    new_status = Column(SQLEnum(ProductStatus), nullable=True)
+    old_status = Column(SQLEnum(ProductStatus, values_callable=_enum_values), nullable=True)
+    new_status = Column(SQLEnum(ProductStatus, values_callable=_enum_values), nullable=True)
     
     old_image_count = Column(Integer, nullable=True)
     new_image_count = Column(Integer, nullable=True)

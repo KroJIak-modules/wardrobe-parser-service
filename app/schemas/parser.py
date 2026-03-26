@@ -109,8 +109,64 @@ class JobCreateResponse(BaseModel):
     created_at: datetime
 
 
+class ProductAddByUrlRequest(BaseModel):
+    """Request for adding a product from URL preview."""
+
+    url: str = Field(min_length=8, max_length=2048)
+
+
+class ProductManualCreateRequest(BaseModel):
+    """Request for manually creating a product."""
+
+    title: str = Field(min_length=1, max_length=2048)
+    price: Optional[float] = Field(default=None, ge=0)
+    currency: str = Field(default="USD", min_length=3, max_length=3)
+    product_type: Optional[str] = Field(default=None, max_length=255)
+    vendor: Optional[str] = Field(default="Manual", max_length=255)
+    image_count: int = Field(default=0, ge=0)
+
+
+class CategoryKeywordRequest(BaseModel):
+    """Add keyword into a category."""
+
+    keyword: str = Field(min_length=1, max_length=255)
+
+
+class CategoryCreateRequest(BaseModel):
+    """Create one category node."""
+
+    name: str = Field(min_length=1, max_length=255)
+    parent_id: Optional[int] = None
+
+
+class CategoryUpdateRequest(BaseModel):
+    """Update one category node."""
+
+    name: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    parent_id: Optional[int] = None
+
+
+class CategoryTreeNodeResponse(BaseModel):
+    """Recursive category tree response."""
+
+    id: int
+    name: str
+    slug: str
+    parent_id: Optional[int] = None
+    is_fallback: bool
+    keywords: list[str] = Field(default_factory=list)
+    effective_keywords: list[str] = Field(default_factory=list)
+    children: list["CategoryTreeNodeResponse"] = Field(default_factory=list)
+
+    class Config:
+        from_attributes = True
+
+
 class ErrorResponse(BaseModel):
     """Error response."""
     code: str
     message: str
     details: Optional[dict] = None
+
+
+CategoryTreeNodeResponse.model_rebuild()

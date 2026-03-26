@@ -7,9 +7,21 @@ from typing import Optional, List
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
-from app.models import ParserJob, JobStatus, ParserJobSourceRun, SourceRunStatus
-from app.repositories import ParserJobRepository, ParserSourceRepository
-from app.services.fingerprint import FingerprintService
+from app.config.source_registry import list_sources
+from app.core.config import settings
+from app.models import (
+    ParserJob,
+    JobStatus,
+    ParserJobSourceRun,
+    SourceRunStatus,
+    ProductStatus,
+)
+from app.parsers.shopify_parser import ShopifyParser
+from app.repositories import (
+    ParserJobRepository,
+    ParserSourceRepository,
+    ParserProductRepository,
+)
 
 
 class ParserJobService:
@@ -19,6 +31,170 @@ class ParserJobService:
         self.session = session
         self.job_repo = ParserJobRepository(session)
         self.source_repo = ParserSourceRepository(session)
+        self.product_repo = ParserProductRepository(session)
+
+    @staticmethod
+    def _to_float(value: str | None) -> float | None:
+        if value is None:
+            return None
+        try:
+            return float(str(value).strip())
+        except (TypeError, ValueError):
+            return None
+
+    def _get_or_create_source(self, name: str, url: str, parser_type: str, enabled: bool):
+        source = self.source_repo.get_by_url(url)
+        if source:
+            source.name = name
+            source.parser_type = parser_type
+            source.enabled = enabled
+            return source
+
+        return self.source_repo.create_source(
+            name=name,
+            url=url,
+            parser_type=parser_type,
+            enabled=enabled,
+        )
+
+    def run_sync_job(self, triggered_by: str = "manual") -> ParserJob:
+        """Create and execute sync job against enabled Shopify sources."""
+        job_id = str(uuid.uuid4())
+        job = self.job_repo.create_job(job_id=job_id, triggered_by=triggered_by)
+        self.job_repo.mark_started(job)
+        self.session.commit()
+
+        total_created = 0
+        total_updated = 0
+        total_fetched = 0
+        total_errors = 0
+        total_429 = 0
+        total_5xx = 0
+
+        sources = [s for s in list_sources(parser_type="shopify") if s.enabled]
+        sources = sources[: settings.parser_sync_max_sources]
+
+        if not sources:
+            self.job_repo.mark_completed(job, total_products=0, new_products=0, updated_products=0)
+            self.session.commit()
+            return job
+
+        for source_item in sources:
+            source = self._get_or_create_source(
+                name=source_item.name,
+                url=source_item.base_url,
+                parser_type=source_item.parser_type,
+                enabled=source_item.enabled,
+            )
+            self.session.flush()
+
+            source_run = self.create_source_run(job.id, source.id)
+            if not source_run:
+                total_errors += 1
+                continue
+
+            self.mark_source_run_started(source_run.id)
+
+            try:
+                result = ShopifyParser.discover(
+                    source_item.base_url,
+                    max_products=settings.parser_default_max_products,
+                    sample_products=settings.parser_default_sample_products,
+                    timeout_sec=settings.parser_default_timeout_sec,
+                    fetch_all_products=True,
+                    response_products_limit=settings.parser_default_max_products,
+                    error_details_limit=200,
+                    parallel_workers=settings.parser_default_parallel_workers,
+                    max_retries=settings.parser_default_max_retries,
+                    retry_backoff_sec=settings.parser_default_retry_backoff_sec,
+                    second_pass_enabled=settings.parser_default_second_pass_enabled,
+                    second_pass_timeout_sec=settings.parser_default_second_pass_timeout_sec,
+                )
+
+                created_for_source = 0
+                updated_for_source = 0
+
+                for preview in result.previews:
+                    existing = self.product_repo.get_by_source_and_handle(source.id, preview.handle)
+                    parsed_price = self._to_float(preview.price)
+
+                    if existing is None:
+                        self.product_repo.create_product(
+                            source_id=source.id,
+                            handle=preview.handle,
+                            title=preview.title or preview.handle,
+                            url=preview.product_url,
+                            vendor=preview.vendor,
+                            product_type=None,
+                            price=parsed_price,
+                            currency=preview.currency or "USD",
+                            image_count=0,
+                            status=ProductStatus.AVAILABLE,
+                        )
+                        created_for_source += 1
+                    else:
+                        changed = (
+                            existing.title != (preview.title or preview.handle)
+                            or existing.url != preview.product_url
+                            or existing.vendor != preview.vendor
+                            or existing.price != parsed_price
+                            or existing.currency != (preview.currency or "USD")
+                            or existing.status != ProductStatus.AVAILABLE
+                        )
+                        if changed:
+                            self.product_repo.update(
+                                existing,
+                                title=preview.title or preview.handle,
+                                url=preview.product_url,
+                                vendor=preview.vendor,
+                                price=parsed_price,
+                                currency=preview.currency or "USD",
+                                status=ProductStatus.AVAILABLE,
+                                deleted_at=None,
+                            )
+                            updated_for_source += 1
+
+                total_created += created_for_source
+                total_updated += updated_for_source
+                total_fetched += result.products_fetch_succeeded
+                total_errors += result.products_fetch_failed
+                total_429 += result.http_429_count
+                total_5xx += result.http_5xx_count
+
+                self.update_source_run(
+                    source_run.id,
+                    status=SourceRunStatus.SUCCESS if result.products_fetch_failed == 0 else SourceRunStatus.PARTIAL,
+                    products_discovered=result.product_urls_found,
+                    products_fetched=result.products_fetch_succeeded,
+                    products_failed=result.products_fetch_failed,
+                    discovery_mode=result.discovery_mode,
+                    error_message="; ".join(result.error_details[:3]) if result.error_details else None,
+                )
+                self.session.commit()
+            except Exception as exc:
+                total_errors += 1
+                self.update_source_run(
+                    source_run.id,
+                    status=SourceRunStatus.FAILED,
+                    error_message=str(exc),
+                )
+                self.session.commit()
+
+        self.job_repo.increment_error_count(
+            job,
+            count=total_errors,
+            http_429_count=total_429,
+            http_5xx_count=total_5xx,
+        )
+        self.job_repo.mark_completed(
+            job,
+            total_products=total_fetched,
+            new_products=total_created,
+            updated_products=total_updated,
+        )
+        self.session.commit()
+
+        return job
 
     def create_sync_job(
         self, triggered_by: str = "scheduled"
@@ -32,13 +208,7 @@ class ParserJobService:
         Returns:
             ParserJob instance
         """
-        job_id = str(uuid.uuid4())
-        job = self.job_repo.create_job(
-            job_id=job_id,
-            triggered_by=triggered_by,
-        )
-        self.session.commit()
-        return job
+        return self.run_sync_job(triggered_by=triggered_by)
 
     def start_job(self, job_id: str) -> Optional[ParserJob]:
         """Mark job as started."""

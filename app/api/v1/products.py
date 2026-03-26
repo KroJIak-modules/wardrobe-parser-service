@@ -2,19 +2,87 @@
 API endpoints for product catalog.
 """
 
-from typing import Optional, List
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+import re
+import time
+from pathlib import Path
+from typing import Optional
+from urllib.parse import urlparse
+
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from sqlalchemy.orm import Session
 
+from app.config.source_registry import list_sources
+from app.core.config import settings
 from app.core.database import get_db
 from app.schemas.parser import (
+    ProductAddByUrlRequest,
+    ProductManualCreateRequest,
     ProductResponse,
     ProductListResponse,
 )
 from app.repositories import ParserProductRepository, ParserSourceRepository
 from app.models import ProductStatus
+from app.parsers.shopify_parser import ShopifyParser
 
-router = APIRouter(prefix="/api/v1", tags=["products"])
+router = APIRouter(tags=["products"])
+_upload_dir = Path("/app/uploads")
+
+
+def _clean_host(url: str) -> str:
+    return urlparse(url).hostname.lower().replace("www.", "")
+
+
+def _slugify(value: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
+    return slug or "product"
+
+
+def _allowed_shopify_hosts() -> list[str]:
+    hosts: list[str] = []
+    for source in list_sources(parser_type="shopify"):
+        if not source.enabled:
+            continue
+        host = _clean_host(source.base_url)
+        if host:
+            hosts.append(host)
+    return hosts
+
+
+def _resolve_or_create_source(db: Session, product_url: str):
+    host = _clean_host(product_url)
+    source_repo = ParserSourceRepository(db)
+
+    for source_cfg in list_sources(parser_type="shopify"):
+        cfg_host = _clean_host(source_cfg.base_url)
+        if host == cfg_host or host.endswith(f".{cfg_host}"):
+            source = source_repo.get_by_url(source_cfg.base_url)
+            if source:
+                return source
+            return source_repo.create_source(
+                name=source_cfg.name,
+                url=source_cfg.base_url,
+                parser_type=source_cfg.parser_type,
+                enabled=source_cfg.enabled,
+            )
+
+    source = source_repo.get_by_url(f"https://{host}")
+    if source:
+        return source
+    return source_repo.create_source(name=host, url=f"https://{host}", parser_type="shopify", enabled=True)
+
+
+def _normalize_preview_price(raw_price: str | None, payload_source: str | None) -> float | None:
+    if raw_price is None:
+        return None
+    try:
+        parsed = float(raw_price)
+    except ValueError:
+        return None
+
+    # Shopify .js often returns integer cents while .json returns decimal currency units.
+    if payload_source == "js" and parsed >= 1000 and parsed.is_integer():
+        return parsed / 100
+    return parsed
 
 
 @router.get("/products", response_model=ProductListResponse)
@@ -136,3 +204,125 @@ def get_product(product_id: int, db: Session = Depends(get_db)):
         )
     
     return ProductResponse.model_validate(product)
+
+
+@router.post("/products/add-by-url", response_model=ProductResponse)
+def add_product_by_url(payload: ProductAddByUrlRequest, db: Session = Depends(get_db)):
+    """Validate URL against whitelist, fetch Shopify preview, and upsert product."""
+    allowed_hosts = _allowed_shopify_hosts()
+
+    try:
+        host = _clean_host(payload.url)
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Некорректный URL") from exc
+
+    if not any(host == item or host.endswith(f".{item}") for item in allowed_hosts):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Домен не входит в whitelist")
+
+    try:
+        preview = ShopifyParser.preview_product_url(
+            payload.url,
+            timeout_sec=settings.parser_default_timeout_sec,
+            max_retries=settings.parser_default_max_retries,
+            retry_backoff_sec=settings.parser_default_retry_backoff_sec,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Не удалось получить preview: {exc}",
+        ) from exc
+
+    source = _resolve_or_create_source(db, preview.product_url)
+    product_repo = ParserProductRepository(db)
+    existing = product_repo.get_by_source_and_handle(source.id, preview.handle)
+    price = _normalize_preview_price(preview.price, preview.payload_source)
+
+    if existing:
+        existing.title = preview.title or existing.title
+        existing.vendor = preview.vendor
+        existing.url = preview.product_url
+        existing.price = price
+        existing.currency = (preview.currency or existing.currency or "USD").upper()
+        existing.deleted_at = None
+        db.commit()
+        db.refresh(existing)
+        return ProductResponse.model_validate(existing)
+
+    product = product_repo.create_product(
+        source_id=source.id,
+        handle=preview.handle,
+        title=preview.title or preview.handle,
+        vendor=preview.vendor,
+        product_type=None,
+        url=preview.product_url,
+        price=price,
+        currency=(preview.currency or "USD").upper(),
+        status=ProductStatus.AVAILABLE,
+    )
+    db.commit()
+    db.refresh(product)
+    return ProductResponse.model_validate(product)
+
+
+@router.post("/products/manual", response_model=ProductResponse)
+def create_manual_product(payload: ProductManualCreateRequest, db: Session = Depends(get_db)):
+    """Create manual product record for admin modal flow."""
+    source_repo = ParserSourceRepository(db)
+    source = source_repo.get_by_url("https://manual.local")
+    if not source:
+        source = source_repo.create_source(
+            name="Manual Upload",
+            url="https://manual.local",
+            parser_type="custom",
+            enabled=True,
+        )
+
+    product_repo = ParserProductRepository(db)
+    handle_base = _slugify(payload.title)
+    handle = handle_base
+
+    while product_repo.get_by_source_and_handle(source.id, handle):
+        handle = f"{handle_base}-{int(time.time())}"
+
+    product = product_repo.create_product(
+        source_id=source.id,
+        handle=handle,
+        title=payload.title,
+        vendor=(payload.vendor or "Manual"),
+        product_type=payload.product_type,
+        url=f"https://manual.local/products/{handle}",
+        price=payload.price,
+        currency=payload.currency.upper(),
+        image_count=payload.image_count,
+        status=ProductStatus.AVAILABLE,
+    )
+    db.commit()
+    db.refresh(product)
+    return ProductResponse.model_validate(product)
+
+
+@router.post("/products/upload-image")
+async def upload_product_image(file: UploadFile = File(...)):
+    """Upload one image file for manual product flow."""
+    if not file.filename:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Файл не передан")
+
+    extension = Path(file.filename).suffix.lower()
+    if extension not in {".jpg", ".jpeg", ".png", ".webp", ".gif"}:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Недопустимый формат изображения")
+
+    _upload_dir.mkdir(parents=True, exist_ok=True)
+    safe_stem = _slugify(Path(file.filename).stem)
+    unique_name = f"{safe_stem}-{int(time.time())}{extension}"
+    target = _upload_dir / unique_name
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Пустой файл")
+    target.write_bytes(content)
+
+    return {
+        "ok": True,
+        "file_name": unique_name,
+        "stored_path": str(target),
+    }

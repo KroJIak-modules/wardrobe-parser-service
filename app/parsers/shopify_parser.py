@@ -94,6 +94,37 @@ class ShopifyParser:
     _thread_local = threading.local()
 
     @classmethod
+    def preview_product_url(
+        cls,
+        product_url: str,
+        *,
+        timeout_sec: float,
+        max_retries: int,
+        retry_backoff_sec: float,
+    ) -> ShopifyProductPreview:
+        """Fetch one product preview by direct product URL."""
+        parsed = urlparse(product_url.strip())
+        if not parsed.scheme or not parsed.netloc:
+            raise ValidationError("Некорректный URL товара")
+
+        base_url = cls._normalize_base_url(f"{parsed.scheme}://{parsed.netloc}")
+        normalized_product_url = cls._normalize_product_url(product_url, base_url)
+        if not normalized_product_url:
+            raise ValidationError("URL не похож на Shopify product URL")
+
+        outcome = cls._fetch_one_product_preview(
+            base_url=base_url,
+            product_url=normalized_product_url,
+            cached_payload=None,
+            timeout_sec=timeout_sec,
+            max_retries=max_retries,
+            retry_backoff_sec=retry_backoff_sec,
+        )
+        if not outcome.preview:
+            raise ValidationError(outcome.error or "Не удалось получить preview товара")
+        return outcome.preview
+
+    @classmethod
     def discover(
         cls,
         base_url: str,

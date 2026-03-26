@@ -9,6 +9,10 @@ from app.repositories.parser_source import (
     ParserSourceRepository,
     ParserProductFingerprintRepository,
 )
+from app.repositories.parser_category import (
+    ParserCategoryRepository,
+    ParserCategoryKeywordRepository,
+)
 
 __all__ = [
     "BaseRepository",
@@ -16,4 +20,6 @@ __all__ = [
     "ParserProductRepository",
     "ParserSourceRepository",
     "ParserProductFingerprintRepository",
+    "ParserCategoryRepository",
+    "ParserCategoryKeywordRepository",
 ]

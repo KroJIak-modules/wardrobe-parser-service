@@ -13,6 +13,7 @@ from app.models.parser import (
     DeltaType,
     ProductStatus,
 )
+from app.models.category import ParserCategory, ParserCategoryKeyword
 from app.core.database import Base
 
 __all__ = [
@@ -30,4 +31,6 @@ __all__ = [
     "SourceRunStatus",
     "DeltaType",
     "ProductStatus",
+    "ParserCategory",
+    "ParserCategoryKeyword",
 ]

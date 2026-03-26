@@ -43,6 +43,12 @@ class Settings(BaseSettings):
         le=240.0,
         env="PARSER_DEFAULT_SECOND_PASS_TIMEOUT_SEC",
     )
+    parser_sync_max_sources: int = Field(
+        default=5,
+        ge=1,
+        le=200,
+        env="PARSER_SYNC_MAX_SOURCES",
+    )
 
     @model_validator(mode="after")
     def build_database_url(self) -> "Settings":
