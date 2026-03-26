@@ -35,6 +35,24 @@ def _resolve_sources_file_path() -> Path:
     path = Path(raw)
     if path.is_absolute():
         return path
+
+    candidates: list[Path] = [
+        (Path.cwd() / path).resolve(),
+        (_service_root / path).resolve(),
+    ]
+
+    # Compatibility for values like "service/config/sources.json":
+    # - on host it can be relative to repo root
+    # - inside service container file lives under "/app/config/sources.json"
+    if path.parts and path.parts[0] == "service":
+        trimmed = Path(*path.parts[1:])
+        candidates.append((_service_root / trimmed).resolve())
+
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+
+    # Fallback to service-root relative path for downstream error message.
     return (_service_root / path).resolve()
 
 

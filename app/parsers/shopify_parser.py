@@ -1,30 +1,41 @@
-"""Shopify discovery and product preview parser."""
+"""Shopify discovery parser with resilient fallback and diagnostics."""
 
 from __future__ import annotations
 
-import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from decimal import Decimal, InvalidOperation
-from time import sleep
+import logging
+import re
+import threading
+import time
 from typing import Any
-from urllib.parse import urljoin, urlparse, urlunparse
-from xml.etree import ElementTree
+from urllib.parse import parse_qs, unquote, urljoin, urlparse, urlunparse
+import xml.etree.ElementTree as ET
 
-import httpx
+import requests
 
 from app.core.exceptions import ValidationError
 
 
-DEFAULT_USER_AGENT = "WardrobeShopifyParser/1.0 (+https://wardrobe.local)"
-PRODUCT_PATH_RE = re.compile(r"^/products/([^/?#]+)$")
-MAX_WARNING_ITEMS = 500
-RETRIABLE_STATUS_CODES = {408, 409, 425, 429}
+LOGGER = logging.getLogger(__name__)
+
+_USER_AGENT = (
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+)
+_DEFAULT_HEADERS = {
+    "User-Agent": _USER_AGENT,
+    "Accept": "application/json, text/xml, application/xml, text/html;q=0.9, */*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Connection": "keep-alive",
+}
+
+_PRODUCT_SITEMAP_RE = re.compile(r"(product-sitemap|sitemap_products)", re.IGNORECASE)
 
 
-@dataclass
+@dataclass(slots=True)
 class ShopifyProductPreview:
-    """Product preview payload returned by discovery flow."""
+    """Short preview payload for discovery response."""
 
     product_url: str
     handle: str
@@ -36,9 +47,9 @@ class ShopifyProductPreview:
     payload_source: str
 
 
-@dataclass
+@dataclass(slots=True)
 class ShopifyDiscoveryResult:
-    """Discovery summary with preview items and warnings."""
+    """Discovery result used by service layer."""
 
     base_url: str
     sitemap_url: str
@@ -58,50 +69,33 @@ class ShopifyDiscoveryResult:
     previews: list[ShopifyProductPreview]
 
 
-@dataclass
-class ProductFetchResult:
-    """Technical result of one product fetch attempt."""
-
-    product_url: str
-    preview: ShopifyProductPreview | None
-    error_detail: str | None
-    warnings: list[str]
+@dataclass(slots=True)
+class _RequestResult:
+    payload: Any | None
+    status_code: int | None
+    error: str | None
+    headers: dict[str, str]
     http_429_count: int
     http_5xx_count: int
 
 
-@dataclass
-class BatchFetchResult:
-    """Batch fetch result for a set of product URLs."""
-
-    previews_by_url: dict[str, ShopifyProductPreview]
-    errors_by_url: dict[str, str]
-    warnings: list[str]
+@dataclass(slots=True)
+class _FetchOutcome:
+    product_url: str
+    preview: ShopifyProductPreview | None
+    error: str | None
     http_429_count: int
     http_5xx_count: int
 
 
 class ShopifyParser:
-    """Shopify parser utilities for discovery and preview."""
+    """Diagnostics-oriented Shopify parser."""
 
-    @staticmethod
-    def normalize_base_url(base_url: str) -> str:
-        """Normalize raw source URL to scheme + host format."""
-        normalized = base_url.strip()
-        if not normalized:
-            raise ValidationError("base_url не может быть пустым")
+    _thread_local = threading.local()
 
-        if "://" not in normalized:
-            normalized = f"https://{normalized}"
-
-        parsed = urlparse(normalized)
-        if not parsed.netloc:
-            raise ValidationError("base_url должен содержать домен, например https://example.com")
-
-        return f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
-
-    @staticmethod
+    @classmethod
     def discover(
+        cls,
         base_url: str,
         *,
         max_products: int,
@@ -116,757 +110,1031 @@ class ShopifyParser:
         second_pass_enabled: bool,
         second_pass_timeout_sec: float,
     ) -> ShopifyDiscoveryResult:
-        """Discover product URLs for Shopify source and load product previews."""
+        """Run discovery and optionally fetch product previews."""
+        resolved_base_url = cls._normalize_base_url(base_url)
+        sitemap_url = f"{resolved_base_url}/sitemap.xml"
+
         warnings: list[str] = []
+        discovered_urls: list[str] = []
+        discovered_set: set[str] = set()
+        payload_cache: dict[str, dict[str, Any]] = {}
 
-        normalized_base_url = ShopifyParser.normalize_base_url(base_url)
-        sitemap_url = f"{normalized_base_url}/sitemap.xml"
+        source_from_sitemap = False
+        source_from_fallback = False
 
-        discovery_flags: list[str] = []
-        product_sitemap_urls: list[str] = []
-        product_urls: list[str] = []
+        with requests.Session() as session:
+            session.headers.update(_DEFAULT_HEADERS)
 
-        headers = {"User-Agent": DEFAULT_USER_AGENT}
-        with httpx.Client(timeout=timeout_sec, follow_redirects=True, headers=headers) as client:
-            sitemap_text = ShopifyParser._safe_get_text(
-                client=client,
+            sitemap_result = cls._request_json_or_text_with_retries(
+                session=session,
                 url=sitemap_url,
-                warnings=warnings,
-                error_label="Ошибка получения sitemap.xml",
+                timeout_sec=timeout_sec,
+                max_retries=max_retries,
+                retry_backoff_sec=retry_backoff_sec,
+                expect_json=False,
             )
-
-            if sitemap_text:
-                product_sitemap_urls = ShopifyParser._extract_product_sitemap_urls(sitemap_text)
-                product_sitemap_urls = ShopifyParser._dedupe_and_limit(product_sitemap_urls, max_items=max_products)
-
-            if product_sitemap_urls:
-                discovery_flags.append("sitemap")
-                for product_sitemap_url in product_sitemap_urls:
-                    product_sitemap_text = ShopifyParser._safe_get_text(
-                        client=client,
-                        url=product_sitemap_url,
-                        warnings=warnings,
-                        error_label=f"Ошибка получения {product_sitemap_url}",
-                    )
-                    if not product_sitemap_text:
-                        continue
-                    product_urls.extend(ShopifyParser._extract_product_urls(product_sitemap_text))
+            if sitemap_result.error:
+                warnings.append(f"Не удалось прочитать sitemap.xml: {sitemap_result.error}")
             else:
-                warnings.append("В sitemap не найден product-sitemap, используем fallback /products.json")
+                text_payload = sitemap_result.payload
+                if isinstance(text_payload, str):
+                    product_sitemaps, direct_product_urls = cls._parse_sitemap(text_payload)
+                    if product_sitemaps:
+                        source_from_sitemap = True
+                        for product_sitemap_url in product_sitemaps:
+                            if len(discovered_urls) >= max_products:
+                                break
+                            product_sitemap_result = cls._request_json_or_text_with_retries(
+                                session=session,
+                                url=product_sitemap_url,
+                                timeout_sec=timeout_sec,
+                                max_retries=max_retries,
+                                retry_backoff_sec=retry_backoff_sec,
+                                expect_json=False,
+                            )
+                            if product_sitemap_result.error:
+                                warnings.append(
+                                    f"Не удалось прочитать {product_sitemap_url}: {product_sitemap_result.error}"
+                                )
+                                continue
+                            if not isinstance(product_sitemap_result.payload, str):
+                                warnings.append(f"Некорректный XML в {product_sitemap_url}")
+                                continue
+                            for raw_url in cls._extract_loc_urls(product_sitemap_result.payload):
+                                normalized = cls._normalize_product_url(raw_url, resolved_base_url)
+                                if not normalized:
+                                    continue
+                                if cls._append_discovered_url(
+                                    normalized,
+                                    discovered_urls=discovered_urls,
+                                    discovered_set=discovered_set,
+                                    max_products=max_products,
+                                ):
+                                    source_from_sitemap = True
 
-            product_urls = ShopifyParser._prepare_product_urls(
-                product_urls,
-                base_url=normalized_base_url,
+                    for raw_url in direct_product_urls:
+                        if len(discovered_urls) >= max_products:
+                            break
+                        normalized = cls._normalize_product_url(raw_url, resolved_base_url)
+                        if not normalized:
+                            continue
+                        if cls._append_discovered_url(
+                            normalized,
+                            discovered_urls=discovered_urls,
+                            discovered_set=discovered_set,
+                            max_products=max_products,
+                        ):
+                            source_from_sitemap = True
+
+                    if not product_sitemaps:
+                        warnings.append(
+                            "В sitemap не найден product-sitemap, используем fallback /products.json"
+                        )
+
+            products_api_urls, products_api_payloads, products_api_warnings = cls._discover_products_json(
+                session=session,
+                base_url=resolved_base_url,
                 max_products=max_products,
-            )
-
-            if not product_urls:
-                products_api_urls = ShopifyParser._discover_product_urls_by_products_api(
-                    client=client,
-                    base_url=normalized_base_url,
-                    max_products=max_products,
-                    warnings=warnings,
-                )
-                if products_api_urls:
-                    discovery_flags.append("products_api")
-                product_urls.extend(products_api_urls)
-
-            product_urls = ShopifyParser._prepare_product_urls(
-                product_urls,
-                base_url=normalized_base_url,
-                max_products=max_products,
-            )
-
-            if not product_urls:
-                collections_urls = ShopifyParser._discover_product_urls_by_collections_api(
-                    client=client,
-                    base_url=normalized_base_url,
-                    max_products=max_products,
-                    warnings=warnings,
-                )
-                if collections_urls:
-                    discovery_flags.append("collections_api")
-                product_urls.extend(collections_urls)
-
-            product_urls = ShopifyParser._prepare_product_urls(
-                product_urls,
-                base_url=normalized_base_url,
-                max_products=max_products,
-            )
-
-            if not product_urls:
-                raise ValidationError(
-                    "Не удалось найти товары Shopify через sitemap, /products.json или "
-                    "/collections/all/products.json. Проверьте домен и доступность сайта."
-                )
-
-            fetch_targets = product_urls if fetch_all_products else product_urls[:sample_products]
-            requested_previews = len(fetch_targets)
-
-            first_batch = ShopifyParser._fetch_products_batch(
-                client=client,
-                product_urls=fetch_targets,
-                base_url=normalized_base_url,
-                parallel_workers=parallel_workers,
+                timeout_sec=timeout_sec,
                 max_retries=max_retries,
                 retry_backoff_sec=retry_backoff_sec,
             )
+            warnings.extend(products_api_warnings)
+            if products_api_urls:
+                source_from_fallback = True
+            for url in products_api_urls:
+                if len(discovered_urls) >= max_products:
+                    break
+                if cls._append_discovered_url(
+                    url,
+                    discovered_urls=discovered_urls,
+                    discovered_set=discovered_set,
+                    max_products=max_products,
+                ):
+                    payload = products_api_payloads.get(url)
+                    if isinstance(payload, dict):
+                        payload_cache[url] = payload
 
-        previews_by_url = dict(first_batch.previews_by_url)
-        errors_by_url = dict(first_batch.errors_by_url)
-        http_429_count = first_batch.http_429_count
-        http_5xx_count = first_batch.http_5xx_count
-        warnings.extend(first_batch.warnings)
+            if len(discovered_urls) < max_products:
+                collection_urls, collection_payloads, collection_warnings = cls._discover_collections_all_products(
+                    session=session,
+                    base_url=resolved_base_url,
+                    max_products=max_products - len(discovered_urls),
+                    timeout_sec=timeout_sec,
+                    max_retries=max_retries,
+                    retry_backoff_sec=retry_backoff_sec,
+                )
+                warnings.extend(collection_warnings)
+                if collection_urls:
+                    source_from_fallback = True
+                for url in collection_urls:
+                    if len(discovered_urls) >= max_products:
+                        break
+                    if cls._append_discovered_url(
+                        url,
+                        discovered_urls=discovered_urls,
+                        discovered_set=discovered_set,
+                        max_products=max_products,
+                    ):
+                        payload = collection_payloads.get(url)
+                        if isinstance(payload, dict):
+                            payload_cache[url] = payload
 
+        product_sitemaps_found = 0
+        if source_from_sitemap:
+            product_sitemaps_found = cls._count_product_sitemaps(sitemap_result_payload=sitemap_result.payload)
+
+        discovery_mode = cls._resolve_discovery_mode(
+            from_sitemap=source_from_sitemap,
+            from_fallback=source_from_fallback,
+        )
+
+        if fetch_all_products:
+            target_urls = discovered_urls
+        else:
+            target_urls = discovered_urls[:sample_products]
+
+        fetch_attempted = len(target_urls)
+        previews: list[ShopifyProductPreview] = []
+        final_errors: list[tuple[str, str]] = []
+        http_429_count = 0
+        http_5xx_count = 0
         second_pass_attempted = 0
         second_pass_recovered = 0
 
-        if second_pass_enabled and errors_by_url:
-            failed_urls = list(errors_by_url.keys())
-            second_pass_attempted = len(failed_urls)
-            reduced_workers = max(1, min(parallel_workers, 4))
+        if target_urls:
+            by_url: dict[str, _FetchOutcome] = {}
+            first_pass_failures: list[str] = []
 
-            with httpx.Client(timeout=second_pass_timeout_sec, follow_redirects=True, headers=headers) as second_client:
-                second_batch = ShopifyParser._fetch_products_batch(
-                    client=second_client,
-                    product_urls=failed_urls,
-                    base_url=normalized_base_url,
-                    parallel_workers=reduced_workers,
+            for outcome in cls._fetch_many_product_previews(
+                base_url=resolved_base_url,
+                product_urls=target_urls,
+                payload_cache=payload_cache,
+                timeout_sec=timeout_sec,
+                parallel_workers=parallel_workers,
+                max_retries=max_retries,
+                retry_backoff_sec=retry_backoff_sec,
+            ):
+                by_url[outcome.product_url] = outcome
+
+            for product_url in target_urls:
+                outcome = by_url.get(product_url)
+                if not outcome:
+                    first_pass_failures.append(product_url)
+                    final_errors.append((product_url, "внутренняя ошибка: нет результата воркера"))
+                    continue
+                http_429_count += outcome.http_429_count
+                http_5xx_count += outcome.http_5xx_count
+                if outcome.preview:
+                    previews.append(outcome.preview)
+                else:
+                    first_pass_failures.append(product_url)
+                    final_errors.append((product_url, outcome.error or "не удалось получить товар"))
+
+            if second_pass_enabled and first_pass_failures:
+                second_pass_attempted = len(first_pass_failures)
+                second_pass_timeout = max(second_pass_timeout_sec, timeout_sec)
+
+                second_pass_results = cls._fetch_many_product_previews(
+                    base_url=resolved_base_url,
+                    product_urls=first_pass_failures,
+                    payload_cache=payload_cache,
+                    timeout_sec=second_pass_timeout,
+                    parallel_workers=max(1, min(parallel_workers, 8)),
                     max_retries=max_retries + 1,
-                    retry_backoff_sec=retry_backoff_sec,
+                    retry_backoff_sec=max(retry_backoff_sec, 0.5),
                 )
+                second_pass_by_url = {item.product_url: item for item in second_pass_results}
 
-            warnings.extend(second_batch.warnings)
-            http_429_count += second_batch.http_429_count
-            http_5xx_count += second_batch.http_5xx_count
+                refreshed_errors: list[tuple[str, str]] = []
+                for product_url, first_error in final_errors:
+                    second = second_pass_by_url.get(product_url)
+                    if not second:
+                        refreshed_errors.append((product_url, first_error))
+                        continue
 
-            for url, preview in second_batch.previews_by_url.items():
-                previews_by_url[url] = preview
-                if url in errors_by_url:
-                    second_pass_recovered += 1
-                    errors_by_url.pop(url, None)
+                    http_429_count += second.http_429_count
+                    http_5xx_count += second.http_5xx_count
 
-            for url, detail in second_batch.errors_by_url.items():
-                errors_by_url[url] = detail
+                    if second.preview:
+                        previews.append(second.preview)
+                        second_pass_recovered += 1
+                    else:
+                        refreshed_errors.append((product_url, second.error or first_error))
 
-            if second_pass_recovered > 0:
-                warnings.append(f"Второй проход восстановил товаров: {second_pass_recovered}")
+                final_errors = refreshed_errors
 
-        products_fetch_attempted = len(fetch_targets)
-        products_fetch_failed = len(errors_by_url)
-        products_fetch_succeeded = products_fetch_attempted - products_fetch_failed
+        previews = cls._dedupe_and_keep_ordered_previews(target_urls=target_urls, previews=previews)
 
-        ordered_previews: list[ShopifyProductPreview] = []
-        for product_url in fetch_targets:
-            preview = previews_by_url.get(product_url)
-            if preview is None:
-                continue
-            ordered_previews.append(preview)
-            if len(ordered_previews) >= response_products_limit:
-                break
-
-        if fetch_all_products and len(fetch_targets) > response_products_limit:
+        if len(previews) > response_products_limit:
             warnings.append(f"Список previews обрезан до response_products_limit={response_products_limit}")
+            previews = previews[:response_products_limit]
 
-        if products_fetch_failed > 0:
+        if final_errors:
+            for product_url, error in final_errors[:20]:
+                warnings.append(f"Ошибка чтения карточки {product_url}: {error}")
+            if len(final_errors) > 20:
+                warnings.append(
+                    f"Подробные предупреждения обрезаны: показано 20 из {len(final_errors)} ошибок чтения"
+                )
+        else:
+            if fetch_all_products and fetch_attempted:
+                warnings.append("Полный обход: все найденные карточки успешно прочитаны")
+
+        if second_pass_attempted:
             warnings.append(
-                f"Есть ошибки чтения карточек: {products_fetch_failed} из {products_fetch_attempted}"
+                f"Второй проход: повторно проверено {second_pass_attempted}, "
+                f"восстановлено {second_pass_recovered}"
             )
 
-        if http_429_count > 0:
-            warnings.append(f"Источник вернул HTTP 429: {http_429_count} раз")
+        products_fetch_succeeded = fetch_attempted - len(final_errors)
+        products_fetch_failed = len(final_errors)
 
-        if http_5xx_count > 0:
-            warnings.append(f"Источник вернул HTTP 5xx: {http_5xx_count} раз")
-
-        if fetch_all_products and products_fetch_failed == 0:
-            warnings.append("Полный обход: все найденные карточки успешно прочитаны")
-
-        if not fetch_all_products and products_fetch_succeeded == 0:
-            warnings.append("Sample-режим: не удалось получить ни одну карточку")
-
-        if not warnings:
-            warnings.append("Диагностика выполнена без предупреждений")
-
-        if len(discovery_flags) == 0:
-            discovery_mode = "unknown"
-        elif len(discovery_flags) == 1:
-            discovery_mode = discovery_flags[0]
-        else:
-            discovery_mode = "mixed_discovery"
-
-        error_details = list(errors_by_url.values())
+        error_details = [f"{url} -> {error}" for url, error in final_errors]
         if not error_details:
             error_details = ["Детальных ошибок не зафиксировано"]
+        elif len(error_details) > error_details_limit:
+            warnings.append(f"Список error_details обрезан до {error_details_limit}")
+            error_details = error_details[:error_details_limit]
+
+        if fetch_all_products and products_fetch_failed:
+            warnings.append(
+                f"Есть ошибки чтения карточек: {products_fetch_failed} из {fetch_attempted}"
+            )
 
         return ShopifyDiscoveryResult(
-            base_url=normalized_base_url,
+            base_url=resolved_base_url,
             sitemap_url=sitemap_url,
             discovery_mode=discovery_mode,
-            product_sitemaps_found=len(product_sitemap_urls),
-            product_urls_found=len(product_urls),
-            requested_previews=requested_previews,
-            products_fetch_attempted=products_fetch_attempted,
+            product_sitemaps_found=product_sitemaps_found,
+            product_urls_found=len(discovered_urls),
+            requested_previews=fetch_attempted,
+            products_fetch_attempted=fetch_attempted,
             products_fetch_succeeded=products_fetch_succeeded,
             products_fetch_failed=products_fetch_failed,
             http_429_count=http_429_count,
             http_5xx_count=http_5xx_count,
             second_pass_attempted=second_pass_attempted,
             second_pass_recovered=second_pass_recovered,
-            warnings=warnings[:MAX_WARNING_ITEMS],
-            error_details=error_details[:error_details_limit],
-            previews=ordered_previews,
+            warnings=warnings,
+            error_details=error_details,
+            previews=previews,
         )
 
-    @staticmethod
-    def _fetch_products_batch(
+    @classmethod
+    def _fetch_many_product_previews(
+        cls,
         *,
-        client: httpx.Client,
-        product_urls: list[str],
         base_url: str,
+        product_urls: list[str],
+        payload_cache: dict[str, dict[str, Any]],
+        timeout_sec: float,
         parallel_workers: int,
         max_retries: int,
         retry_backoff_sec: float,
-    ) -> BatchFetchResult:
-        """Fetch products in batch with optional parallel workers."""
-        previews_by_url: dict[str, ShopifyProductPreview] = {}
-        errors_by_url: dict[str, str] = {}
-        warnings: list[str] = []
-        http_429_count = 0
-        http_5xx_count = 0
+    ) -> list[_FetchOutcome]:
+        if not product_urls:
+            return []
 
-        def run_one(url: str) -> ProductFetchResult:
-            return ShopifyParser._fetch_one_product(
-                client=client,
-                base_url=base_url,
-                product_url=url,
-                max_retries=max_retries,
-                retry_backoff_sec=retry_backoff_sec,
-            )
-
-        if parallel_workers <= 1:
-            for product_url in product_urls:
-                result = run_one(product_url)
-                ShopifyParser._merge_product_result(
-                    result=result,
-                    previews_by_url=previews_by_url,
-                    errors_by_url=errors_by_url,
-                    warnings=warnings,
+        if parallel_workers <= 1 or len(product_urls) <= 1:
+            return [
+                cls._fetch_one_product_preview(
+                    base_url=base_url,
+                    product_url=product_url,
+                    cached_payload=payload_cache.get(product_url),
+                    timeout_sec=timeout_sec,
+                    max_retries=max_retries,
+                    retry_backoff_sec=retry_backoff_sec,
                 )
-                http_429_count += result.http_429_count
-                http_5xx_count += result.http_5xx_count
-        else:
-            with ThreadPoolExecutor(max_workers=parallel_workers) as executor:
-                futures = {executor.submit(run_one, product_url): product_url for product_url in product_urls}
-                for future in as_completed(futures):
-                    result = future.result()
-                    ShopifyParser._merge_product_result(
-                        result=result,
-                        previews_by_url=previews_by_url,
-                        errors_by_url=errors_by_url,
-                        warnings=warnings,
+                for product_url in product_urls
+            ]
+
+        results: list[_FetchOutcome] = []
+        workers = max(1, min(parallel_workers, len(product_urls)))
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {
+                pool.submit(
+                    cls._fetch_one_product_preview,
+                    base_url=base_url,
+                    product_url=product_url,
+                    cached_payload=payload_cache.get(product_url),
+                    timeout_sec=timeout_sec,
+                    max_retries=max_retries,
+                    retry_backoff_sec=retry_backoff_sec,
+                ): product_url
+                for product_url in product_urls
+            }
+            for future in as_completed(futures):
+                product_url = futures[future]
+                try:
+                    results.append(future.result())
+                except Exception as exc:  # pragma: no cover - defensive fallback
+                    LOGGER.exception("Shopify worker failed for %s", product_url)
+                    results.append(
+                        _FetchOutcome(
+                            product_url=product_url,
+                            preview=None,
+                            error=f"worker_exception: {exc}",
+                            http_429_count=0,
+                            http_5xx_count=0,
+                        )
                     )
-                    http_429_count += result.http_429_count
-                    http_5xx_count += result.http_5xx_count
+        return results
 
-        return BatchFetchResult(
-            previews_by_url=previews_by_url,
-            errors_by_url=errors_by_url,
-            warnings=warnings,
-            http_429_count=http_429_count,
-            http_5xx_count=http_5xx_count,
-        )
-
-    @staticmethod
-    def _merge_product_result(
+    @classmethod
+    def _fetch_one_product_preview(
+        cls,
         *,
-        result: ProductFetchResult,
-        previews_by_url: dict[str, ShopifyProductPreview],
-        errors_by_url: dict[str, str],
-        warnings: list[str],
-    ) -> None:
-        """Merge one product fetch result into aggregations."""
-        warnings.extend(result.warnings)
-        if result.preview is not None:
-            previews_by_url[result.product_url] = result.preview
-            errors_by_url.pop(result.product_url, None)
-            return
-
-        if result.error_detail:
-            errors_by_url[result.product_url] = result.error_detail
-        else:
-            errors_by_url[result.product_url] = f"{result.product_url} -> неизвестная ошибка загрузки"
-
-    @staticmethod
-    def _fetch_one_product(
-        *,
-        client: httpx.Client,
         base_url: str,
         product_url: str,
+        cached_payload: dict[str, Any] | None,
+        timeout_sec: float,
         max_retries: int,
         retry_backoff_sec: float,
-    ) -> ProductFetchResult:
-        """Fetch one product by URL and parse product preview."""
-        handle = ShopifyParser.extract_handle(product_url)
+    ) -> _FetchOutcome:
+        handle = cls._extract_handle(product_url)
         if not handle:
-            return ProductFetchResult(
+            return _FetchOutcome(
                 product_url=product_url,
                 preview=None,
-                error_detail=f"{product_url} -> не удалось выделить handle",
-                warnings=[],
+                error="не удалось извлечь handle из URL",
                 http_429_count=0,
                 http_5xx_count=0,
             )
 
-        return ShopifyParser._load_product_preview(
-            client=client,
-            base_url=base_url,
-            product_url=product_url,
-            handle=handle,
-            max_retries=max_retries,
-            retry_backoff_sec=retry_backoff_sec,
-        )
+        if isinstance(cached_payload, dict):
+            preview = cls._build_preview(product_url, handle, cached_payload, payload_source="products_json")
+            return _FetchOutcome(
+                product_url=product_url,
+                preview=preview,
+                error=None,
+                http_429_count=0,
+                http_5xx_count=0,
+            )
 
-    @staticmethod
-    def extract_handle(product_url: str) -> str | None:
-        """Extract Shopify product handle from URL."""
-        path = urlparse(product_url).path
-        match = PRODUCT_PATH_RE.match(path.rstrip("/"))
-        if not match:
-            return None
-        handle = match.group(1).strip()
-        return handle or None
-
-    @staticmethod
-    def _safe_get_text(
-        *,
-        client: httpx.Client,
-        url: str,
-        warnings: list[str],
-        error_label: str,
-    ) -> str | None:
-        """Fetch URL text with warning-based failure strategy."""
-        try:
-            response = client.get(url)
-            if response.status_code >= 400:
-                warnings.append(f"{error_label}: HTTP {response.status_code}")
-                return None
-            return response.text
-        except httpx.RequestError as exc:
-            warnings.append(f"{error_label}: {exc!s}")
-            return None
-
-    @staticmethod
-    def _extract_product_sitemap_urls(sitemap_xml: str) -> list[str]:
-        """Extract product sitemap URLs from sitemap index XML."""
-        root = ShopifyParser._parse_xml(sitemap_xml)
-        if root is None:
-            return []
-
-        urls: list[str] = []
-        for loc in ShopifyParser._extract_loc_values(root):
-            if "product-sitemap" in loc:
-                urls.append(loc)
-        return urls
-
-    @staticmethod
-    def _extract_product_urls(product_sitemap_xml: str) -> list[str]:
-        """Extract product URLs from product sitemap XML."""
-        root = ShopifyParser._parse_xml(product_sitemap_xml)
-        if root is None:
-            return []
-
-        urls: list[str] = []
-        for loc in ShopifyParser._extract_loc_values(root):
-            if "/products/" in loc:
-                urls.append(loc)
-        return urls
-
-    @staticmethod
-    def _extract_loc_values(root: ElementTree.Element) -> list[str]:
-        """Extract <loc> values from XML tree regardless of namespace."""
-        values: list[str] = []
-        for element in root.iter():
-            if ShopifyParser._local_name(element.tag) != "loc":
-                continue
-            if element.text and element.text.strip():
-                values.append(element.text.strip())
-        return values
-
-    @staticmethod
-    def _parse_xml(raw_xml: str) -> ElementTree.Element | None:
-        """Parse XML and return root element."""
-        try:
-            return ElementTree.fromstring(raw_xml)
-        except ElementTree.ParseError:
-            return None
-
-    @staticmethod
-    def _local_name(tag: str) -> str:
-        """Return local XML tag name without namespace."""
-        if "}" not in tag:
-            return tag
-        return tag.split("}", 1)[1]
-
-    @staticmethod
-    def _discover_product_urls_by_products_api(
-        *,
-        client: httpx.Client,
-        base_url: str,
-        max_products: int,
-        warnings: list[str],
-    ) -> list[str]:
-        """Fallback discovery via /products.json with page pagination + Link pagination."""
-        discovered_urls: list[str] = []
-        page = 1
-        next_url = f"{base_url}/products.json?limit=250&page={page}"
-        max_pages = 200
-        pages_count = 0
-
-        while next_url and len(discovered_urls) < max_products and pages_count < max_pages:
-            pages_count += 1
-            try:
-                response = client.get(next_url)
-            except httpx.RequestError as exc:
-                warnings.append(f"Ошибка /products.json: {exc!s}")
-                break
-
-            if response.status_code >= 400:
-                warnings.append(f"/products.json вернул HTTP {response.status_code}")
-                break
-
-            try:
-                payload = response.json()
-            except ValueError:
-                warnings.append("/products.json вернул невалидный JSON")
-                break
-
-            products = payload.get("products", [])
-            if not isinstance(products, list):
-                warnings.append("Некорректный формат /products.json: products не является списком")
-                break
-
-            if not products:
-                break
-
-            for product in products:
-                if not isinstance(product, dict):
-                    continue
-                handle = str(product.get("handle", "")).strip()
-                if not handle:
-                    continue
-                discovered_urls.append(urljoin(f"{base_url}/", f"products/{handle}"))
-                if len(discovered_urls) >= max_products:
-                    break
-
-            next_from_link = ShopifyParser._extract_next_link(response.headers.get("Link"))
-            if next_from_link:
-                next_url = next_from_link
-                continue
-
-            page += 1
-            next_url = f"{base_url}/products.json?limit=250&page={page}"
-
-        return ShopifyParser._prepare_product_urls(
-            discovered_urls,
-            base_url=base_url,
-            max_products=max_products,
-        )
-
-    @staticmethod
-    def _discover_product_urls_by_collections_api(
-        *,
-        client: httpx.Client,
-        base_url: str,
-        max_products: int,
-        warnings: list[str],
-    ) -> list[str]:
-        """Fallback discovery via /collections/all/products.json pagination."""
-        discovered_urls: list[str] = []
-        page = 1
-        max_pages = 200
-
-        while page <= max_pages and len(discovered_urls) < max_products:
-            page_url = f"{base_url}/collections/all/products.json?limit=250&page={page}"
-            try:
-                response = client.get(page_url)
-            except httpx.RequestError as exc:
-                warnings.append(f"Ошибка /collections/all/products.json: {exc!s}")
-                break
-
-            if response.status_code >= 400:
-                warnings.append(f"/collections/all/products.json вернул HTTP {response.status_code}")
-                break
-
-            try:
-                payload = response.json()
-            except ValueError:
-                warnings.append("/collections/all/products.json вернул невалидный JSON")
-                break
-
-            products = payload.get("products", [])
-            if not isinstance(products, list):
-                warnings.append(
-                    "Некорректный формат /collections/all/products.json: products не является списком"
-                )
-                break
-
-            if not products:
-                break
-
-            for product in products:
-                if not isinstance(product, dict):
-                    continue
-                handle = str(product.get("handle", "")).strip()
-                if not handle:
-                    continue
-                discovered_urls.append(urljoin(f"{base_url}/", f"products/{handle}"))
-                if len(discovered_urls) >= max_products:
-                    break
-
-            page += 1
-
-        return ShopifyParser._prepare_product_urls(
-            discovered_urls,
-            base_url=base_url,
-            max_products=max_products,
-        )
-
-    @staticmethod
-    def _extract_next_link(link_header: str | None) -> str | None:
-        """Parse Link header and return URL with rel=next."""
-        if not link_header:
-            return None
-
-        for part in link_header.split(","):
-            chunk = part.strip()
-            if 'rel="next"' not in chunk:
-                continue
-            left = chunk.find("<")
-            right = chunk.find(">", left + 1)
-            if left == -1 or right == -1:
-                continue
-            return chunk[left + 1 : right].strip()
-        return None
-
-    @staticmethod
-    def _load_product_preview(
-        *,
-        client: httpx.Client,
-        base_url: str,
-        product_url: str,
-        handle: str,
-        max_retries: int,
-        retry_backoff_sec: float,
-    ) -> ProductFetchResult:
-        """Load single product preview from .js with .json fallback."""
-        js_url = f"{base_url}/products/{handle}.js"
-        json_url = f"{base_url}/products/{handle}.json"
-        warnings: list[str] = []
+        session = cls._thread_session()
         http_429_count = 0
         http_5xx_count = 0
-        payload_source = "js"
+        last_error = "нет данных"
 
-        js_payload, js_warnings, js_429, js_5xx = ShopifyParser._request_json_with_retries(
-            client=client,
-            url=js_url,
-            max_retries=max_retries,
-            retry_backoff_sec=retry_backoff_sec,
-        )
-        warnings.extend(js_warnings)
-        http_429_count += js_429
-        http_5xx_count += js_5xx
+        js_url = f"{base_url}/products/{handle}.js"
+        json_url = f"{base_url}/products/{handle}.json"
 
-        product_data: dict[str, Any] | None = None
-        if isinstance(js_payload, dict):
-            product_data = js_payload
-
-        if product_data is None:
-            payload_source = "json"
-            json_payload, json_warnings, json_429, json_5xx = ShopifyParser._request_json_with_retries(
-                client=client,
-                url=json_url,
+        for endpoint_url, payload_source in ((js_url, "js"), (json_url, "json")):
+            result = cls._request_json_or_text_with_retries(
+                session=session,
+                url=endpoint_url,
+                timeout_sec=timeout_sec,
                 max_retries=max_retries,
                 retry_backoff_sec=retry_backoff_sec,
+                expect_json=True,
             )
-            warnings.extend(json_warnings)
-            http_429_count += json_429
-            http_5xx_count += json_5xx
+            http_429_count += result.http_429_count
+            http_5xx_count += result.http_5xx_count
 
-            if not isinstance(json_payload, dict):
-                return ProductFetchResult(
-                    product_url=product_url,
-                    preview=None,
-                    error_detail=f"{product_url} -> ошибка запроса .json",
-                    warnings=warnings,
-                    http_429_count=http_429_count,
-                    http_5xx_count=http_5xx_count,
-                )
+            if result.error:
+                last_error = f"ошибка запроса .{payload_source}: {result.error}"
+                continue
+            payload = result.payload
 
-            raw_product = json_payload.get("product")
-            if not isinstance(raw_product, dict):
-                return ProductFetchResult(
-                    product_url=product_url,
-                    preview=None,
-                    error_detail=f"{product_url} -> объект product отсутствует в .json",
-                    warnings=warnings,
-                    http_429_count=http_429_count,
-                    http_5xx_count=http_5xx_count,
-                )
-            product_data = raw_product
+            if payload_source == "json" and isinstance(payload, dict) and isinstance(payload.get("product"), dict):
+                payload = payload["product"]
 
-        variants = product_data.get("variants", [])
-        first_variant = variants[0] if isinstance(variants, list) and variants else {}
-        if not isinstance(first_variant, dict):
-            first_variant = {}
+            if not isinstance(payload, dict):
+                last_error = f"некорректный payload .{payload_source}"
+                continue
 
-        preview = ShopifyProductPreview(
+            preview = cls._build_preview(product_url, handle, payload, payload_source=payload_source)
+            return _FetchOutcome(
+                product_url=product_url,
+                preview=preview,
+                error=None,
+                http_429_count=http_429_count,
+                http_5xx_count=http_5xx_count,
+            )
+
+        return _FetchOutcome(
             product_url=product_url,
-            handle=handle,
-            product_id=str(product_data.get("id")) if product_data.get("id") is not None else None,
-            title=ShopifyParser._to_optional_str(product_data.get("title")),
-            vendor=ShopifyParser._to_optional_str(product_data.get("vendor")),
-            price=ShopifyParser._to_decimal_string(first_variant.get("price")),
-            currency=ShopifyParser._extract_currency(first_variant),
-            payload_source=payload_source,
-        )
-
-        return ProductFetchResult(
-            product_url=product_url,
-            preview=preview,
-            error_detail=None,
-            warnings=warnings,
+            preview=None,
+            error=last_error,
             http_429_count=http_429_count,
             http_5xx_count=http_5xx_count,
         )
 
-    @staticmethod
-    def _request_json_with_retries(
+    @classmethod
+    def _request_json_or_text_with_retries(
+        cls,
         *,
-        client: httpx.Client,
+        session: requests.Session,
         url: str,
+        timeout_sec: float,
         max_retries: int,
         retry_backoff_sec: float,
-    ) -> tuple[dict[str, Any] | list[Any] | None, list[str], int, int]:
-        """Request JSON endpoint with retries for transient failures."""
-        warnings: list[str] = []
+        expect_json: bool,
+    ) -> _RequestResult:
         http_429_count = 0
         http_5xx_count = 0
+        last_error: str | None = None
+        headers: dict[str, str] = {}
+        status_code: int | None = None
 
         for attempt in range(max_retries + 1):
             try:
-                response = client.get(url)
-            except httpx.RequestError as exc:
-                warnings.append(f"Ошибка чтения {url}: {exc!s}")
+                response = session.get(url, timeout=timeout_sec, allow_redirects=True)
+            except requests.RequestException as exc:
+                last_error = str(exc)
                 if attempt < max_retries:
-                    sleep(retry_backoff_sec * (2**attempt))
+                    cls._sleep_backoff(attempt, retry_backoff_sec)
                     continue
-                return None, warnings, http_429_count, http_5xx_count
+                return _RequestResult(
+                    payload=None,
+                    status_code=None,
+                    error=last_error,
+                    headers={},
+                    http_429_count=http_429_count,
+                    http_5xx_count=http_5xx_count,
+                )
 
-            status = response.status_code
-            if status >= 400:
-                if status == 429:
-                    http_429_count += 1
-                if 500 <= status <= 599:
-                    http_5xx_count += 1
+            headers = dict(response.headers)
+            status_code = response.status_code
 
-                warnings.append(f"Не удалось получить {url}: HTTP {status}")
-                if attempt < max_retries and (status in RETRIABLE_STATUS_CODES or 500 <= status <= 599):
-                    sleep(retry_backoff_sec * (2**attempt))
-                    continue
-                return None, warnings, http_429_count, http_5xx_count
-
-            try:
-                payload = response.json()
-            except ValueError:
-                warnings.append(f"Некорректный JSON в {url}")
+            if status_code == 429:
+                http_429_count += 1
+                last_error = "HTTP 429"
                 if attempt < max_retries:
-                    sleep(retry_backoff_sec * (2**attempt))
+                    cls._sleep_backoff(attempt, max(retry_backoff_sec, 0.5))
                     continue
-                return None, warnings, http_429_count, http_5xx_count
+                break
+            if 500 <= status_code < 600:
+                http_5xx_count += 1
+                last_error = f"HTTP {status_code}"
+                if attempt < max_retries:
+                    cls._sleep_backoff(attempt, retry_backoff_sec)
+                    continue
+                break
+            if status_code >= 400:
+                last_error = f"HTTP {status_code}"
+                break
 
-            return payload, warnings, http_429_count, http_5xx_count
+            if expect_json:
+                try:
+                    payload = response.json()
+                except ValueError:
+                    last_error = "ответ не является JSON"
+                    if attempt < max_retries:
+                        cls._sleep_backoff(attempt, retry_backoff_sec)
+                        continue
+                    break
+                return _RequestResult(
+                    payload=payload,
+                    status_code=status_code,
+                    error=None,
+                    headers=headers,
+                    http_429_count=http_429_count,
+                    http_5xx_count=http_5xx_count,
+                )
 
-        return None, warnings, http_429_count, http_5xx_count
+            return _RequestResult(
+                payload=response.text,
+                status_code=status_code,
+                error=None,
+                headers=headers,
+                http_429_count=http_429_count,
+                http_5xx_count=http_5xx_count,
+            )
 
-    @staticmethod
-    def _prepare_product_urls(values: list[str], *, base_url: str, max_products: int) -> list[str]:
-        """Normalize, filter and deduplicate product URLs."""
-        normalized: list[str] = []
-        for raw_url in values:
-            normalized_url = ShopifyParser._normalize_product_url(raw_url, base_url=base_url)
-            if not normalized_url:
+        return _RequestResult(
+            payload=None,
+            status_code=status_code,
+            error=last_error or "неизвестная ошибка",
+            headers=headers,
+            http_429_count=http_429_count,
+            http_5xx_count=http_5xx_count,
+        )
+
+    @classmethod
+    def _discover_products_json(
+        cls,
+        *,
+        session: requests.Session,
+        base_url: str,
+        max_products: int,
+        timeout_sec: float,
+        max_retries: int,
+        retry_backoff_sec: float,
+    ) -> tuple[list[str], dict[str, dict[str, Any]], list[str]]:
+        urls, payloads, warnings = cls._discover_products_json_since_id(
+            session=session,
+            base_url=base_url,
+            max_products=max_products,
+            timeout_sec=timeout_sec,
+            max_retries=max_retries,
+            retry_backoff_sec=retry_backoff_sec,
+        )
+        if urls:
+            return urls, payloads, warnings
+
+        page_urls, page_payloads, page_warnings = cls._discover_products_json_page(
+            session=session,
+            base_url=base_url,
+            max_products=max_products,
+            timeout_sec=timeout_sec,
+            max_retries=max_retries,
+            retry_backoff_sec=retry_backoff_sec,
+        )
+        warnings.extend(page_warnings)
+        return page_urls, page_payloads, warnings
+
+    @classmethod
+    def _discover_products_json_since_id(
+        cls,
+        *,
+        session: requests.Session,
+        base_url: str,
+        max_products: int,
+        timeout_sec: float,
+        max_retries: int,
+        retry_backoff_sec: float,
+    ) -> tuple[list[str], dict[str, dict[str, Any]], list[str]]:
+        warnings: list[str] = []
+        urls: list[str] = []
+        url_set: set[str] = set()
+        payloads: dict[str, dict[str, Any]] = {}
+
+        since_id = 0
+        safety_limit = 2000
+
+        for _ in range(safety_limit):
+            if len(urls) >= max_products:
+                break
+            request_url = f"{base_url}/products.json?limit=250"
+            if since_id > 0:
+                request_url = f"{request_url}&since_id={since_id}"
+
+            result = cls._request_json_or_text_with_retries(
+                session=session,
+                url=request_url,
+                timeout_sec=timeout_sec,
+                max_retries=max_retries,
+                retry_backoff_sec=retry_backoff_sec,
+                expect_json=True,
+            )
+            if result.error:
+                warnings.append(f"products.json(since_id) недоступен: {result.error}")
+                break
+
+            products = cls._extract_products_list(result.payload)
+            if not products:
+                break
+
+            max_id_on_page = since_id
+            added_on_page = 0
+
+            for product in products:
+                handle = cls._safe_str(product.get("handle"))
+                if not handle:
+                    continue
+                product_url = cls._normalize_product_url(f"{base_url}/products/{handle}", base_url)
+                if not product_url:
+                    continue
+
+                if cls._append_discovered_url(
+                    product_url,
+                    discovered_urls=urls,
+                    discovered_set=url_set,
+                    max_products=max_products,
+                ):
+                    payloads[product_url] = product
+                    added_on_page += 1
+
+                product_id = cls._safe_int(product.get("id"))
+                if product_id and product_id > max_id_on_page:
+                    max_id_on_page = product_id
+
+            if len(products) < 250:
+                break
+            if max_id_on_page <= since_id:
+                warnings.append("products.json(since_id) остановлен: курсор не растет")
+                break
+            if added_on_page == 0:
+                warnings.append("products.json(since_id) остановлен: страница без новых товаров")
+                break
+
+            since_id = max_id_on_page
+
+        return urls, payloads, warnings
+
+    @classmethod
+    def _discover_products_json_page(
+        cls,
+        *,
+        session: requests.Session,
+        base_url: str,
+        max_products: int,
+        timeout_sec: float,
+        max_retries: int,
+        retry_backoff_sec: float,
+    ) -> tuple[list[str], dict[str, dict[str, Any]], list[str]]:
+        warnings: list[str] = []
+        urls: list[str] = []
+        url_set: set[str] = set()
+        payloads: dict[str, dict[str, Any]] = {}
+
+        page = 1
+        repeated_first_product_counter = 0
+        last_first_product_id: int | None = None
+        safety_limit = 2000
+
+        for _ in range(safety_limit):
+            if len(urls) >= max_products:
+                break
+            request_url = f"{base_url}/products.json?limit=250&page={page}"
+            result = cls._request_json_or_text_with_retries(
+                session=session,
+                url=request_url,
+                timeout_sec=timeout_sec,
+                max_retries=max_retries,
+                retry_backoff_sec=retry_backoff_sec,
+                expect_json=True,
+            )
+            if result.error:
+                warnings.append(f"products.json(page) остановлен на page={page}: {result.error}")
+                break
+
+            products = cls._extract_products_list(result.payload)
+            if not products:
+                break
+
+            first_product_id = cls._safe_int(products[0].get("id"))
+            if first_product_id is not None and first_product_id == last_first_product_id:
+                repeated_first_product_counter += 1
+            else:
+                repeated_first_product_counter = 0
+            last_first_product_id = first_product_id
+
+            if repeated_first_product_counter >= 2:
+                warnings.append("products.json(page) остановлен: магазин повторяет одну и ту же страницу")
+                break
+
+            for product in products:
+                handle = cls._safe_str(product.get("handle"))
+                if not handle:
+                    continue
+                product_url = cls._normalize_product_url(f"{base_url}/products/{handle}", base_url)
+                if not product_url:
+                    continue
+                if cls._append_discovered_url(
+                    product_url,
+                    discovered_urls=urls,
+                    discovered_set=url_set,
+                    max_products=max_products,
+                ):
+                    payloads[product_url] = product
+
+            if len(products) < 250:
+                break
+            page += 1
+
+        return urls, payloads, warnings
+
+    @classmethod
+    def _discover_collections_all_products(
+        cls,
+        *,
+        session: requests.Session,
+        base_url: str,
+        max_products: int,
+        timeout_sec: float,
+        max_retries: int,
+        retry_backoff_sec: float,
+    ) -> tuple[list[str], dict[str, dict[str, Any]], list[str]]:
+        warnings: list[str] = []
+        urls: list[str] = []
+        url_set: set[str] = set()
+        payloads: dict[str, dict[str, Any]] = {}
+
+        page = 1
+        safety_limit = 300
+
+        for _ in range(safety_limit):
+            if len(urls) >= max_products:
+                break
+            request_url = f"{base_url}/collections/all/products.json?limit=250&page={page}"
+            result = cls._request_json_or_text_with_retries(
+                session=session,
+                url=request_url,
+                timeout_sec=timeout_sec,
+                max_retries=max_retries,
+                retry_backoff_sec=retry_backoff_sec,
+                expect_json=True,
+            )
+            if result.error:
+                if page == 1:
+                    warnings.append(f"collections/all/products.json недоступен: {result.error}")
+                break
+
+            products = cls._extract_products_list(result.payload)
+            if not products:
+                break
+
+            for product in products:
+                handle = cls._safe_str(product.get("handle"))
+                if not handle:
+                    continue
+                product_url = cls._normalize_product_url(f"{base_url}/products/{handle}", base_url)
+                if not product_url:
+                    continue
+                if cls._append_discovered_url(
+                    product_url,
+                    discovered_urls=urls,
+                    discovered_set=url_set,
+                    max_products=max_products,
+                ):
+                    payloads[product_url] = product
+
+            if len(products) < 250:
+                break
+            page += 1
+
+        return urls, payloads, warnings
+
+    @classmethod
+    def _parse_sitemap(cls, xml_text: str) -> tuple[list[str], list[str]]:
+        try:
+            root = ET.fromstring(xml_text)
+        except ET.ParseError:
+            return [], []
+
+        root_name = cls._xml_local_name(root.tag)
+        loc_urls = cls._extract_loc_urls(xml_text)
+        if not loc_urls:
+            return [], []
+
+        if root_name == "sitemapindex":
+            product_sitemaps = [url for url in loc_urls if cls._is_product_sitemap_url(url)]
+            return product_sitemaps, []
+        if root_name == "urlset":
+            return [], loc_urls
+
+        product_sitemaps = [url for url in loc_urls if cls._is_product_sitemap_url(url)]
+        direct_product_urls = [url for url in loc_urls if "/products/" in url.lower()]
+        return product_sitemaps, direct_product_urls
+
+    @classmethod
+    def _extract_loc_urls(cls, xml_text: str) -> list[str]:
+        """Extract top-level <loc> elements from XML sitemap.
+        
+        Important: Only extracts direct <url><loc> elements, not nested ones like
+        <url><image:image><image:loc> to avoid including image URLs.
+        """
+        try:
+            root = ET.fromstring(xml_text)
+        except ET.ParseError:
+            return []
+
+        loc_urls: list[str] = []
+        
+        # Only iterate <url> elements (not all elements)
+        for url_elem in root.iter():
+            if cls._xml_local_name(url_elem.tag) != "url":
                 continue
-            if not ShopifyParser._is_valid_product_url(normalized_url):
-                continue
-            normalized.append(normalized_url)
-        return ShopifyParser._dedupe_and_limit(normalized, max_items=max_products)
+            
+            # Find direct <loc> child of this <url>
+            for child in url_elem:
+                if cls._xml_local_name(child.tag) != "loc":
+                    continue
+                if not child.text:
+                    continue
+                value = child.text.strip()
+                if value:
+                    loc_urls.append(value)
+                break  # Only one <loc> per <url>
+        
+        return loc_urls
 
-    @staticmethod
-    def _normalize_product_url(raw_url: str, *, base_url: str) -> str | None:
-        """Normalize product URL and strip query/fragment."""
-        raw = str(raw_url).strip()
+    @classmethod
+    def _build_preview(
+        cls,
+        product_url: str,
+        handle: str,
+        payload: dict[str, Any],
+        *,
+        payload_source: str,
+    ) -> ShopifyProductPreview:
+        product_id = cls._safe_str(payload.get("id"))
+        title = cls._safe_str(payload.get("title"))
+        vendor = cls._safe_str(payload.get("vendor"))
+        price = cls._extract_price(payload)
+        currency = cls._extract_currency(payload)
+        return ShopifyProductPreview(
+            product_url=product_url,
+            handle=handle,
+            product_id=product_id,
+            title=title,
+            vendor=vendor,
+            price=price,
+            currency=currency,
+            payload_source=payload_source,
+        )
+
+    @classmethod
+    def _extract_price(cls, payload: dict[str, Any]) -> str | None:
+        variants = payload.get("variants")
+        if isinstance(variants, list):
+            for variant in variants:
+                if not isinstance(variant, dict):
+                    continue
+                price = cls._safe_str(variant.get("price"))
+                if price is not None:
+                    return price
+        return cls._safe_str(payload.get("price"))
+
+    @classmethod
+    def _extract_currency(cls, payload: dict[str, Any]) -> str | None:
+        variants = payload.get("variants")
+        if isinstance(variants, list):
+            for variant in variants:
+                if not isinstance(variant, dict):
+                    continue
+                currency = cls._safe_str(variant.get("currency"))
+                if currency is not None:
+                    return currency
+        return cls._safe_str(payload.get("currency"))
+
+    @classmethod
+    def _extract_products_list(cls, payload: Any) -> list[dict[str, Any]]:
+        if not isinstance(payload, dict):
+            return []
+        products = payload.get("products")
+        if not isinstance(products, list):
+            return []
+        return [item for item in products if isinstance(item, dict)]
+
+    @classmethod
+    def _normalize_base_url(cls, base_url: str) -> str:
+        raw = base_url.strip()
         if not raw:
-            return None
-        absolute = urljoin(f"{base_url}/", raw)
-        parsed = urlparse(absolute)
+            raise ValidationError("Пустой base_url")
+        if "://" not in raw:
+            raw = f"https://{raw}"
+
+        parsed = urlparse(raw)
         if not parsed.netloc:
+            parsed = urlparse(f"https://{raw}")
+
+        if not parsed.netloc:
+            raise ValidationError(f"Некорректный base_url: {base_url}")
+
+        scheme = parsed.scheme if parsed.scheme in {"http", "https"} else "https"
+        normalized = urlunparse((scheme, parsed.netloc.lower(), "", "", "", ""))
+        return normalized.rstrip("/")
+
+    @classmethod
+    def _normalize_product_url(cls, raw_url: str, base_url: str) -> str | None:
+        candidate = raw_url.strip()
+        if not candidate:
             return None
-        clean = parsed._replace(query="", fragment="")
-        return urlunparse(clean)
 
-    @staticmethod
-    def _is_valid_product_url(url: str) -> bool:
-        """Check that URL points to /products/{handle} without extra path segments."""
-        parsed = urlparse(url)
-        path = parsed.path.rstrip("/")
-        return bool(PRODUCT_PATH_RE.match(path))
+        absolute = urljoin(f"{base_url}/", candidate)
+        parsed = urlparse(absolute)
+        handle = cls._extract_handle_from_path(parsed.path)
+        if not handle:
+            return None
 
-    @staticmethod
-    def _extract_currency(variant: dict[str, Any]) -> str | None:
-        """Extract variant currency from several known Shopify payload shapes."""
-        for key in ("price_currency", "currency", "currency_code"):
-            value = ShopifyParser._to_optional_str(variant.get(key))
-            if value:
-                return value
+        return f"{base_url}/products/{handle}"
 
-        presentment_prices = variant.get("presentment_prices")
-        if isinstance(presentment_prices, list):
-            for item in presentment_prices:
-                if not isinstance(item, dict):
-                    continue
-                price_block = item.get("price")
-                if not isinstance(price_block, dict):
-                    continue
-                currency_code = ShopifyParser._to_optional_str(price_block.get("currency_code"))
-                if currency_code:
-                    return currency_code
+    @classmethod
+    def _extract_handle(cls, product_url: str) -> str | None:
+        parsed = urlparse(product_url)
+        return cls._extract_handle_from_path(parsed.path)
+
+    @classmethod
+    def _extract_handle_from_path(cls, path: str) -> str | None:
+        segments = [segment for segment in path.split("/") if segment]
+        if not segments:
+            return None
+        for index, segment in enumerate(segments):
+            if segment != "products":
+                continue
+            if index + 1 >= len(segments):
+                return None
+            handle = unquote(segments[index + 1]).strip()
+            if handle.endswith(".js"):
+                handle = handle[:-3]
+            if handle.endswith(".json"):
+                handle = handle[:-5]
+            return handle or None
         return None
 
-    @staticmethod
-    def _to_decimal_string(raw_value: Any) -> str | None:
-        """Convert incoming numeric/string value to normalized decimal string."""
-        if raw_value is None:
+    @classmethod
+    def _resolve_discovery_mode(cls, *, from_sitemap: bool, from_fallback: bool) -> str:
+        if from_sitemap and from_fallback:
+            return "mixed_discovery"
+        if from_sitemap:
+            return "sitemap_only"
+        if from_fallback:
+            return "api_fallback_only"
+        return "empty_discovery"
+
+    @classmethod
+    def _count_product_sitemaps(cls, *, sitemap_result_payload: Any) -> int:
+        if not isinstance(sitemap_result_payload, str):
+            return 0
+        product_sitemaps, _ = cls._parse_sitemap(sitemap_result_payload)
+        return len(product_sitemaps)
+
+    @classmethod
+    def _is_product_sitemap_url(cls, url: str) -> bool:
+        return bool(_PRODUCT_SITEMAP_RE.search(url))
+
+    @classmethod
+    def _append_discovered_url(
+        cls,
+        product_url: str,
+        *,
+        discovered_urls: list[str],
+        discovered_set: set[str],
+        max_products: int,
+    ) -> bool:
+        if len(discovered_urls) >= max_products:
+            return False
+        if product_url in discovered_set:
+            return False
+        discovered_set.add(product_url)
+        discovered_urls.append(product_url)
+        return True
+
+    @classmethod
+    def _dedupe_and_keep_ordered_previews(
+        cls,
+        *,
+        target_urls: list[str],
+        previews: list[ShopifyProductPreview],
+    ) -> list[ShopifyProductPreview]:
+        by_url: dict[str, ShopifyProductPreview] = {}
+        for preview in previews:
+            by_url[preview.product_url] = preview
+        ordered: list[ShopifyProductPreview] = []
+        for url in target_urls:
+            preview = by_url.get(url)
+            if preview:
+                ordered.append(preview)
+        return ordered
+
+    @classmethod
+    def _thread_session(cls) -> requests.Session:
+        session = getattr(cls._thread_local, "session", None)
+        if session is None:
+            session = requests.Session()
+            session.headers.update(_DEFAULT_HEADERS)
+            cls._thread_local.session = session
+        return session
+
+    @classmethod
+    def _sleep_backoff(cls, attempt: int, backoff: float) -> None:
+        delay = max(0.0, backoff) * (2**attempt)
+        if delay > 0:
+            time.sleep(delay)
+
+    @classmethod
+    def _xml_local_name(cls, tag: str) -> str:
+        if "}" in tag:
+            return tag.split("}", 1)[1]
+        return tag
+
+    @classmethod
+    def _safe_str(cls, value: Any) -> str | None:
+        if value is None:
             return None
-        raw_text = str(raw_value).strip()
-        if not raw_text:
+        text = str(value).strip()
+        return text if text else None
+
+    @classmethod
+    def _safe_int(cls, value: Any) -> int | None:
+        if value is None:
             return None
         try:
-            value = Decimal(raw_text)
-        except InvalidOperation:
+            return int(value)
+        except (TypeError, ValueError):
             return None
-        return f"{value:.2f}"
 
-    @staticmethod
-    def _to_optional_str(raw_value: Any) -> str | None:
-        """Convert value to stripped string or None."""
-        if raw_value is None:
+    @classmethod
+    def _extract_page_info_from_link_header(cls, link_header: str | None) -> str | None:
+        if not link_header:
             return None
-        text = str(raw_value).strip()
-        return text or None
-
-    @staticmethod
-    def _dedupe_and_limit(values: list[str], *, max_items: int) -> list[str]:
-        """Deduplicate list preserving input order and apply max_items limit."""
-        deduped = list(dict.fromkeys(values))
-        return deduped[:max_items]
+        parts = [item.strip() for item in link_header.split(",") if item.strip()]
+        for part in parts:
+            if 'rel="next"' not in part:
+                continue
+            start = part.find("<")
+            end = part.find(">", start + 1)
+            if start == -1 or end == -1:
+                continue
+            next_url = part[start + 1 : end]
+            query = parse_qs(urlparse(next_url).query)
+            values = query.get("page_info")
+            if values:
+                token = values[0].strip()
+                if token:
+                    return token
+        return None

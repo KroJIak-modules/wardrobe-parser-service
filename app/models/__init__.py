@@ -1,4 +1,33 @@
 from app.models.product import Product
 from app.models.site import Site
+from app.models.parser import (
+    ParserSource,
+    ParserJob,
+    ParserJobSourceRun,
+    ParserProduct,
+    ParserProductFingerprint,
+    ParserProductDelta,
+    ImageAsset,
+    JobStatus,
+    SourceRunStatus,
+    DeltaType,
+    ProductStatus,
+)
+from app.core.database import Base
 
-__all__ = ["Product", "Site"]
+__all__ = [
+    "Product",
+    "Site",
+    "Base",
+    "ParserSource",
+    "ParserJob",
+    "ParserJobSourceRun",
+    "ParserProduct",
+    "ParserProductFingerprint",
+    "ParserProductDelta",
+    "ImageAsset",
+    "JobStatus",
+    "SourceRunStatus",
+    "DeltaType",
+    "ProductStatus",
+]
