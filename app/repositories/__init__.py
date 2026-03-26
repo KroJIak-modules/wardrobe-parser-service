@@ -13,6 +13,7 @@ from app.repositories.parser_category import (
     ParserCategoryRepository,
     ParserCategoryKeywordRepository,
 )
+from app.repositories.parser_dedup import ParserDedupDecisionRepository
 
 __all__ = [
     "BaseRepository",
@@ -22,4 +23,5 @@ __all__ = [
     "ParserProductFingerprintRepository",
     "ParserCategoryRepository",
     "ParserCategoryKeywordRepository",
+    "ParserDedupDecisionRepository",
 ]

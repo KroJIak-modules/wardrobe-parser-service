@@ -63,6 +63,13 @@ class ProductStatus(str, Enum):
     DISCONTINUED = "discontinued"
 
 
+class DedupAction(str, Enum):
+    """Moderator decision for duplicate candidate."""
+
+    MERGE = "merge"
+    REJECT = "reject"
+
+
 class ParserSource(Base):
     """Parser source (e.g., Shopify store)."""
     __tablename__ = "parser_source"
@@ -276,4 +283,26 @@ class ImageAsset(Base):
     __table_args__ = (
         Index("idx_image_asset_storage_mode", "storage_mode"),
         Index("idx_image_asset_deleted_at", "deleted_at"),
+    )
+
+
+class ParserDedupDecision(Base):
+    """Stored moderator decision for a pair of products."""
+
+    __tablename__ = "parser_dedup_decision"
+
+    id = Column(Integer, primary_key=True)
+    pair_key = Column(String(64), nullable=False, unique=True)
+    left_product_id = Column(Integer, ForeignKey("parser_product.id"), nullable=False)
+    right_product_id = Column(Integer, ForeignKey("parser_product.id"), nullable=False)
+    action = Column(String(20), nullable=False)
+    merged_into_product_id = Column(Integer, ForeignKey("parser_product.id"), nullable=True)
+
+    decided_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        Index("idx_parser_dedup_decision_action", "action"),
+        Index("idx_parser_dedup_decision_left", "left_product_id"),
+        Index("idx_parser_dedup_decision_right", "right_product_id"),
     )

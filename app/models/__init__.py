@@ -8,10 +8,12 @@ from app.models.parser import (
     ParserProductFingerprint,
     ParserProductDelta,
     ImageAsset,
+    ParserDedupDecision,
     JobStatus,
     SourceRunStatus,
     DeltaType,
     ProductStatus,
+    DedupAction,
 )
 from app.models.category import ParserCategory, ParserCategoryKeyword
 from app.core.database import Base
@@ -27,10 +29,12 @@ __all__ = [
     "ParserProductFingerprint",
     "ParserProductDelta",
     "ImageAsset",
+    "ParserDedupDecision",
     "JobStatus",
     "SourceRunStatus",
     "DeltaType",
     "ProductStatus",
+    "DedupAction",
     "ParserCategory",
     "ParserCategoryKeyword",
 ]

@@ -162,6 +162,38 @@ class CategoryTreeNodeResponse(BaseModel):
         from_attributes = True
 
 
+class DedupCandidateResponse(BaseModel):
+    """One duplicate candidate pair for moderation UI."""
+
+    pair_key: str
+    score: float
+    reasons: list[str] = Field(default_factory=list)
+    left: ProductResponse
+    right: ProductResponse
+
+
+class DedupCandidateListResponse(BaseModel):
+    """Paginated dedup candidate list."""
+
+    items: list[DedupCandidateResponse]
+    total: int
+    limit: int
+
+
+class DedupMergeRequest(BaseModel):
+    """Request to merge duplicate pair."""
+
+    primary_product_id: int
+    duplicate_product_id: int
+
+
+class DedupRejectRequest(BaseModel):
+    """Request to mark pair as non-duplicate."""
+
+    product_a_id: int
+    product_b_id: int
+
+
 class ErrorResponse(BaseModel):
     """Error response."""
     code: str
