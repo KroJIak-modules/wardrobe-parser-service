@@ -19,6 +19,7 @@ from app.schemas.parser import (
     ProductManualCreateRequest,
     ProductResponse,
     ProductListResponse,
+    ProductUrlPreviewResponse,
 )
 from app.repositories import ParserProductRepository, ParserSourceRepository
 from app.models import ProductStatus
@@ -83,6 +84,45 @@ def _normalize_preview_price(raw_price: str | None, payload_source: str | None) 
     if payload_source == "js" and parsed >= 1000 and parsed.is_integer():
         return parsed / 100
     return parsed
+
+
+def _fetch_preview(url: str):
+    try:
+        host = _clean_host(url)
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Некорректный URL") from exc
+
+    allowed_hosts = _allowed_shopify_hosts()
+    if not any(host == item or host.endswith(f".{item}") for item in allowed_hosts):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Домен не входит в whitelist")
+
+    try:
+        return ShopifyParser.preview_product_url(
+            url,
+            timeout_sec=settings.parser_default_timeout_sec,
+            max_retries=settings.parser_default_max_retries,
+            retry_backoff_sec=settings.parser_default_retry_backoff_sec,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Не удалось получить preview: {exc}",
+        ) from exc
+
+
+@router.post("/products/preview-by-url", response_model=ProductUrlPreviewResponse)
+def preview_product_by_url(payload: ProductAddByUrlRequest):
+    """Validate URL and return preview fields for admin editing before saving."""
+    preview = _fetch_preview(payload.url)
+    return ProductUrlPreviewResponse(
+        handle=preview.handle,
+        title=preview.title or preview.handle,
+        vendor=preview.vendor,
+        product_type=None,
+        product_url=preview.product_url,
+        price=_normalize_preview_price(preview.price, preview.payload_source),
+        currency=(preview.currency or "USD").upper(),
+    )
 
 
 @router.get("/products", response_model=ProductListResponse)
@@ -209,40 +249,27 @@ def get_product(product_id: int, db: Session = Depends(get_db)):
 @router.post("/products/add-by-url", response_model=ProductResponse)
 def add_product_by_url(payload: ProductAddByUrlRequest, db: Session = Depends(get_db)):
     """Validate URL against whitelist, fetch Shopify preview, and upsert product."""
-    allowed_hosts = _allowed_shopify_hosts()
-
-    try:
-        host = _clean_host(payload.url)
-    except Exception as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Некорректный URL") from exc
-
-    if not any(host == item or host.endswith(f".{item}") for item in allowed_hosts):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Домен не входит в whitelist")
-
-    try:
-        preview = ShopifyParser.preview_product_url(
-            payload.url,
-            timeout_sec=settings.parser_default_timeout_sec,
-            max_retries=settings.parser_default_max_retries,
-            retry_backoff_sec=settings.parser_default_retry_backoff_sec,
-        )
-    except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Не удалось получить preview: {exc}",
-        ) from exc
+    preview = _fetch_preview(payload.url)
 
     source = _resolve_or_create_source(db, preview.product_url)
     product_repo = ParserProductRepository(db)
     existing = product_repo.get_by_source_and_handle(source.id, preview.handle)
-    price = _normalize_preview_price(preview.price, preview.payload_source)
+    price = payload.price if payload.price is not None else _normalize_preview_price(preview.price, preview.payload_source)
+    final_title = payload.title.strip() if payload.title else (preview.title or preview.handle)
+    final_vendor = payload.vendor if payload.vendor is not None else preview.vendor
+    final_product_type = payload.product_type.strip() if payload.product_type else None
+    final_currency = (payload.currency or preview.currency or "USD").upper()
+    final_image_count = payload.image_count if payload.image_count is not None else None
 
     if existing:
-        existing.title = preview.title or existing.title
-        existing.vendor = preview.vendor
+        existing.title = final_title or existing.title
+        existing.vendor = final_vendor
+        existing.product_type = final_product_type
         existing.url = preview.product_url
         existing.price = price
-        existing.currency = (preview.currency or existing.currency or "USD").upper()
+        existing.currency = final_currency or existing.currency
+        if final_image_count is not None:
+            existing.image_count = final_image_count
         existing.deleted_at = None
         db.commit()
         db.refresh(existing)
@@ -251,12 +278,13 @@ def add_product_by_url(payload: ProductAddByUrlRequest, db: Session = Depends(ge
     product = product_repo.create_product(
         source_id=source.id,
         handle=preview.handle,
-        title=preview.title or preview.handle,
-        vendor=preview.vendor,
-        product_type=None,
+        title=final_title,
+        vendor=final_vendor,
+        product_type=final_product_type,
         url=preview.product_url,
         price=price,
-        currency=(preview.currency or "USD").upper(),
+        currency=final_currency,
+        image_count=final_image_count or 0,
         status=ProductStatus.AVAILABLE,
     )
     db.commit()

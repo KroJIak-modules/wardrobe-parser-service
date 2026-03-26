@@ -113,6 +113,24 @@ class ProductAddByUrlRequest(BaseModel):
     """Request for adding a product from URL preview."""
 
     url: str = Field(min_length=8, max_length=2048)
+    title: Optional[str] = Field(default=None, min_length=1, max_length=2048)
+    vendor: Optional[str] = Field(default=None, max_length=255)
+    product_type: Optional[str] = Field(default=None, max_length=255)
+    price: Optional[float] = Field(default=None, ge=0)
+    currency: Optional[str] = Field(default=None, min_length=3, max_length=3)
+    image_count: Optional[int] = Field(default=None, ge=0)
+
+
+class ProductUrlPreviewResponse(BaseModel):
+    """Preview payload for URL-based product adding flow."""
+
+    handle: str
+    title: str
+    vendor: Optional[str] = None
+    product_type: Optional[str] = None
+    product_url: str
+    price: Optional[float] = None
+    currency: str = "USD"
 
 
 class ProductManualCreateRequest(BaseModel):
