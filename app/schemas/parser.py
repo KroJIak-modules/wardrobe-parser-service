@@ -98,6 +98,7 @@ class JobLatestResponse(BaseModel):
     new_products: int = 0
     updated_products: int = 0
     new_images: int = 0
+    sync_period_minutes: int = 300
 
 
 class JobCreateRequest(BaseModel):

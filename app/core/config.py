@@ -49,6 +49,12 @@ class Settings(BaseSettings):
         le=200,
         env="PARSER_SYNC_MAX_SOURCES",
     )
+    parser_sync_period_minutes: int = Field(
+        default=300,
+        ge=15,
+        le=10080,
+        env="PARSER_SYNC_PERIOD_MINUTES",
+    )
     image_proxy_timeout_sec: float = Field(default=10.0, ge=1.0, le=60.0, env="IMAGE_PROXY_TIMEOUT_SEC")
     image_proxy_max_bytes: int = Field(default=8_000_000, ge=100_000, le=50_000_000, env="IMAGE_PROXY_MAX_BYTES")
     image_cache_max_age_sec: int = Field(default=86400, ge=0, le=604800, env="IMAGE_CACHE_MAX_AGE_SEC")

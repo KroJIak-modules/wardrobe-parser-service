@@ -4,7 +4,7 @@ Parser job service for job orchestration.
 
 import uuid
 from typing import Optional, List
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session
 
 from app.config.source_registry import list_sources
@@ -58,6 +58,86 @@ class ParserJobService:
             enabled=enabled,
         )
 
+    def _discover_source(self, base_url: str):
+        return ShopifyParser.discover(
+            base_url,
+            max_products=settings.parser_default_max_products,
+            sample_products=settings.parser_default_sample_products,
+            timeout_sec=settings.parser_default_timeout_sec,
+            fetch_all_products=True,
+            response_products_limit=settings.parser_default_max_products,
+            error_details_limit=200,
+            parallel_workers=settings.parser_default_parallel_workers,
+            max_retries=settings.parser_default_max_retries,
+            retry_backoff_sec=settings.parser_default_retry_backoff_sec,
+            second_pass_enabled=settings.parser_default_second_pass_enabled,
+            second_pass_timeout_sec=settings.parser_default_second_pass_timeout_sec,
+        )
+
+    def _upsert_product_from_preview(self, source_id: int, preview) -> tuple[int, int]:
+        existing = self.product_repo.get_by_source_and_handle(source_id, preview.handle)
+        parsed_price = self._to_float(preview.price)
+        preview_image_urls = preview.image_urls or []
+        assets = self.image_repo.ensure_assets(preview_image_urls)
+        preview_image_asset_ids = [asset.id for asset in assets]
+
+        if existing is None:
+            self.product_repo.create_product(
+                source_id=source_id,
+                handle=preview.handle,
+                title=preview.title or preview.handle,
+                url=preview.product_url,
+                vendor=preview.vendor,
+                product_type=preview.product_type,
+                price=parsed_price,
+                currency=preview.currency or "USD",
+                image_count=len(preview_image_urls),
+                image_urls=preview_image_urls,
+                image_asset_ids=preview_image_asset_ids,
+                status=ProductStatus.AVAILABLE,
+            )
+            return 1, 0
+
+        changed = (
+            existing.title != (preview.title or preview.handle)
+            or existing.url != preview.product_url
+            or existing.vendor != preview.vendor
+            or existing.product_type != preview.product_type
+            or existing.price != parsed_price
+            or existing.currency != (preview.currency or "USD")
+            or (existing.image_urls or []) != preview_image_urls
+            or (existing.image_asset_ids or []) != preview_image_asset_ids
+            or existing.image_count != len(preview_image_urls)
+            or existing.status != ProductStatus.AVAILABLE
+        )
+        if not changed:
+            return 0, 0
+
+        self.product_repo.update(
+            existing,
+            title=preview.title or preview.handle,
+            url=preview.product_url,
+            vendor=preview.vendor,
+            product_type=preview.product_type,
+            price=parsed_price,
+            currency=preview.currency or "USD",
+            image_count=len(preview_image_urls),
+            image_urls=preview_image_urls,
+            image_asset_ids=preview_image_asset_ids,
+            status=ProductStatus.AVAILABLE,
+            deleted_at=None,
+        )
+        return 0, 1
+
+    def _sync_source_products(self, source_id: int, previews: list) -> tuple[int, int]:
+        created_for_source = 0
+        updated_for_source = 0
+        for preview in previews:
+            created_delta, updated_delta = self._upsert_product_from_preview(source_id, preview)
+            created_for_source += created_delta
+            updated_for_source += updated_delta
+        return created_for_source, updated_for_source
+
     def run_sync_job(self, triggered_by: str = "manual") -> ParserJob:
         """Create and execute sync job against enabled Shopify sources."""
         job_id = str(uuid.uuid4())
@@ -101,77 +181,9 @@ class ParserJobService:
             self.mark_source_run_started(source_run.id)
 
             try:
-                result = ShopifyParser.discover(
-                    source_item.base_url,
-                    max_products=settings.parser_default_max_products,
-                    sample_products=settings.parser_default_sample_products,
-                    timeout_sec=settings.parser_default_timeout_sec,
-                    fetch_all_products=True,
-                    response_products_limit=settings.parser_default_max_products,
-                    error_details_limit=200,
-                    parallel_workers=settings.parser_default_parallel_workers,
-                    max_retries=settings.parser_default_max_retries,
-                    retry_backoff_sec=settings.parser_default_retry_backoff_sec,
-                    second_pass_enabled=settings.parser_default_second_pass_enabled,
-                    second_pass_timeout_sec=settings.parser_default_second_pass_timeout_sec,
-                )
+                result = self._discover_source(source_item.base_url)
 
-                created_for_source = 0
-                updated_for_source = 0
-
-                for preview in result.previews:
-                    existing = self.product_repo.get_by_source_and_handle(source.id, preview.handle)
-                    parsed_price = self._to_float(preview.price)
-
-                    if existing is None:
-                        preview_image_urls = preview.image_urls or []
-                        assets = self.image_repo.ensure_assets(preview_image_urls)
-                        preview_image_asset_ids = [asset.id for asset in assets]
-                        self.product_repo.create_product(
-                            source_id=source.id,
-                            handle=preview.handle,
-                            title=preview.title or preview.handle,
-                            url=preview.product_url,
-                            vendor=preview.vendor,
-                            product_type=None,
-                            price=parsed_price,
-                            currency=preview.currency or "USD",
-                            image_count=len(preview_image_urls),
-                            image_urls=preview_image_urls,
-                            image_asset_ids=preview_image_asset_ids,
-                            status=ProductStatus.AVAILABLE,
-                        )
-                        created_for_source += 1
-                    else:
-                        preview_image_urls = preview.image_urls or []
-                        assets = self.image_repo.ensure_assets(preview_image_urls)
-                        preview_image_asset_ids = [asset.id for asset in assets]
-                        changed = (
-                            existing.title != (preview.title or preview.handle)
-                            or existing.url != preview.product_url
-                            or existing.vendor != preview.vendor
-                            or existing.price != parsed_price
-                            or existing.currency != (preview.currency or "USD")
-                            or (existing.image_urls or []) != preview_image_urls
-                            or (existing.image_asset_ids or []) != preview_image_asset_ids
-                            or existing.image_count != len(preview_image_urls)
-                            or existing.status != ProductStatus.AVAILABLE
-                        )
-                        if changed:
-                            self.product_repo.update(
-                                existing,
-                                title=preview.title or preview.handle,
-                                url=preview.product_url,
-                                vendor=preview.vendor,
-                                price=parsed_price,
-                                currency=preview.currency or "USD",
-                                image_count=len(preview_image_urls),
-                                image_urls=preview_image_urls,
-                                image_asset_ids=preview_image_asset_ids,
-                                status=ProductStatus.AVAILABLE,
-                                deleted_at=None,
-                            )
-                            updated_for_source += 1
+                created_for_source, updated_for_source = self._sync_source_products(source.id, result.previews)
 
                 total_created += created_for_source
                 total_updated += updated_for_source
@@ -300,13 +312,14 @@ class ParserJobService:
         """
         Calculate next scheduled sync time.
 
-        Default: every 5 hours from now.
+        Configurable via PARSER_SYNC_PERIOD_MINUTES.
         """
         last_job = self.get_latest_completed_job()
         if last_job and last_job.completed_at:
-            # Simple: 5 hours after completion
-            next_time = last_job.completed_at.replace(tzinfo=timezone.utc)
-            # In production, this would be calculated from APScheduler config
+            next_time = last_job.completed_at
+            if next_time.tzinfo is None:
+                next_time = next_time.replace(tzinfo=timezone.utc)
+            next_time = next_time + timedelta(minutes=settings.parser_sync_period_minutes)
             return next_time
         return None
 

@@ -87,8 +87,8 @@
       "name": "Remnants Vintage",
       "base_url": "https://remnantsvintage.com",
       "parser_type": "shopify",
-      "enabled": true,
-      "notes": "10% always, 25% for non-sale items in current period"
+      "enabled": false,
+      "notes": "Temporarily disabled: storefront currently requires /password"
     },
     {
       "key": "misssixty",
@@ -138,7 +138,8 @@
       "name": "Junalyx",
       "base_url": "https://junalyx.com",
       "parser_type": "shopify",
-      "enabled": true
+      "enabled": false,
+      "notes": "Temporarily disabled: storefront currently requires /password"
     },
     {
       "key": "archived",
