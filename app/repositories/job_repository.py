@@ -6,6 +6,7 @@ from typing import Optional, List
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
+from sqlalchemy.orm import selectinload
 
 from app.models import ParserJob, JobStatus, ParserJobSourceRun
 from app.repositories.base import BaseRepository
@@ -124,8 +125,10 @@ class ParserJobRepository(BaseRepository[ParserJob]):
 
     def get_with_source_runs(self, job_id: str) -> Optional[ParserJob]:
         """Get job with all source runs eagerly loaded."""
-        job = self.get_by_id(job_id)
-        if job:
-            # Force load source_runs
-            _ = job.source_runs
-        return job
+        return (
+            self.query()
+            .options(selectinload(ParserJob.source_runs))
+            .filter(ParserJob.id == job_id)
+            .filter(ParserJob.deleted_at.is_(None))
+            .first()
+        )

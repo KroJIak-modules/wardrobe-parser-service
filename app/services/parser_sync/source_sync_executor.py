@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 from typing import Callable
 
 from sqlalchemy.orm import Session
@@ -10,6 +11,9 @@ from sqlalchemy.orm import Session
 from app.models import SourceRunStatus
 from app.services.parser_sync.product_sync_service import ParserProductSyncService
 from app.services.parser_sync.source_run_service import ParserSourceRunService
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -71,10 +75,16 @@ class ParserSourceSyncExecutor:
             self.session.commit()
             return stats
         except Exception as exc:
+            LOGGER.exception(
+                "Source sync failed for source_id=%s parser_type=%s base_url=%s",
+                source_id,
+                parser_type,
+                base_url,
+            )
             self.source_run_service.update_source_run(
                 source_run.id,
                 status=SourceRunStatus.FAILED,
-                error_message=str(exc),
+                error_message=f"{type(exc).__name__}: {exc}",
             )
             self.session.commit()
             return SourceSyncStats(errors=1)

@@ -6,6 +6,7 @@ from typing import Any
 
 import requests
 
+from app.core.config import settings
 from app.parsers.shopify.http_client import ShopifyHTTPClient
 from app.parsers.shopify.discovery.products_json import (
     collect_products_from_payload,
@@ -63,12 +64,13 @@ def discover_collections_all_products(
 
     http_client = ShopifyHTTPClient()
     page = 1
-    safety_limit = 300
+    safety_limit = settings.parser_discovery_collections_safety_limit
+    page_size = settings.parser_shopify_page_size
 
     for _ in range(safety_limit):
         if len(urls) >= max_products:
             break
-        request_url = f"{base_url}/collections/all/products.json?limit=250&page={page}"
+        request_url = f"{base_url}/collections/all/products.json?limit={page_size}&page={page}"
         payload, _, _, _, error = http_client.request_with_retries(
             url=request_url,
             is_json=True,
@@ -95,7 +97,7 @@ def discover_collections_all_products(
             payloads=payloads,
         )
 
-        if len(products) < 250:
+        if len(products) < page_size:
             break
         page += 1
 

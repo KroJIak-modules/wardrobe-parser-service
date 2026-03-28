@@ -9,6 +9,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.models import ParserProduct
+from app.core.config import settings
 from app.repositories import ParserDedupDecisionRepository, ParserProductRepository
 from app.schemas.parser import (
     DedupCandidateListResponse,
@@ -29,8 +30,8 @@ class DedupService:
         self.product_repo = ParserProductRepository(db)
         self.decision_repo = ParserDedupDecisionRepository(db)
 
-    def get_candidates(self, limit: int = 30) -> DedupCandidateListResponse:
-        products = self.product_repo.filter_products(limit=2000)
+    def get_candidates(self, limit: int = settings.dedup_candidates_default_limit) -> DedupCandidateListResponse:
+        products = self.product_repo.filter_products(limit=settings.dedup_scan_limit)
 
         buckets: dict[tuple[str, str], list[ParserProduct]] = {}
         for product in products:
@@ -48,7 +49,7 @@ class DedupService:
                     continue
 
                 score, reasons = candidate_score(left, right)
-                if score < 0.55:
+                if score < settings.dedup_score_threshold:
                     continue
 
                 candidates.append(

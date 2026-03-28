@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from app.core.config import settings
 from app.parsers.shopify.preview_fetcher import FetchOutcome, fetch_many_product_previews
 
 
@@ -92,9 +93,9 @@ def run_preview_fetch_pipeline(
             product_urls=first_pass_failures,
             payload_cache=payload_cache,
             timeout_sec=second_pass_timeout,
-            parallel_workers=max(1, min(parallel_workers, 8)),
+            parallel_workers=max(1, min(parallel_workers, settings.parser_second_pass_max_workers)),
             max_retries=max_retries + 1,
-            retry_backoff_sec=max(retry_backoff_sec, 0.5),
+            retry_backoff_sec=max(retry_backoff_sec, settings.parser_second_pass_min_backoff_sec),
             build_preview=build_preview,
         )
         second_pass_by_url = {item.product_url: item for item in second_pass_results}

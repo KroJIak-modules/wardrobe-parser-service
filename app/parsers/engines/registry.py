@@ -35,7 +35,7 @@ class ShopifyParserEngine:
             timeout_sec=settings.parser_default_timeout_sec,
             fetch_all_products=True,
             response_products_limit=settings.parser_default_max_products,
-            error_details_limit=200,
+            error_details_limit=settings.parser_default_error_details_limit,
             parallel_workers=settings.parser_default_parallel_workers,
             max_retries=settings.parser_default_max_retries,
             retry_backoff_sec=settings.parser_default_retry_backoff_sec,

@@ -64,7 +64,7 @@ class SyncJobService:
         return JobResponse(**summary)
 
     def get_jobs_history(self, limit: int = 20, offset: int = 0) -> list[JobResponse]:
-        bounded_limit = min(limit, 100)
+        bounded_limit = min(limit, settings.sync_jobs_history_max_limit)
         repo = self.parser_job_service.job_repo
 
         jobs = (

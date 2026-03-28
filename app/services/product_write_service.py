@@ -5,10 +5,12 @@ from __future__ import annotations
 import re
 import time
 from pathlib import Path
+from typing import Optional
 
 from fastapi import HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.models import ProductStatus
 from app.repositories import ParserImageAssetRepository, ParserProductRepository, ParserSourceRepository
 from app.schemas.parser import ProductAddByUrlRequest, ProductManualCreateRequest, ProductResponse
@@ -21,12 +23,12 @@ class ProductWriteService:
 
     def __init__(
         self,
-        db: Session,
-        product_repo: ParserProductRepository,
-        source_repo: ParserSourceRepository,
-        image_repo: ParserImageAssetRepository,
+        db: Optional[Session],
+        product_repo: Optional[ParserProductRepository],
+        source_repo: Optional[ParserSourceRepository],
+        image_repo: Optional[ParserImageAssetRepository],
         preview_service: ProductPreviewService,
-        read_service: ProductReadService,
+        read_service: Optional[ProductReadService],
         upload_dir: Path,
     ):
         self.db = db
@@ -37,12 +39,23 @@ class ProductWriteService:
         self.read_service = read_service
         self.upload_dir = upload_dir
 
+    def _require_db_dependencies(self) -> None:
+        if (
+            self.db is None
+            or self.product_repo is None
+            or self.source_repo is None
+            or self.image_repo is None
+            or self.read_service is None
+        ):
+            raise RuntimeError("Database dependencies are required for this operation")
+
     @staticmethod
     def _slugify(value: str) -> str:
         slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
         return slug or "product"
 
     def add_product_by_url(self, payload: ProductAddByUrlRequest) -> ProductResponse:
+        self._require_db_dependencies()
         preview = self.preview_service.fetch_preview(payload.url)
 
         source = self.preview_service.resolve_or_create_source(preview.product_url)
@@ -95,12 +108,13 @@ class ProductWriteService:
         return self.read_service.build_product_response(product)
 
     def create_manual_product(self, payload: ProductManualCreateRequest) -> ProductResponse:
-        source = self.source_repo.get_by_url("https://manual.local")
+        self._require_db_dependencies()
+        source = self.source_repo.get_by_url(settings.manual_source_url)
         if not source:
             source = self.source_repo.create_source(
-                name="Manual Upload",
-                url="https://manual.local",
-                parser_type="custom",
+                name=settings.manual_source_name,
+                url=settings.manual_source_url,
+                parser_type=settings.manual_source_parser_type,
                 enabled=True,
             )
 
@@ -113,9 +127,9 @@ class ProductWriteService:
             source_id=source.id,
             handle=handle,
             title=payload.title,
-            vendor=(payload.vendor or "Manual"),
+                vendor=(payload.vendor or settings.manual_product_vendor_default),
             product_type=payload.product_type,
-            url=f"https://manual.local/products/{handle}",
+                url=f"{settings.manual_source_url.rstrip('/')}/products/{handle}",
             price=payload.price,
             currency=payload.currency.upper(),
             image_count=payload.image_count,
@@ -130,7 +144,12 @@ class ProductWriteService:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Файл не передан")
 
         extension = Path(file.filename).suffix.lower()
-        if extension not in {".jpg", ".jpeg", ".png", ".webp", ".gif"}:
+        allowed_extensions = {
+            item.strip().lower()
+            for item in settings.uploads_allowed_extensions.split(",")
+            if item.strip()
+        }
+        if extension not in allowed_extensions:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Недопустимый формат изображения")
 
         self.upload_dir.mkdir(parents=True, exist_ok=True)

@@ -7,6 +7,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, File, Query, UploadFile
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.schemas.parser import (
     ProductAddByUrlRequest,
@@ -36,7 +37,11 @@ def get_products(
     price_min: Optional[float] = Query(None),
     price_max: Optional[float] = Query(None),
     search: Optional[str] = Query(None, description="Search in title, handle, vendor"),
-    limit: int = Query(20, ge=1, le=200),
+    limit: int = Query(
+        settings.api_pagination_default_limit,
+        ge=1,
+        le=settings.api_pagination_max_limit,
+    ),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db)
 ):
@@ -66,7 +71,7 @@ def get_products(
         source_id=source_id,
         vendor=vendor,
         product_type=product_type,
-        status=status,
+        status_value=status,
         price_min=price_min,
         price_max=price_max,
         search=search,

@@ -6,6 +6,7 @@ from typing import Any
 
 import requests
 
+from app.core.config import settings
 from app.parsers.shopify.http_client import ShopifyHTTPClient
 from app.parsers.product_extractor import ShopifyProductExtractor
 from app.parsers.shopify_url_utils import append_discovered_url, normalize_product_url, safe_int
@@ -27,12 +28,13 @@ def discover_products_json_since_id(
 
     http_client = ShopifyHTTPClient()
     since_id = 0
-    safety_limit = 2000
+    safety_limit = settings.parser_discovery_safety_limit
+    page_size = settings.parser_shopify_page_size
 
     for _ in range(safety_limit):
         if len(urls) >= max_products:
             break
-        request_url = f"{base_url}/products.json?limit=250"
+        request_url = f"{base_url}/products.json?limit={page_size}"
         if since_id > 0:
             request_url = f"{request_url}&since_id={since_id}"
 
@@ -63,7 +65,7 @@ def discover_products_json_since_id(
         )
         max_id_on_page = max(max_id_on_page, max_product_id(products))
 
-        if len(products) < 250:
+        if len(products) < page_size:
             break
         if max_id_on_page <= since_id:
             warnings.append("products.json(since_id) остановлен: курсор не растет")
@@ -95,12 +97,13 @@ def discover_products_json_page(
     page = 1
     repeated_first_product_counter = 0
     last_first_product_id: int | None = None
-    safety_limit = 2000
+    safety_limit = settings.parser_discovery_safety_limit
+    page_size = settings.parser_shopify_page_size
 
     for _ in range(safety_limit):
         if len(urls) >= max_products:
             break
-        request_url = f"{base_url}/products.json?limit=250&page={page}"
+        request_url = f"{base_url}/products.json?limit={page_size}&page={page}"
         payload, _, _, _, error = http_client.request_with_retries(
             url=request_url,
             is_json=True,
@@ -137,7 +140,7 @@ def discover_products_json_page(
             payloads=payloads,
         )
 
-        if len(products) < 250:
+        if len(products) < page_size:
             break
         page += 1
 

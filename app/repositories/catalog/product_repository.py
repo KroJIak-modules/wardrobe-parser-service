@@ -11,10 +11,11 @@ from app.repositories.base import BaseRepository
 from app.repositories.catalog.product_filters import build_filtered_query
 
 
+_NO_BRAND_FILTER = "__NO_BRAND__"
+
+
 class ParserProductRepository(BaseRepository[ParserProduct]):
     """Repository for ParserProduct entity with advanced filtering."""
-
-    NO_BRAND_FILTER = "__NO_BRAND__"
 
     def __init__(self, session: Session):
         super().__init__(session, ParserProduct)
@@ -110,7 +111,7 @@ class ParserProductRepository(BaseRepository[ParserProduct]):
             price_min=price_min,
             price_max=price_max,
             search_text=search_text,
-            no_brand_filter=self.NO_BRAND_FILTER,
+            no_brand_filter=_NO_BRAND_FILTER,
         )
 
         return q.offset(skip).limit(limit).all()
@@ -135,7 +136,7 @@ class ParserProductRepository(BaseRepository[ParserProduct]):
             price_min=price_min,
             price_max=price_max,
             search_text=search_text,
-            no_brand_filter=self.NO_BRAND_FILTER,
+            no_brand_filter=_NO_BRAND_FILTER,
         )
 
         return q.count()

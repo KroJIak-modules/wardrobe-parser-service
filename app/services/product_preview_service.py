@@ -34,8 +34,12 @@ class ProductPreviewService:
             return None
 
         # Shopify .js often returns integer cents while .json returns decimal currency units.
-        if payload_source == "js" and parsed >= 1000 and parsed.is_integer():
-            return parsed / 100
+        if (
+            payload_source == "js"
+            and parsed >= settings.preview_js_price_cents_threshold
+            and parsed.is_integer()
+        ):
+            return parsed / settings.preview_js_price_cents_divisor
         return parsed
 
     def allowed_shopify_hosts(self) -> list[str]:

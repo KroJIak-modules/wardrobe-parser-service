@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from urllib.parse import urlparse
 
+from app.core.config import settings
 from app.core.exceptions import ValidationError
 from app.parsers.shopify.discovery.fetch_pipeline import run_preview_fetch_pipeline
 from app.parsers.shopify.discovery.orchestrator import collect_discovery_urls
@@ -127,6 +128,7 @@ class ShopifyParser:
             fetch_attempted=fetch_attempted,
             response_products_limit=response_products_limit,
             error_details_limit=error_details_limit,
+            warning_items_limit=settings.parser_discovery_warning_items_limit,
             second_pass_attempted=second_pass_attempted,
             second_pass_recovered=second_pass_recovered,
         )

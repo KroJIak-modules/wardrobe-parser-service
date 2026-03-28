@@ -35,6 +35,7 @@ def build_discovery_summary(
     fetch_attempted: int,
     response_products_limit: int,
     error_details_limit: int,
+    warning_items_limit: int,
     second_pass_attempted: int,
     second_pass_recovered: int,
 ) -> DiscoverySummary:
@@ -45,11 +46,12 @@ def build_discovery_summary(
         previews = previews[:response_products_limit]
 
     if final_errors:
-        for product_url, error in final_errors[:20]:
+        for product_url, error in final_errors[:warning_items_limit]:
             warnings.append(f"Ошибка чтения карточки {product_url}: {error}")
-        if len(final_errors) > 20:
+        if len(final_errors) > warning_items_limit:
             warnings.append(
-                f"Подробные предупреждения обрезаны: показано 20 из {len(final_errors)} ошибок чтения"
+                "Подробные предупреждения обрезаны: "
+                f"показано {warning_items_limit} из {len(final_errors)} ошибок чтения"
             )
     elif fetch_all_products and fetch_attempted:
         warnings.append("Полный обход: все найденные карточки успешно прочитаны")

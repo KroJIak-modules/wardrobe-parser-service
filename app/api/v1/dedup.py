@@ -3,6 +3,7 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.schemas.parser import (
     DedupCandidateListResponse,
@@ -16,7 +17,11 @@ router = APIRouter(tags=["dedup"])
 
 @router.get("/dedup/candidates", response_model=DedupCandidateListResponse)
 def get_dedup_candidates(
-    limit: int = Query(30, ge=1, le=200),
+    limit: int = Query(
+        settings.dedup_candidates_default_limit,
+        ge=1,
+        le=settings.dedup_candidates_max_limit,
+    ),
     db: Session = Depends(get_db),
 ):
     """Build duplicate candidates from active parser products."""

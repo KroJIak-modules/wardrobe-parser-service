@@ -8,6 +8,7 @@ from typing import Optional
 from fastapi import UploadFile
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.repositories import ParserImageAssetRepository, ParserProductRepository, ParserSourceRepository
 from app.schemas.parser import (
     ProductAddByUrlRequest,
@@ -39,23 +40,15 @@ class ProductCatalogService:
             if self.product_repo is not None and self.source_repo is not None and self.image_repo is not None
             else None
         )
-        self._upload_dir = Path("/app/uploads")
-        self.write_service = (
-            ProductWriteService(
-                db=self.db,
-                product_repo=self.product_repo,
-                source_repo=self.source_repo,
-                image_repo=self.image_repo,
-                preview_service=self.preview_service,
-                read_service=self.read_service,
-                upload_dir=self._upload_dir,
-            )
-            if self.db is not None
-            and self.product_repo is not None
-            and self.source_repo is not None
-            and self.image_repo is not None
-            and self.read_service is not None
-            else None
+        self._upload_dir = Path(settings.uploads_dir)
+        self.write_service = ProductWriteService(
+            db=self.db,
+            product_repo=self.product_repo,
+            source_repo=self.source_repo,
+            image_repo=self.image_repo,
+            preview_service=self.preview_service,
+            read_service=self.read_service,
+            upload_dir=self._upload_dir,
         )
 
     def _require_db(self) -> None:
@@ -121,4 +114,6 @@ class ProductCatalogService:
         return self.write_service.create_manual_product(payload)
 
     async def upload_product_image(self, file: UploadFile) -> dict:
+        if self.write_service is None:
+            raise RuntimeError("Write service is not initialized")
         return await self.write_service.upload_product_image(file)

@@ -6,6 +6,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.schemas.parser import (
     JobResponse,
@@ -63,7 +64,7 @@ def get_job(job_id: str, db: Session = Depends(get_db)):
 
 @router.get("/jobs", response_model=list[JobResponse])
 def get_jobs_history(
-    limit: int = 20,
+    limit: int = settings.api_pagination_default_limit,
     offset: int = 0,
     db: Session = Depends(get_db)
 ):
@@ -73,7 +74,7 @@ def get_jobs_history(
     Useful for monitoring/debugging.
     
     Query params:
-    - limit: Number of jobs (default 20, max 100)
+    - limit: Number of jobs (bounded by SYNC_JOBS_HISTORY_MAX_LIMIT)
     - offset: Pagination offset (default 0)
     """
     service = SyncJobService(db)
