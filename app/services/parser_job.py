@@ -11,10 +11,7 @@ from app.config.source_registry import list_sources
 from app.core.config import settings
 from app.models import (
     ParserJob,
-    JobStatus,
     ParserJobSourceRun,
-    SourceRunStatus,
-    ProductStatus,
 )
 from app.parsers.shopify_parser import ShopifyParser
 from app.repositories import (
@@ -23,6 +20,10 @@ from app.repositories import (
     ParserProductRepository,
     ParserImageAssetRepository,
 )
+from app.services.parser_source_run_service import ParserSourceRunService
+from app.services.parser_job_summary import build_job_summary_payload
+from app.services.parser_product_sync_service import ParserProductSyncService
+from app.services.parser_source_sync_executor import ParserSourceSyncExecutor
 
 
 class ParserJobService:
@@ -34,15 +35,17 @@ class ParserJobService:
         self.source_repo = ParserSourceRepository(session)
         self.product_repo = ParserProductRepository(session)
         self.image_repo = ParserImageAssetRepository(session)
-
-    @staticmethod
-    def _to_float(value: str | None) -> float | None:
-        if value is None:
-            return None
-        try:
-            return float(str(value).strip())
-        except (TypeError, ValueError):
-            return None
+        self.source_run_service = ParserSourceRunService(session=session, job_repo=self.job_repo)
+        self.product_sync_service = ParserProductSyncService(
+            product_repo=self.product_repo,
+            image_repo=self.image_repo,
+        )
+        self.source_sync_executor = ParserSourceSyncExecutor(
+            session=self.session,
+            source_run_service=self.source_run_service,
+            product_sync_service=self.product_sync_service,
+            discover_source=self._discover_source,
+        )
 
     def _get_or_create_source(self, name: str, url: str, parser_type: str, enabled: bool):
         source = self.source_repo.get_by_url(url)
@@ -73,70 +76,6 @@ class ParserJobService:
             second_pass_enabled=settings.parser_default_second_pass_enabled,
             second_pass_timeout_sec=settings.parser_default_second_pass_timeout_sec,
         )
-
-    def _upsert_product_from_preview(self, source_id: int, preview) -> tuple[int, int]:
-        existing = self.product_repo.get_by_source_and_handle(source_id, preview.handle)
-        parsed_price = self._to_float(preview.price)
-        preview_image_urls = preview.image_urls or []
-        assets = self.image_repo.ensure_assets(preview_image_urls)
-        preview_image_asset_ids = [asset.id for asset in assets]
-
-        if existing is None:
-            self.product_repo.create_product(
-                source_id=source_id,
-                handle=preview.handle,
-                title=preview.title or preview.handle,
-                url=preview.product_url,
-                vendor=preview.vendor,
-                product_type=preview.product_type,
-                price=parsed_price,
-                currency=preview.currency or "USD",
-                image_count=len(preview_image_urls),
-                image_urls=preview_image_urls,
-                image_asset_ids=preview_image_asset_ids,
-                status=ProductStatus.AVAILABLE,
-            )
-            return 1, 0
-
-        changed = (
-            existing.title != (preview.title or preview.handle)
-            or existing.url != preview.product_url
-            or existing.vendor != preview.vendor
-            or existing.product_type != preview.product_type
-            or existing.price != parsed_price
-            or existing.currency != (preview.currency or "USD")
-            or (existing.image_urls or []) != preview_image_urls
-            or (existing.image_asset_ids or []) != preview_image_asset_ids
-            or existing.image_count != len(preview_image_urls)
-            or existing.status != ProductStatus.AVAILABLE
-        )
-        if not changed:
-            return 0, 0
-
-        self.product_repo.update(
-            existing,
-            title=preview.title or preview.handle,
-            url=preview.product_url,
-            vendor=preview.vendor,
-            product_type=preview.product_type,
-            price=parsed_price,
-            currency=preview.currency or "USD",
-            image_count=len(preview_image_urls),
-            image_urls=preview_image_urls,
-            image_asset_ids=preview_image_asset_ids,
-            status=ProductStatus.AVAILABLE,
-            deleted_at=None,
-        )
-        return 0, 1
-
-    def _sync_source_products(self, source_id: int, previews: list) -> tuple[int, int]:
-        created_for_source = 0
-        updated_for_source = 0
-        for preview in previews:
-            created_delta, updated_delta = self._upsert_product_from_preview(source_id, preview)
-            created_for_source += created_delta
-            updated_for_source += updated_delta
-        return created_for_source, updated_for_source
 
     def run_sync_job(self, triggered_by: str = "manual") -> ParserJob:
         """Create and execute sync job against enabled Shopify sources."""
@@ -173,43 +112,17 @@ class ParserJobService:
             if not source.enabled:
                 continue
 
-            source_run = self.create_source_run(job.id, source.id)
-            if not source_run:
-                total_errors += 1
-                continue
-
-            self.mark_source_run_started(source_run.id)
-
-            try:
-                result = self._discover_source(source_item.base_url)
-
-                created_for_source, updated_for_source = self._sync_source_products(source.id, result.previews)
-
-                total_created += created_for_source
-                total_updated += updated_for_source
-                total_fetched += result.products_fetch_succeeded
-                total_errors += result.products_fetch_failed
-                total_429 += result.http_429_count
-                total_5xx += result.http_5xx_count
-
-                self.update_source_run(
-                    source_run.id,
-                    status=SourceRunStatus.SUCCESS if result.products_fetch_failed == 0 else SourceRunStatus.PARTIAL,
-                    products_discovered=result.product_urls_found,
-                    products_fetched=result.products_fetch_succeeded,
-                    products_failed=result.products_fetch_failed,
-                    discovery_mode=result.discovery_mode,
-                    error_message="; ".join(result.error_details[:3]) if result.error_details else None,
-                )
-                self.session.commit()
-            except Exception as exc:
-                total_errors += 1
-                self.update_source_run(
-                    source_run.id,
-                    status=SourceRunStatus.FAILED,
-                    error_message=str(exc),
-                )
-                self.session.commit()
+            stats = self.source_sync_executor.sync_source(
+                job_id=job.id,
+                source_id=source.id,
+                base_url=source_item.base_url,
+            )
+            total_created += stats.created
+            total_updated += stats.updated
+            total_fetched += stats.fetched
+            total_errors += stats.errors
+            total_429 += stats.http_429
+            total_5xx += stats.http_5xx
 
         self.job_repo.increment_error_count(
             job,
@@ -337,21 +250,7 @@ class ParserJobService:
         source_id: int,
     ) -> Optional[ParserJobSourceRun]:
         """Create source run record for job."""
-        job = self.job_repo.get_by_id(job_id)
-        if not job:
-            return None
-
-        source_run = ParserJobSourceRun(
-            job_id=job_id,
-            source_id=source_id,
-            status=SourceRunStatus.PENDING,
-            products_discovered=0,
-            products_fetched=0,
-            products_failed=0,
-        )
-        self.session.add(source_run)
-        self.session.flush()
-        return source_run
+        return self.source_run_service.create_source_run(job_id=job_id, source_id=source_id)
 
     def update_source_run(
         self,
@@ -364,44 +263,19 @@ class ParserJobService:
         discovery_mode: str = None,
     ) -> Optional[ParserJobSourceRun]:
         """Update source run record."""
-        source_run = self.session.query(ParserJobSourceRun).filter(
-            ParserJobSourceRun.id == source_run_id
-        ).first()
-
-        if not source_run:
-            return None
-
-        if status is not None:
-            source_run.status = status
-        if products_discovered is not None:
-            source_run.products_discovered = products_discovered
-        if products_fetched is not None:
-            source_run.products_fetched = products_fetched
-        if products_failed is not None:
-            source_run.products_failed = products_failed
-        if error_message is not None:
-            source_run.error_message = error_message
-        if discovery_mode is not None:
-            source_run.discovery_mode = discovery_mode
-
-        if status in [SourceRunStatus.SUCCESS, SourceRunStatus.PARTIAL, SourceRunStatus.FAILED]:
-            source_run.completed_at = datetime.now(timezone.utc)
-
-        self.session.flush()
-        return source_run
+        return self.source_run_service.update_source_run(
+            source_run_id=source_run_id,
+            status=status,
+            products_discovered=products_discovered,
+            products_fetched=products_fetched,
+            products_failed=products_failed,
+            error_message=error_message,
+            discovery_mode=discovery_mode,
+        )
 
     def mark_source_run_started(self, source_run_id: int) -> Optional[ParserJobSourceRun]:
         """Mark source run as started."""
-        source_run = self.session.query(ParserJobSourceRun).filter(
-            ParserJobSourceRun.id == source_run_id
-        ).first()
-
-        if source_run:
-            source_run.status = SourceRunStatus.IN_PROGRESS
-            source_run.started_at = datetime.now(timezone.utc)
-            self.session.flush()
-
-        return source_run
+        return self.source_run_service.mark_source_run_started(source_run_id=source_run_id)
 
     def get_job_summary(self, job_id: str) -> dict:
         """Get job with full summary including source runs."""
@@ -409,30 +283,4 @@ class ParserJobService:
         if not job:
             return {}
 
-        return {
-            "id": job.id,
-            "status": job.status,
-            "triggered_by": job.triggered_by,
-            "created_at": job.created_at.isoformat() if job.created_at else None,
-            "started_at": job.started_at.isoformat() if job.started_at else None,
-            "completed_at": job.completed_at.isoformat() if job.completed_at else None,
-            "total_products": job.total_products,
-            "new_products": job.new_products,
-            "updated_products": job.updated_products,
-            "new_images": job.new_images,
-            "error_count": job.error_count,
-            "http_429_count": job.http_429_count,
-            "http_5xx_count": job.http_5xx_count,
-            "source_runs": [
-                {
-                    "id": run.id,
-                    "source_id": run.source_id,
-                    "status": run.status,
-                    "products_discovered": run.products_discovered,
-                    "products_fetched": run.products_fetched,
-                    "products_failed": run.products_failed,
-                    "discovery_mode": run.discovery_mode,
-                }
-                for run in job.source_runs
-            ],
-        }
+        return build_job_summary_payload(job)

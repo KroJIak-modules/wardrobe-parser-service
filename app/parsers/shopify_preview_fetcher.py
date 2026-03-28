@@ -1,0 +1,166 @@
+"""Helpers for fetching Shopify product previews in single or parallel mode."""
+
+from __future__ import annotations
+
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
+import logging
+from typing import Any, Callable
+
+from app.parsers.http_client import ShopifyHTTPClient
+from app.parsers.shopify_url_utils import extract_handle
+
+LOGGER = logging.getLogger(__name__)
+
+
+@dataclass(slots=True)
+class FetchOutcome:
+    """Result for one product preview fetch."""
+
+    product_url: str
+    preview: Any | None
+    error: str | None
+    http_429_count: int
+    http_5xx_count: int
+
+
+def fetch_one_product_preview(
+    *,
+    base_url: str,
+    product_url: str,
+    cached_payload: dict[str, Any] | None,
+    timeout_sec: float,
+    max_retries: int,
+    retry_backoff_sec: float,
+    build_preview: Callable[[str, str, dict[str, Any], str], Any],
+) -> FetchOutcome:
+    """Fetch preview for one product URL trying .js then .json endpoints."""
+    handle = extract_handle(product_url)
+    if not handle:
+        return FetchOutcome(
+            product_url=product_url,
+            preview=None,
+            error="не удалось извлечь handle из URL",
+            http_429_count=0,
+            http_5xx_count=0,
+        )
+
+    if isinstance(cached_payload, dict):
+        preview = build_preview(product_url, handle, cached_payload, "products_json")
+        return FetchOutcome(
+            product_url=product_url,
+            preview=preview,
+            error=None,
+            http_429_count=0,
+            http_5xx_count=0,
+        )
+
+    http_client = ShopifyHTTPClient()
+    http_429_count = 0
+    http_5xx_count = 0
+    last_error = "нет данных"
+
+    js_url = f"{base_url}/products/{handle}.js"
+    json_url = f"{base_url}/products/{handle}.json"
+
+    for endpoint_url, payload_source in ((js_url, "js"), (json_url, "json")):
+        payload, _, http_429, http_5xx, error = http_client.request_with_retries(
+            url=endpoint_url,
+            is_json=True,
+            timeout_sec=timeout_sec,
+            max_retries=max_retries,
+            retry_backoff_sec=retry_backoff_sec,
+        )
+        http_429_count += http_429
+        http_5xx_count += http_5xx
+
+        if error:
+            last_error = f"ошибка запроса .{payload_source}: {error}"
+            continue
+
+        if payload_source == "json" and isinstance(payload, dict) and isinstance(payload.get("product"), dict):
+            payload = payload["product"]
+
+        if not isinstance(payload, dict):
+            last_error = f"некорректный payload .{payload_source}"
+            continue
+
+        preview = build_preview(product_url, handle, payload, payload_source)
+        return FetchOutcome(
+            product_url=product_url,
+            preview=preview,
+            error=None,
+            http_429_count=http_429_count,
+            http_5xx_count=http_5xx_count,
+        )
+
+    return FetchOutcome(
+        product_url=product_url,
+        preview=None,
+        error=last_error,
+        http_429_count=http_429_count,
+        http_5xx_count=http_5xx_count,
+    )
+
+
+def fetch_many_product_previews(
+    *,
+    base_url: str,
+    product_urls: list[str],
+    payload_cache: dict[str, dict[str, Any]],
+    timeout_sec: float,
+    parallel_workers: int,
+    max_retries: int,
+    retry_backoff_sec: float,
+    build_preview: Callable[[str, str, dict[str, Any], str], Any],
+) -> list[FetchOutcome]:
+    """Fetch many product previews with optional thread pool concurrency."""
+    if not product_urls:
+        return []
+
+    if parallel_workers <= 1 or len(product_urls) <= 1:
+        return [
+            fetch_one_product_preview(
+                base_url=base_url,
+                product_url=product_url,
+                cached_payload=payload_cache.get(product_url),
+                timeout_sec=timeout_sec,
+                max_retries=max_retries,
+                retry_backoff_sec=retry_backoff_sec,
+                build_preview=build_preview,
+            )
+            for product_url in product_urls
+        ]
+
+    results: list[FetchOutcome] = []
+    workers = max(1, min(parallel_workers, len(product_urls)))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {
+            pool.submit(
+                fetch_one_product_preview,
+                base_url=base_url,
+                product_url=product_url,
+                cached_payload=payload_cache.get(product_url),
+                timeout_sec=timeout_sec,
+                max_retries=max_retries,
+                retry_backoff_sec=retry_backoff_sec,
+                build_preview=build_preview,
+            ): product_url
+            for product_url in product_urls
+        }
+        for future in as_completed(futures):
+            product_url = futures[future]
+            try:
+                results.append(future.result())
+            except Exception as exc:  # pragma: no cover
+                LOGGER.exception("Shopify worker failed for %s", product_url)
+                results.append(
+                    FetchOutcome(
+                        product_url=product_url,
+                        preview=None,
+                        error=f"worker_exception: {exc}",
+                        http_429_count=0,
+                        http_5xx_count=0,
+                    )
+                )
+    return results

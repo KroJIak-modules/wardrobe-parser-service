@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-import logging
 import re
 from typing import Any
 from urllib.parse import urlparse
@@ -14,16 +12,13 @@ from app.parsers.http_client import ShopifyHTTPClient
 from app.parsers.xml_parser import ShopifyXMLParser
 from app.parsers.product_extractor import ShopifyProductExtractor
 from app.parsers.shopify_discovery_api import discover_collections_all_products, discover_products_json
+from app.parsers.shopify_preview_fetcher import FetchOutcome, fetch_many_product_previews
 from app.parsers.shopify_url_utils import (
     append_discovered_url,
     dedupe_and_keep_ordered_previews,
-    extract_handle,
     normalize_base_url,
     normalize_product_url,
 )
-
-
-LOGGER = logging.getLogger(__name__)
 
 _PRODUCT_SITEMAP_RE = re.compile(r"(product-sitemap|sitemap_products)", re.IGNORECASE)
 
@@ -64,15 +59,6 @@ class ShopifyDiscoveryResult:
     warnings: list[str]
     error_details: list[str]
     previews: list[ShopifyProductPreview]
-
-
-@dataclass(slots=True)
-class _FetchOutcome:
-    product_url: str
-    preview: ShopifyProductPreview | None
-    error: str | None
-    http_429_count: int
-    http_5xx_count: int
 
 
 class ShopifyParser:
@@ -283,10 +269,10 @@ class ShopifyParser:
         second_pass_recovered = 0
 
         if target_urls:
-            by_url: dict[str, _FetchOutcome] = {}
+            by_url: dict[str, FetchOutcome] = {}
             first_pass_failures: list[str] = []
 
-            for outcome in cls._fetch_many_product_previews(
+            for outcome in fetch_many_product_previews(
                 base_url=resolved_base_url,
                 product_urls=target_urls,
                 payload_cache=payload_cache,
@@ -294,6 +280,7 @@ class ShopifyParser:
                 parallel_workers=parallel_workers,
                 max_retries=max_retries,
                 retry_backoff_sec=retry_backoff_sec,
+                build_preview=cls._build_preview,
             ):
                 by_url[outcome.product_url] = outcome
 
@@ -316,7 +303,7 @@ class ShopifyParser:
                 second_pass_attempted = len(first_pass_failures)
                 second_pass_timeout = max(second_pass_timeout_sec, timeout_sec)
 
-                second_pass_results = cls._fetch_many_product_previews(
+                second_pass_results = fetch_many_product_previews(
                     base_url=resolved_base_url,
                     product_urls=first_pass_failures,
                     payload_cache=payload_cache,
@@ -324,6 +311,7 @@ class ShopifyParser:
                     parallel_workers=max(1, min(parallel_workers, 8)),
                     max_retries=max_retries + 1,
                     retry_backoff_sec=max(retry_backoff_sec, 0.5),
+                    build_preview=cls._build_preview,
                 )
                 second_pass_by_url = {item.product_url: item for item in second_pass_results}
 
@@ -400,144 +388,6 @@ class ShopifyParser:
             warnings=warnings,
             error_details=error_details,
             previews=previews,
-        )
-
-    @classmethod
-    def _fetch_many_product_previews(
-        cls,
-        *,
-        base_url: str,
-        product_urls: list[str],
-        payload_cache: dict[str, dict[str, Any]],
-        timeout_sec: float,
-        parallel_workers: int,
-        max_retries: int,
-        retry_backoff_sec: float,
-    ) -> list[_FetchOutcome]:
-        if not product_urls:
-            return []
-
-        if parallel_workers <= 1 or len(product_urls) <= 1:
-            return [
-                cls._fetch_one_product_preview(
-                    base_url=base_url,
-                    product_url=product_url,
-                    cached_payload=payload_cache.get(product_url),
-                    timeout_sec=timeout_sec,
-                    max_retries=max_retries,
-                    retry_backoff_sec=retry_backoff_sec,
-                )
-                for product_url in product_urls
-            ]
-
-        results: list[_FetchOutcome] = []
-        workers = max(1, min(parallel_workers, len(product_urls)))
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            futures = {
-                pool.submit(
-                    cls._fetch_one_product_preview,
-                    base_url=base_url,
-                    product_url=product_url,
-                    cached_payload=payload_cache.get(product_url),
-                    timeout_sec=timeout_sec,
-                    max_retries=max_retries,
-                    retry_backoff_sec=retry_backoff_sec,
-                ): product_url
-                for product_url in product_urls
-            }
-            for future in as_completed(futures):
-                product_url = futures[future]
-                try:
-                    results.append(future.result())
-                except Exception as exc:  # pragma: no cover
-                    LOGGER.exception("Shopify worker failed for %s", product_url)
-                    results.append(
-                        _FetchOutcome(
-                            product_url=product_url,
-                            preview=None,
-                            error=f"worker_exception: {exc}",
-                            http_429_count=0,
-                            http_5xx_count=0,
-                        )
-                    )
-        return results
-
-    @classmethod
-    def _fetch_one_product_preview(
-        cls,
-        *,
-        base_url: str,
-        product_url: str,
-        cached_payload: dict[str, Any] | None,
-        timeout_sec: float,
-        max_retries: int,
-        retry_backoff_sec: float,
-    ) -> _FetchOutcome:
-        handle = extract_handle(product_url)
-        if not handle:
-            return _FetchOutcome(
-                product_url=product_url,
-                preview=None,
-                error="не удалось извлечь handle из URL",
-                http_429_count=0,
-                http_5xx_count=0,
-            )
-
-        if isinstance(cached_payload, dict):
-            preview = cls._build_preview(product_url, handle, cached_payload, payload_source="products_json")
-            return _FetchOutcome(
-                product_url=product_url,
-                preview=preview,
-                error=None,
-                http_429_count=0,
-                http_5xx_count=0,
-            )
-
-        http_client = ShopifyHTTPClient()
-        http_429_count = 0
-        http_5xx_count = 0
-        last_error = "нет данных"
-
-        js_url = f"{base_url}/products/{handle}.js"
-        json_url = f"{base_url}/products/{handle}.json"
-
-        for endpoint_url, payload_source in ((js_url, "js"), (json_url, "json")):
-            payload, _, http_429, http_5xx, error = http_client.request_with_retries(
-                url=endpoint_url,
-                is_json=True,
-                timeout_sec=timeout_sec,
-                max_retries=max_retries,
-                retry_backoff_sec=retry_backoff_sec,
-            )
-            http_429_count += http_429
-            http_5xx_count += http_5xx
-
-            if error:
-                last_error = f"ошибка запроса .{payload_source}: {error}"
-                continue
-
-            if payload_source == "json" and isinstance(payload, dict) and isinstance(payload.get("product"), dict):
-                payload = payload["product"]
-
-            if not isinstance(payload, dict):
-                last_error = f"некорректный payload .{payload_source}"
-                continue
-
-            preview = cls._build_preview(product_url, handle, payload, payload_source=payload_source)
-            return _FetchOutcome(
-                product_url=product_url,
-                preview=preview,
-                error=None,
-                http_429_count=http_429_count,
-                http_5xx_count=http_5xx_count,
-            )
-
-        return _FetchOutcome(
-            product_url=product_url,
-            preview=None,
-            error=last_error,
-            http_429_count=http_429_count,
-            http_5xx_count=http_5xx_count,
         )
 
     @classmethod
