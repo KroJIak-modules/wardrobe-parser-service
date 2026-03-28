@@ -3,9 +3,9 @@ Data access layer - repositories for all entities.
 """
 
 from app.repositories.base import BaseRepository
-from app.repositories.parser_job import ParserJobRepository
-from app.repositories.parser_product import ParserProductRepository
-from app.repositories.parser_source import (
+from app.repositories.catalog.product_repository import ParserProductRepository
+from app.repositories.job_repository import ParserJobRepository
+from app.repositories.source_repository import (
     ParserSourceRepository,
     ParserProductFingerprintRepository,
 )

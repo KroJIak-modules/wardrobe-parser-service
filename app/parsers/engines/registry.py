@@ -1,0 +1,70 @@
+"""Parser engine registry for parser_type-based dispatch."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Literal, Protocol
+
+from app.core.config import settings
+from app.core.exceptions import ValidationError
+from app.parsers.shopify.parser import ShopifyParser
+
+ParserType = Literal["shopify", "custom"]
+
+
+class ParserEngine(Protocol):
+    """Minimal parser engine contract used by sync services."""
+
+    parser_type: ParserType
+
+    def discover(self, base_url: str):
+        """Run source discovery and return result with previews/counters."""
+
+
+@dataclass(slots=True)
+class ShopifyParserEngine:
+    """Shopify parser engine adapter."""
+
+    parser_type: ParserType = "shopify"
+
+    def discover(self, base_url: str):
+        return ShopifyParser.discover(
+            base_url,
+            max_products=settings.parser_default_max_products,
+            sample_products=settings.parser_default_sample_products,
+            timeout_sec=settings.parser_default_timeout_sec,
+            fetch_all_products=True,
+            response_products_limit=settings.parser_default_max_products,
+            error_details_limit=200,
+            parallel_workers=settings.parser_default_parallel_workers,
+            max_retries=settings.parser_default_max_retries,
+            retry_backoff_sec=settings.parser_default_retry_backoff_sec,
+            second_pass_enabled=settings.parser_default_second_pass_enabled,
+            second_pass_timeout_sec=settings.parser_default_second_pass_timeout_sec,
+        )
+
+
+@dataclass(slots=True)
+class CustomParserEngine:
+    """Placeholder adapter for custom parser sources."""
+
+    parser_type: ParserType = "custom"
+
+    def discover(self, base_url: str):
+        raise ValidationError(
+            f"Источник {base_url} имеет parser_type='custom', но custom parser пока не реализован"
+        )
+
+
+_ENGINES: dict[ParserType, ParserEngine] = {
+    "shopify": ShopifyParserEngine(),
+    "custom": CustomParserEngine(),
+}
+
+
+def get_parser_engine(parser_type: str) -> ParserEngine:
+    """Resolve parser engine by parser_type or raise ValidationError."""
+    engine = _ENGINES.get(parser_type)  # type: ignore[arg-type]
+    if not engine:
+        raise ValidationError(f"Неподдерживаемый parser_type: {parser_type}")
+    return engine

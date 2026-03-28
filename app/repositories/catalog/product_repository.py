@@ -4,10 +4,11 @@ ParserProduct repository for product catalog queries.
 
 from typing import Optional, List, Dict
 from sqlalchemy.orm import Session
-from sqlalchemy import func, or_
+from sqlalchemy import func
 
 from app.models import ParserProduct, ProductStatus
 from app.repositories.base import BaseRepository
+from app.repositories.catalog.product_filters import build_filtered_query
 
 
 class ParserProductRepository(BaseRepository[ParserProduct]):
@@ -87,63 +88,6 @@ class ParserProductRepository(BaseRepository[ParserProduct]):
             q = q.filter(ParserProduct.deleted_at.is_(None))
         return q.count()
 
-    def _apply_vendor_filter(self, q, vendors: Optional[List[str]]):
-        if not vendors:
-            return q
-
-        brand_values = [value for value in vendors if value != self.NO_BRAND_FILTER]
-        without_brand = self.NO_BRAND_FILTER in vendors
-        conditions = []
-        if brand_values:
-            conditions.append(ParserProduct.vendor.in_(brand_values))
-        if without_brand:
-            conditions.append(or_(ParserProduct.vendor.is_(None), ParserProduct.vendor == ""))
-        if conditions:
-            q = q.filter(or_(*conditions))
-        return q
-
-    def _build_filtered_query(
-        self,
-        *,
-        source_ids: Optional[List[int]],
-        vendors: Optional[List[str]],
-        product_types: Optional[List[str]],
-        status: Optional[str],
-        price_min: Optional[float],
-        price_max: Optional[float],
-        search_text: Optional[str],
-    ):
-        q = self.query().filter(ParserProduct.deleted_at.is_(None))
-
-        if source_ids:
-            q = q.filter(ParserProduct.source_id.in_(source_ids))
-
-        q = self._apply_vendor_filter(q, vendors)
-
-        if product_types:
-            q = q.filter(ParserProduct.product_type.in_(product_types))
-
-        if status:
-            q = q.filter(ParserProduct.status == status)
-
-        if price_min is not None:
-            q = q.filter(ParserProduct.price >= price_min)
-
-        if price_max is not None:
-            q = q.filter(ParserProduct.price <= price_max)
-
-        if search_text:
-            search_pattern = f"%{search_text}%"
-            q = q.filter(
-                or_(
-                    ParserProduct.title.ilike(search_pattern),
-                    ParserProduct.handle.ilike(search_pattern),
-                    ParserProduct.vendor.ilike(search_pattern),
-                )
-            )
-
-        return q
-
     def filter_products(
         self,
         source_ids: Optional[List[int]] = None,
@@ -157,7 +101,8 @@ class ParserProductRepository(BaseRepository[ParserProduct]):
         limit: int = 100,
     ) -> List[ParserProduct]:
         """Advanced filtering for product lists."""
-        q = self._build_filtered_query(
+        q = build_filtered_query(
+            self.query(),
             source_ids=source_ids,
             vendors=vendors,
             product_types=product_types,
@@ -165,6 +110,7 @@ class ParserProductRepository(BaseRepository[ParserProduct]):
             price_min=price_min,
             price_max=price_max,
             search_text=search_text,
+            no_brand_filter=self.NO_BRAND_FILTER,
         )
 
         return q.offset(skip).limit(limit).all()
@@ -180,7 +126,8 @@ class ParserProductRepository(BaseRepository[ParserProduct]):
         search_text: Optional[str] = None,
     ) -> int:
         """Count products matching filters (without pagination)."""
-        q = self._build_filtered_query(
+        q = build_filtered_query(
+            self.query(),
             source_ids=source_ids,
             vendors=vendors,
             product_types=product_types,
@@ -188,6 +135,7 @@ class ParserProductRepository(BaseRepository[ParserProduct]):
             price_min=price_min,
             price_max=price_max,
             search_text=search_text,
+            no_brand_filter=self.NO_BRAND_FILTER,
         )
 
         return q.count()

@@ -9,7 +9,7 @@ from fastapi import HTTPException, status
 
 from app.config.source_registry import list_sources
 from app.core.config import settings
-from app.parsers.shopify_parser import ShopifyParser
+from app.parsers.shopify.parser import ShopifyParser
 from app.repositories import ParserSourceRepository
 
 

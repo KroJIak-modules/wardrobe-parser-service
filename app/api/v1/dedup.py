@@ -9,7 +9,7 @@ from app.schemas.parser import (
     DedupMergeRequest,
     DedupRejectRequest,
 )
-from app.services.dedup_service import DedupService
+from app.services.moderation.dedup_service import DedupService
 
 router = APIRouter(tags=["dedup"])
 

@@ -10,7 +10,7 @@ from app.schemas.parser import (
     CategoryTreeNodeResponse,
     CategoryUpdateRequest,
 )
-from app.services.category_tree_service import CategoryTreeService
+from app.services.catalog.category_tree_service import CategoryTreeService
 
 router = APIRouter(tags=["categories"])
 

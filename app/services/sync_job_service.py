@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.schemas.parser import JobCreateRequest, JobCreateResponse, JobLatestResponse, JobResponse
-from app.services.parser_job import ParserJobService
+from app.services.parser_sync.job_service import ParserJobService
 
 
 class SyncJobService:

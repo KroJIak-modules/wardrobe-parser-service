@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from app.config.source_registry import get_source_by_key
 from app.core.exceptions import ValidationError
-from app.parsers.shopify_parser import ShopifyParser
+from app.parsers.shopify.parser import ShopifyParser
 from app.schemas.shopify import (
     ShopifyDiscoveryRequest,
     ShopifyDiscoveryResponse,

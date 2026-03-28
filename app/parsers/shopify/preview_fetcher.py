@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import logging
 from typing import Any, Callable
 
-from app.parsers.http_client import ShopifyHTTPClient
+from app.parsers.shopify.http_client import ShopifyHTTPClient
 from app.parsers.shopify_url_utils import extract_handle
 
 LOGGER = logging.getLogger(__name__)
@@ -32,7 +32,7 @@ def fetch_one_product_preview(
     timeout_sec: float,
     max_retries: int,
     retry_backoff_sec: float,
-    build_preview: Callable[[str, str, dict[str, Any], str], Any],
+    build_preview: Callable[..., Any],
 ) -> FetchOutcome:
     """Fetch preview for one product URL trying .js then .json endpoints."""
     handle = extract_handle(product_url)
@@ -46,7 +46,12 @@ def fetch_one_product_preview(
         )
 
     if isinstance(cached_payload, dict):
-        preview = build_preview(product_url, handle, cached_payload, "products_json")
+        preview = build_preview(
+            product_url,
+            handle,
+            cached_payload,
+            payload_source="products_json",
+        )
         return FetchOutcome(
             product_url=product_url,
             preview=preview,
@@ -85,7 +90,12 @@ def fetch_one_product_preview(
             last_error = f"некорректный payload .{payload_source}"
             continue
 
-        preview = build_preview(product_url, handle, payload, payload_source)
+        preview = build_preview(
+            product_url,
+            handle,
+            payload,
+            payload_source=payload_source,
+        )
         return FetchOutcome(
             product_url=product_url,
             preview=preview,
@@ -112,7 +122,7 @@ def fetch_many_product_previews(
     parallel_workers: int,
     max_retries: int,
     retry_backoff_sec: float,
-    build_preview: Callable[[str, str, dict[str, Any], str], Any],
+    build_preview: Callable[..., Any],
 ) -> list[FetchOutcome]:
     """Fetch many product previews with optional thread pool concurrency."""
     if not product_urls:

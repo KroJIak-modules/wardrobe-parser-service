@@ -8,8 +8,8 @@ from typing import Callable
 from sqlalchemy.orm import Session
 
 from app.models import SourceRunStatus
-from app.services.parser_product_sync_service import ParserProductSyncService
-from app.services.parser_source_run_service import ParserSourceRunService
+from app.services.parser_sync.product_sync_service import ParserProductSyncService
+from app.services.parser_sync.source_run_service import ParserSourceRunService
 
 
 @dataclass(slots=True)
@@ -32,14 +32,14 @@ class ParserSourceSyncExecutor:
         session: Session,
         source_run_service: ParserSourceRunService,
         product_sync_service: ParserProductSyncService,
-        discover_source: Callable[[str], object],
+        discover_source: Callable[[str, str], object],
     ):
         self.session = session
         self.source_run_service = source_run_service
         self.product_sync_service = product_sync_service
         self.discover_source = discover_source
 
-    def sync_source(self, *, job_id: str, source_id: int, base_url: str) -> SourceSyncStats:
+    def sync_source(self, *, job_id: str, source_id: int, base_url: str, parser_type: str) -> SourceSyncStats:
         source_run = self.source_run_service.create_source_run(job_id=job_id, source_id=source_id)
         if not source_run:
             return SourceSyncStats(errors=1)
@@ -47,7 +47,7 @@ class ParserSourceSyncExecutor:
         self.source_run_service.mark_source_run_started(source_run.id)
 
         try:
-            result = self.discover_source(base_url)
+            result = self.discover_source(parser_type, base_url)
 
             created, updated = self.product_sync_service.sync_source_products(source_id, result.previews)
             stats = SourceSyncStats(
