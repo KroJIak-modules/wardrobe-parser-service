@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 import requests
@@ -20,11 +21,13 @@ def discover_products_json_since_id(
     max_retries: int,
     retry_backoff_sec: float,
     session: requests.Session,
-) -> tuple[list[str], dict[str, dict[str, Any]], list[str]]:
+    deadline_monotonic: float | None = None,
+) -> tuple[list[str], dict[str, dict[str, Any]], list[str], bool]:
     warnings: list[str] = []
     urls: list[str] = []
     url_set: set[str] = set()
     payloads: dict[str, dict[str, Any]] = {}
+    rate_limited = False
 
     http_client = ShopifyHTTPClient()
     since_id = 0
@@ -32,6 +35,9 @@ def discover_products_json_since_id(
     page_size = settings.parser_shopify_page_size
 
     for _ in range(safety_limit):
+        if deadline_monotonic is not None and time.monotonic() >= deadline_monotonic:
+            warnings.append("products.json(since_id) остановлен: SOURCE_TIMEOUT")
+            break
         if len(urls) >= max_products:
             break
         request_url = f"{base_url}/products.json?limit={page_size}"
@@ -45,8 +51,11 @@ def discover_products_json_since_id(
             max_retries=max_retries,
             retry_backoff_sec=retry_backoff_sec,
             session=session,
+            deadline_monotonic=deadline_monotonic,
         )
         if error:
+            if error == "HTTP 429":
+                rate_limited = True
             warnings.append(f"products.json(since_id) недоступен: {error}")
             break
 
@@ -76,7 +85,7 @@ def discover_products_json_since_id(
 
         since_id = max_id_on_page
 
-    return urls, payloads, warnings
+    return urls, payloads, warnings, rate_limited
 
 
 def discover_products_json_page(
@@ -87,11 +96,13 @@ def discover_products_json_page(
     max_retries: int,
     retry_backoff_sec: float,
     session: requests.Session,
-) -> tuple[list[str], dict[str, dict[str, Any]], list[str]]:
+    deadline_monotonic: float | None = None,
+) -> tuple[list[str], dict[str, dict[str, Any]], list[str], bool]:
     warnings: list[str] = []
     urls: list[str] = []
     url_set: set[str] = set()
     payloads: dict[str, dict[str, Any]] = {}
+    rate_limited = False
 
     http_client = ShopifyHTTPClient()
     page = 1
@@ -101,6 +112,9 @@ def discover_products_json_page(
     page_size = settings.parser_shopify_page_size
 
     for _ in range(safety_limit):
+        if deadline_monotonic is not None and time.monotonic() >= deadline_monotonic:
+            warnings.append("products.json(page) остановлен: SOURCE_TIMEOUT")
+            break
         if len(urls) >= max_products:
             break
         request_url = f"{base_url}/products.json?limit={page_size}&page={page}"
@@ -111,8 +125,11 @@ def discover_products_json_page(
             max_retries=max_retries,
             retry_backoff_sec=retry_backoff_sec,
             session=session,
+            deadline_monotonic=deadline_monotonic,
         )
         if error:
+            if error == "HTTP 429":
+                rate_limited = True
             warnings.append(f"products.json(page) остановлен на page={page}: {error}")
             break
 
@@ -144,7 +161,7 @@ def discover_products_json_page(
             break
         page += 1
 
-    return urls, payloads, warnings
+    return urls, payloads, warnings, rate_limited
 
 
 def extract_products_list(payload: Any) -> list[dict[str, Any]]:

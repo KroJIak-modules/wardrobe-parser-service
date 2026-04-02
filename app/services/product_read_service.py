@@ -28,6 +28,7 @@ class ProductReadService:
     def build_product_response(product) -> ProductResponse:
         image_urls = product.image_urls or []
         image_ids = product.image_asset_ids or []
+        variants = product.variants or []
         return ProductResponse(
             id=product.id,
             source_id=product.source_id,
@@ -42,6 +43,7 @@ class ProductReadService:
             image_count=product.image_count,
             image_urls=image_urls,
             image_ids=image_ids,
+            variants=variants,
             created_at=product.created_at,
             updated_at=product.updated_at,
         )

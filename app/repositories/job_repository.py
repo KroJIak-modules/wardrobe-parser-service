@@ -110,6 +110,14 @@ class ParserJobRepository(BaseRepository[ParserJob]):
         }
         return self.update(job, **update_data)
 
+    def mark_cancelled(self, job: ParserJob) -> ParserJob:
+        """Mark job as cancelled by user/system."""
+        return self.update(
+            job,
+            status=JobStatus.CANCELLED,
+            completed_at=datetime.now(timezone.utc),
+        )
+
     def increment_error_count(
         self,
         job: ParserJob,

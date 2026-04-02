@@ -75,6 +75,73 @@ class ShopifyProductExtractor:
         return ordered
 
     @staticmethod
+    def extract_availability(payload: dict[str, Any]) -> bool:
+        """
+        Determine if product is available based on variants.
+        
+        Returns True if:
+        - At least one variant has available=True
+        - Or product-level available is True (fallback)
+        
+        Returns False if:
+        - All variants have available=False or no variants exist
+        - And product-level available is False
+        """
+        variants = payload.get("variants")
+
+        if isinstance(variants, list) and variants:
+            for variant in variants:
+                if not isinstance(variant, dict):
+                    continue
+                if variant.get("available") is True:
+                    return True
+                quantity_raw = variant.get("inventory_quantity")
+                if isinstance(quantity_raw, (int, float)) and quantity_raw > 0:
+                    return True
+            # We had variants, but none are available and no positive inventory.
+            return False
+
+        # Fallback to product-level availability only when variants are absent.
+        return payload.get("available", True)
+    
+    @staticmethod
+    def extract_variants(payload: dict[str, Any]) -> list[dict[str, Any]]:
+        """
+        Extract variant information (size/color options with availability).
+        
+        Returns list of dicts with: title, option1, option2, option3, available, price, inventory_quantity
+        """
+        variants = payload.get("variants")
+        result: list[dict[str, Any]] = []
+        
+        if not isinstance(variants, list):
+            return result
+        
+        for variant in variants:
+            if not isinstance(variant, dict):
+                continue
+            
+            # Extract variant info
+            available_raw = variant.get("available")
+            quantity_raw = variant.get("inventory_quantity")
+            quantity = quantity_raw if isinstance(quantity_raw, int) else 0
+            available = bool(available_raw is True or quantity > 0)
+
+            variant_info = {
+                "title": ShopifyProductExtractor._safe_str(variant.get("title")) or "Default",
+                "option1": ShopifyProductExtractor._safe_str(variant.get("option1")),
+                "option2": ShopifyProductExtractor._safe_str(variant.get("option2")),
+                "option3": ShopifyProductExtractor._safe_str(variant.get("option3")),
+                "available": available,
+                "price": variant.get("price"),
+                "inventory_quantity": quantity,
+                "sku": ShopifyProductExtractor._safe_str(variant.get("sku")),
+            }
+            result.append(variant_info)
+        
+        return result
+    
+    @staticmethod
     def _safe_str(value: Any) -> str | None:
         """Safely convert value to string or return None."""
         if value is None:

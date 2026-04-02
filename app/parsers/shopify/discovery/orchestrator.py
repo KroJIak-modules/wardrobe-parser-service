@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+import time
 from typing import Any
 
+from app.core.config import settings
 from app.parsers.shopify.http_client import ShopifyHTTPClient
 from app.parsers.shopify.discovery.api import (
     discover_collections_all_products,
@@ -27,6 +30,56 @@ class DiscoveryCollectionResult:
     product_sitemaps_found: int
 
 
+@dataclass(slots=True)
+class ProductSitemapFetchResult:
+    """One fetched product-sitemap payload with warnings."""
+
+    index: int
+    raw_urls: list[str]
+    warning: str | None = None
+    rate_limited: bool = False
+
+
+def _fetch_product_sitemap(
+    *,
+    index: int,
+    product_sitemap_url: str,
+    timeout_sec: float,
+    max_retries: int,
+    retry_backoff_sec: float,
+    deadline_monotonic: float | None = None,
+) -> ProductSitemapFetchResult:
+    """Fetch and parse one product-sitemap file."""
+    http_client = ShopifyHTTPClient()
+    session = ShopifyHTTPClient.create_session()
+    ps_text, _, _, _, ps_error = http_client.request_with_retries(
+        url=product_sitemap_url,
+        is_json=False,
+        timeout_sec=timeout_sec,
+        max_retries=max_retries,
+        retry_backoff_sec=retry_backoff_sec,
+        session=session,
+        deadline_monotonic=deadline_monotonic,
+    )
+    if ps_error:
+        return ProductSitemapFetchResult(
+            index=index,
+            raw_urls=[],
+            warning=f"Не удалось прочитать {product_sitemap_url}: {ps_error}",
+            rate_limited=ps_error == "HTTP 429",
+        )
+    if not isinstance(ps_text, str):
+        return ProductSitemapFetchResult(
+            index=index,
+            raw_urls=[],
+            warning=f"Некорректный XML в {product_sitemap_url}",
+        )
+    return ProductSitemapFetchResult(
+        index=index,
+        raw_urls=ShopifyXMLParser.extract_loc_urls(ps_text),
+    )
+
+
 def collect_discovery_urls(
     *,
     base_url: str,
@@ -35,6 +88,7 @@ def collect_discovery_urls(
     timeout_sec: float,
     max_retries: int,
     retry_backoff_sec: float,
+    deadline_monotonic: float | None = None,
 ) -> DiscoveryCollectionResult:
     """Collect product URLs from sitemap.xml and API fallbacks."""
     sitemap_url = f"{base_url}/sitemap.xml"
@@ -46,6 +100,7 @@ def collect_discovery_urls(
     source_from_sitemap = False
     source_from_fallback = False
     product_sitemaps_found = 0
+    sitemap_rate_limited = False
 
     http_client = ShopifyHTTPClient()
     session = ShopifyHTTPClient.create_session()
@@ -57,10 +112,12 @@ def collect_discovery_urls(
         max_retries=max_retries,
         retry_backoff_sec=retry_backoff_sec,
         session=session,
+        deadline_monotonic=deadline_monotonic,
     )
 
     if sitemap_error:
         warnings.append(f"Не удалось прочитать sitemap.xml: {sitemap_error}")
+        sitemap_rate_limited = sitemap_error == "HTTP 429"
     elif isinstance(sitemap_payload, str):
         sitemap_urls, direct_product_urls = ShopifyXMLParser.parse_sitemap(sitemap_payload)
         product_sitemaps = [url for url in sitemap_urls if product_sitemap_re.search(url)]
@@ -68,24 +125,52 @@ def collect_discovery_urls(
 
         if product_sitemaps:
             source_from_sitemap = True
-            for product_sitemap_url in product_sitemaps:
+            sitemap_results: list[ProductSitemapFetchResult] = []
+            sitemap_workers = max(1, min(settings.parser_discovery_sitemap_workers, len(product_sitemaps)))
+
+            if sitemap_workers == 1:
+                for index, product_sitemap_url in enumerate(product_sitemaps):
+                    if deadline_monotonic is not None and time.monotonic() >= deadline_monotonic:
+                        warnings.append("product-sitemap остановлен: SOURCE_TIMEOUT")
+                        break
+                    sitemap_results.append(
+                        _fetch_product_sitemap(
+                            index=index,
+                            product_sitemap_url=product_sitemap_url,
+                            timeout_sec=timeout_sec,
+                            max_retries=max_retries,
+                            retry_backoff_sec=retry_backoff_sec,
+                            deadline_monotonic=deadline_monotonic,
+                        )
+                    )
+            else:
+                with ThreadPoolExecutor(max_workers=sitemap_workers) as pool:
+                    futures = {
+                        pool.submit(
+                            _fetch_product_sitemap,
+                            index=index,
+                            product_sitemap_url=product_sitemap_url,
+                            timeout_sec=timeout_sec,
+                            max_retries=max_retries,
+                            retry_backoff_sec=retry_backoff_sec,
+                            deadline_monotonic=deadline_monotonic,
+                        ): index
+                        for index, product_sitemap_url in enumerate(product_sitemaps)
+                        if deadline_monotonic is None or time.monotonic() < deadline_monotonic
+                    }
+                    by_index: dict[int, ProductSitemapFetchResult] = {}
+                    for future in as_completed(futures):
+                        result = future.result()
+                        by_index[result.index] = result
+                    sitemap_results = [by_index[index] for index in sorted(by_index)]
+
+            for sitemap_result in sitemap_results:
                 if len(discovered_urls) >= max_products:
                     break
-                ps_text, _, _, _, ps_error = http_client.request_with_retries(
-                    url=product_sitemap_url,
-                    is_json=False,
-                    timeout_sec=timeout_sec,
-                    max_retries=max_retries,
-                    retry_backoff_sec=retry_backoff_sec,
-                    session=session,
-                )
-                if ps_error:
-                    warnings.append(f"Не удалось прочитать {product_sitemap_url}: {ps_error}")
+                if sitemap_result.warning:
+                    warnings.append(sitemap_result.warning)
                     continue
-                if not isinstance(ps_text, str):
-                    warnings.append(f"Некорректный XML в {product_sitemap_url}")
-                    continue
-                for raw_url in ShopifyXMLParser.extract_loc_urls(ps_text):
+                for raw_url in sitemap_result.raw_urls:
                     normalized = normalize_product_url(raw_url, base_url)
                     if not normalized:
                         continue
@@ -95,6 +180,8 @@ def collect_discovery_urls(
                         discovered_set=discovered_set,
                         max_products=max_products,
                     )
+            if product_sitemaps and all(result.rate_limited for result in sitemap_results):
+                sitemap_rate_limited = True
 
         for raw_url in direct_product_urls:
             if len(discovered_urls) >= max_products:
@@ -113,43 +200,21 @@ def collect_discovery_urls(
         if not product_sitemaps:
             warnings.append("В sitemap не найден product-sitemap, используем fallback /products.json")
 
-    products_api_urls, products_api_payloads, products_api_warnings = discover_products_json(
-        base_url=base_url,
-        max_products=max_products,
-        timeout_sec=timeout_sec,
-        max_retries=max_retries,
-        retry_backoff_sec=retry_backoff_sec,
-        session=session,
-    )
-    warnings.extend(products_api_warnings)
-    if products_api_urls:
-        source_from_fallback = True
-    for url in products_api_urls:
-        if len(discovered_urls) >= max_products:
-            break
-        append_discovered_url(
-            url,
-            discovered_urls=discovered_urls,
-            discovered_set=discovered_set,
-            max_products=max_products,
-        )
-        payload = products_api_payloads.get(url)
-        if isinstance(payload, dict):
-            payload_cache[url] = payload
-
-    if len(discovered_urls) < max_products:
-        collection_urls, collection_payloads, collection_warnings = discover_collections_all_products(
+    remaining_slots = max(0, max_products - len(discovered_urls))
+    if remaining_slots > 0:
+        products_api_result = discover_products_json(
             base_url=base_url,
-            max_products=max_products - len(discovered_urls),
+            max_products=remaining_slots,
             timeout_sec=timeout_sec,
             max_retries=max_retries,
             retry_backoff_sec=retry_backoff_sec,
             session=session,
+            deadline_monotonic=deadline_monotonic,
         )
-        warnings.extend(collection_warnings)
-        if collection_urls:
+        warnings.extend(products_api_result.warnings)
+        if products_api_result.urls:
             source_from_fallback = True
-        for url in collection_urls:
+        for url in products_api_result.urls:
             if len(discovered_urls) >= max_products:
                 break
             append_discovered_url(
@@ -158,7 +223,49 @@ def collect_discovery_urls(
                 discovered_set=discovered_set,
                 max_products=max_products,
             )
-            payload = collection_payloads.get(url)
+            payload = products_api_result.payloads.get(url)
+            if isinstance(payload, dict):
+                payload_cache[url] = payload
+        if (
+            settings.parser_discovery_fail_fast_on_rate_limit
+            and not discovered_urls
+            and sitemap_rate_limited
+            and products_api_result.rate_limited
+        ):
+            warnings.append("Discovery остановлен раньше: магазин отвечает HTTP 429 на sitemap и products.json")
+            return DiscoveryCollectionResult(
+                sitemap_url=sitemap_url,
+                discovered_urls=discovered_urls,
+                payload_cache=payload_cache,
+                warnings=warnings,
+                source_from_sitemap=source_from_sitemap,
+                source_from_fallback=source_from_fallback,
+                product_sitemaps_found=product_sitemaps_found,
+            )
+
+    if len(discovered_urls) < max_products:
+        collections_result = discover_collections_all_products(
+            base_url=base_url,
+            max_products=max_products - len(discovered_urls),
+            timeout_sec=timeout_sec,
+            max_retries=max_retries,
+            retry_backoff_sec=retry_backoff_sec,
+            session=session,
+            deadline_monotonic=deadline_monotonic,
+        )
+        warnings.extend(collections_result.warnings)
+        if collections_result.urls:
+            source_from_fallback = True
+        for url in collections_result.urls:
+            if len(discovered_urls) >= max_products:
+                break
+            append_discovered_url(
+                url,
+                discovered_urls=discovered_urls,
+                discovered_set=discovered_set,
+                max_products=max_products,
+            )
+            payload = collections_result.payloads.get(url)
             if isinstance(payload, dict):
                 payload_cache[url] = payload
 

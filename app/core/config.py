@@ -43,6 +43,18 @@ class Settings(BaseSettings):
         le=240.0,
         env="PARSER_DEFAULT_SECOND_PASS_TIMEOUT_SEC",
     )
+    parser_empty_discovery_source_retries: int = Field(
+        default=1,
+        ge=0,
+        le=5,
+        env="PARSER_EMPTY_DISCOVERY_SOURCE_RETRIES",
+    )
+    parser_empty_discovery_retry_backoff_sec: float = Field(
+        default=1.5,
+        ge=0.0,
+        le=30.0,
+        env="PARSER_EMPTY_DISCOVERY_RETRY_BACKOFF_SEC",
+    )
     parser_default_error_details_limit: int = Field(
         default=200,
         ge=1,
@@ -60,6 +72,54 @@ class Settings(BaseSettings):
         ge=10,
         le=5000,
         env="PARSER_DISCOVERY_COLLECTIONS_SAFETY_LIMIT",
+    )
+    parser_discovery_sitemap_workers: int = Field(
+        default=4,
+        ge=1,
+        le=16,
+        env="PARSER_DISCOVERY_SITEMAP_WORKERS",
+    )
+    parser_discovery_fail_fast_on_rate_limit: bool = Field(
+        default=False,
+        env="PARSER_DISCOVERY_FAIL_FAST_ON_RATE_LIMIT",
+    )
+    parser_recover_from_existing_urls_enabled: bool = Field(
+        default=True,
+        env="PARSER_RECOVER_FROM_EXISTING_URLS_ENABLED",
+    )
+    parser_recovery_network_enabled: bool = Field(
+        default=False,
+        env="PARSER_RECOVERY_NETWORK_ENABLED",
+    )
+    parser_recovery_parallel_workers: int = Field(
+        default=96,
+        ge=1,
+        le=256,
+        env="PARSER_RECOVERY_PARALLEL_WORKERS",
+    )
+    parser_recovery_timeout_sec: float = Field(
+        default=6.0,
+        ge=1.0,
+        le=120.0,
+        env="PARSER_RECOVERY_TIMEOUT_SEC",
+    )
+    parser_recovery_max_retries: int = Field(
+        default=0,
+        ge=0,
+        le=10,
+        env="PARSER_RECOVERY_MAX_RETRIES",
+    )
+    parser_recovery_retry_backoff_sec: float = Field(
+        default=0.2,
+        ge=0.0,
+        le=10.0,
+        env="PARSER_RECOVERY_RETRY_BACKOFF_SEC",
+    )
+    parser_recovery_second_pass_timeout_sec: float = Field(
+        default=8.0,
+        ge=1.0,
+        le=240.0,
+        env="PARSER_RECOVERY_SECOND_PASS_TIMEOUT_SEC",
     )
     parser_shopify_page_size: int = Field(
         default=250,
@@ -85,17 +145,77 @@ class Settings(BaseSettings):
         le=10.0,
         env="PARSER_SECOND_PASS_MIN_BACKOFF_SEC",
     )
+    parser_rate_limit_min_cooldown_sec: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=60.0,
+        env="PARSER_RATE_LIMIT_MIN_COOLDOWN_SEC",
+    )
+    parser_rate_limit_jitter_sec: float = Field(
+        default=0.15,
+        ge=0.0,
+        le=5.0,
+        env="PARSER_RATE_LIMIT_JITTER_SEC",
+    )
+    parser_timeout_cooldown_sec: float = Field(
+        default=0.25,
+        ge=0.0,
+        le=30.0,
+        env="PARSER_TIMEOUT_COOLDOWN_SEC",
+    )
+    parser_source_timeout_sec: float = Field(
+        default=180.0,
+        ge=30.0,
+        le=3600.0,
+        env="PARSER_SOURCE_TIMEOUT_SEC",
+    )
+    parser_circuit_breaker_429_threshold: int = Field(
+        default=5,
+        ge=1,
+        le=200,
+        env="PARSER_CIRCUIT_BREAKER_429_THRESHOLD",
+    )
+    parser_circuit_breaker_max_penalty: int = Field(
+        default=3,
+        ge=1,
+        le=8,
+        env="PARSER_CIRCUIT_BREAKER_MAX_PENALTY",
+    )
+    parser_circuit_breaker_recovery_successes: int = Field(
+        default=30,
+        ge=1,
+        le=5000,
+        env="PARSER_CIRCUIT_BREAKER_RECOVERY_SUCCESSES",
+    )
+    parser_circuit_breaker_pause_sec: float = Field(
+        default=3.0,
+        ge=0.0,
+        le=120.0,
+        env="PARSER_CIRCUIT_BREAKER_PAUSE_SEC",
+    )
     parser_sync_max_sources: int = Field(
         default=0,
         ge=0,
         le=200,
         env="PARSER_SYNC_MAX_SOURCES",
     )
+    parser_sync_source_workers: int = Field(
+        default=4,
+        ge=1,
+        le=16,
+        env="PARSER_SYNC_SOURCE_WORKERS",
+    )
     parser_sync_period_minutes: int = Field(
         default=300,
         ge=15,
         le=10080,
         env="PARSER_SYNC_PERIOD_MINUTES",
+    )
+    parser_job_stale_minutes: int = Field(
+        default=180,
+        ge=5,
+        le=10080,
+        env="PARSER_JOB_STALE_MINUTES",
     )
     image_proxy_timeout_sec: float = Field(default=10.0, ge=1.0, le=60.0, env="IMAGE_PROXY_TIMEOUT_SEC")
     image_proxy_max_bytes: int = Field(default=8_000_000, ge=100_000, le=50_000_000, env="IMAGE_PROXY_MAX_BYTES")

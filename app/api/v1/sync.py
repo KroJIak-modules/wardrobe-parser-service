@@ -3,7 +3,7 @@ API endpoints for sync job management.
 """
 
 from typing import Optional
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, status, BackgroundTasks
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -13,6 +13,7 @@ from app.schemas.parser import (
     JobLatestResponse,
     JobCreateRequest,
     JobCreateResponse,
+    JobCancelResponse,
 )
 from app.services.sync_job_service import SyncJobService
 
@@ -22,6 +23,7 @@ router = APIRouter(tags=["sync"])
 @router.post("/jobs", response_model=JobCreateResponse, status_code=status.HTTP_201_CREATED)
 def create_sync_job(
     request: JobCreateRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     """
@@ -33,7 +35,9 @@ def create_sync_job(
     If sync already in progress, returns 409 Conflict.
     """
     service = SyncJobService(db)
-    return service.create_sync_job(request)
+    job = service.create_sync_job(request)
+    background_tasks.add_task(SyncJobService.execute_sync_job_async, job.id)
+    return job
 
 
 @router.get("/jobs/latest", response_model=Optional[JobLatestResponse])
@@ -60,6 +64,13 @@ def get_job(job_id: str, db: Session = Depends(get_db)):
     """
     service = SyncJobService(db)
     return service.get_job(job_id)
+
+
+@router.post("/jobs/{job_id}/cancel", response_model=JobCancelResponse)
+def cancel_job(job_id: str, db: Session = Depends(get_db)):
+    """Cancel pending or running sync job."""
+    service = SyncJobService(db)
+    return service.cancel_job(job_id)
 
 
 @router.get("/jobs", response_model=list[JobResponse])

@@ -29,7 +29,10 @@ def build_job_summary_payload(job: ParserJob) -> dict:
                 "products_discovered": run.products_discovered,
                 "products_fetched": run.products_fetched,
                 "products_failed": run.products_failed,
+                "error_message": run.error_message,
                 "discovery_mode": run.discovery_mode,
+                "started_at": run.started_at.isoformat() if run.started_at else None,
+                "completed_at": run.completed_at.isoformat() if run.completed_at else None,
             }
             for run in job.source_runs
         ],

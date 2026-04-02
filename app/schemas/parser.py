@@ -22,6 +22,7 @@ class ProductResponse(BaseModel):
     image_count: int
     image_urls: list[str] = Field(default_factory=list)
     image_ids: list[int] = Field(default_factory=list)
+    variants: list[dict] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 
@@ -58,6 +59,7 @@ class SourceRunResponse(BaseModel):
     products_discovered: int
     products_fetched: int
     products_failed: int
+    error_message: Optional[str] = None
     discovery_mode: Optional[str] = None
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
@@ -89,6 +91,7 @@ class JobResponse(BaseModel):
 
 class JobLatestResponse(BaseModel):
     """Simplified latest job status for frontend."""
+    job_id: str
     status: str
     created_at: datetime
     started_at: Optional[datetime] = None
@@ -98,6 +101,21 @@ class JobLatestResponse(BaseModel):
     new_products: int = 0
     updated_products: int = 0
     new_images: int = 0
+    total_sources: int = 0
+    processed_sources: int = 0
+    progress_percent: int = 0
+    processed_products: int = 0
+    expected_products: int = 0
+    failed_products: int = 0
+    products_progress_percent: int = 0
+    current_source_name: Optional[str] = None
+    current_source_index: int = 0
+    current_stage: Optional[str] = None
+    current_source_processed_products: int = 0
+    current_source_total_products: int = 0
+    current_product_title: Optional[str] = None
+    site_products_total: int = 0
+    can_cancel: bool = False
     sync_period_minutes: int
 
 
@@ -111,6 +129,13 @@ class JobCreateResponse(BaseModel):
     id: str
     status: str
     created_at: datetime
+
+
+class JobCancelResponse(BaseModel):
+    """Response when cancelling running/pending job."""
+    id: str
+    status: str
+    message: str
 
 
 class ProductAddByUrlRequest(BaseModel):

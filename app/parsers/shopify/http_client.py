@@ -2,12 +2,17 @@
 
 import logging
 import ipaddress
+import random
 import time
+from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlparse
+from email.utils import parsedate_to_datetime
+from threading import Lock
 
 import requests
 
+from app.core.config import settings
 from app.core.exceptions import ValidationError
 
 LOGGER = logging.getLogger(__name__)
@@ -26,6 +31,112 @@ _DEFAULT_HEADERS = {
 
 class ShopifyHTTPClient:
     """Low-level HTTP client for Shopify stores with security checks."""
+    _domain_cooldown_until: dict[str, float] = {}
+    _domain_cb_state: dict[str, "DomainCircuitState"] = {}
+    _cooldown_lock = Lock()
+
+    @dataclass(slots=True)
+    class DomainCircuitState:
+        consecutive_429: int = 0
+        penalty_level: int = 0
+        success_streak: int = 0
+
+    @classmethod
+    def _host(cls, url: str) -> str:
+        return (urlparse(url).hostname or "").lower()
+
+    @classmethod
+    def get_adaptive_workers(cls, base_url: str, requested_workers: int) -> int:
+        """Return worker count adapted to current circuit-breaker penalty for domain."""
+        host = cls._host(base_url)
+        if not host:
+            return max(1, requested_workers)
+        with cls._cooldown_lock:
+            state = cls._domain_cb_state.get(host)
+            penalty = state.penalty_level if state else 0
+        reduced = max(1, requested_workers // (2 ** penalty))
+        return reduced
+
+    @classmethod
+    def _apply_domain_cooldown_if_needed(cls, url: str) -> None:
+        host = cls._host(url)
+        if not host:
+            return
+        now = time.time()
+        with cls._cooldown_lock:
+            until = cls._domain_cooldown_until.get(host, 0.0)
+        if until > now:
+            time.sleep(until - now)
+
+    @classmethod
+    def _set_domain_cooldown(cls, url: str, cooldown_sec: float) -> None:
+        host = cls._host(url)
+        if not host or cooldown_sec <= 0:
+            return
+        jitter = random.uniform(0.0, max(0.0, settings.parser_rate_limit_jitter_sec))
+        candidate_until = time.time() + cooldown_sec + jitter
+        with cls._cooldown_lock:
+            current = cls._domain_cooldown_until.get(host, 0.0)
+            cls._domain_cooldown_until[host] = max(current, candidate_until)
+
+    @classmethod
+    def _record_429(cls, url: str) -> None:
+        host = cls._host(url)
+        if not host:
+            return
+        with cls._cooldown_lock:
+            state = cls._domain_cb_state.get(host)
+            if state is None:
+                state = ShopifyHTTPClient.DomainCircuitState()
+                cls._domain_cb_state[host] = state
+            state.consecutive_429 += 1
+            state.success_streak = 0
+            if state.consecutive_429 >= settings.parser_circuit_breaker_429_threshold:
+                state.consecutive_429 = 0
+                state.penalty_level = min(
+                    settings.parser_circuit_breaker_max_penalty,
+                    state.penalty_level + 1,
+                )
+                penalty = state.penalty_level
+            else:
+                penalty = state.penalty_level
+        if penalty > 0:
+            cls._set_domain_cooldown(
+                url,
+                settings.parser_circuit_breaker_pause_sec * penalty,
+            )
+
+    @classmethod
+    def _record_success(cls, url: str) -> None:
+        host = cls._host(url)
+        if not host:
+            return
+        with cls._cooldown_lock:
+            state = cls._domain_cb_state.get(host)
+            if state is None:
+                state = ShopifyHTTPClient.DomainCircuitState()
+                cls._domain_cb_state[host] = state
+            state.consecutive_429 = 0
+            state.success_streak += 1
+            if (
+                state.penalty_level > 0
+                and state.success_streak >= settings.parser_circuit_breaker_recovery_successes
+            ):
+                state.penalty_level -= 1
+                state.success_streak = 0
+
+    @staticmethod
+    def _retry_after_seconds(response: requests.Response) -> float | None:
+        raw = (response.headers.get("Retry-After") or "").strip()
+        if not raw:
+            return None
+        if raw.isdigit():
+            return float(raw)
+        try:
+            dt = parsedate_to_datetime(raw)
+            return max(0.0, dt.timestamp() - time.time())
+        except Exception:
+            return None
 
     @staticmethod
     def validate_url(url: str) -> None:
@@ -77,6 +188,7 @@ class ShopifyHTTPClient:
         max_retries: int,
         retry_backoff_sec: float,
         session: requests.Session | None = None,
+        deadline_monotonic: float | None = None,
     ) -> tuple[Any | None, int | None, int, int, str | None]:
         """
         Execute HTTP request with exponential backoff retry logic.
@@ -94,8 +206,15 @@ class ShopifyHTTPClient:
         last_error = None
 
         for attempt in range(max_retries + 1):
+            if deadline_monotonic is not None and time.monotonic() >= deadline_monotonic:
+                error = "SOURCE_TIMEOUT"
+                break
             try:
-                response = active_session.get(url, timeout=timeout_sec, allow_redirects=True)
+                ShopifyHTTPClient._apply_domain_cooldown_if_needed(url)
+                request_timeout = timeout_sec
+                if deadline_monotonic is not None:
+                    request_timeout = max(0.2, min(timeout_sec, deadline_monotonic - time.monotonic()))
+                response = active_session.get(url, timeout=request_timeout, allow_redirects=True)
                 status_code = response.status_code
 
                 # Password gate detection
@@ -106,9 +225,23 @@ class ShopifyHTTPClient:
                 if status_code == 429:
                     http_429_count += 1
                     last_error = "HTTP 429"
+                    ShopifyHTTPClient._record_429(url)
+                    retry_after_sec = ShopifyHTTPClient._retry_after_seconds(response)
+                    backoff_base = retry_backoff_sec * (2 ** attempt)
+                    cooldown_sec = max(
+                        settings.parser_rate_limit_min_cooldown_sec,
+                        retry_after_sec or 0.0,
+                        backoff_base,
+                    )
+                    ShopifyHTTPClient._set_domain_cooldown(url, cooldown_sec)
                     if attempt < max_retries:
-                        backoff = retry_backoff_sec * (2 ** attempt)
-                        time.sleep(backoff)
+                        if deadline_monotonic is not None:
+                            sleep_cap = deadline_monotonic - time.monotonic()
+                            if sleep_cap <= 0:
+                                error = "SOURCE_TIMEOUT"
+                                break
+                            cooldown_sec = min(cooldown_sec, sleep_cap)
+                        time.sleep(cooldown_sec)
                         continue
                     error = last_error
                     break
@@ -127,6 +260,7 @@ class ShopifyHTTPClient:
                     error = f"HTTP {status_code}"
                     break
 
+                ShopifyHTTPClient._record_success(url)
                 if is_json:
                     payload = response.json()
                 else:
@@ -136,16 +270,30 @@ class ShopifyHTTPClient:
 
             except requests.exceptions.Timeout:
                 last_error = "Request timeout"
+                ShopifyHTTPClient._set_domain_cooldown(url, settings.parser_timeout_cooldown_sec)
                 if attempt < max_retries:
                     backoff = retry_backoff_sec * (2 ** attempt)
+                    if deadline_monotonic is not None:
+                        sleep_cap = deadline_monotonic - time.monotonic()
+                        if sleep_cap <= 0:
+                            error = "SOURCE_TIMEOUT"
+                            break
+                        backoff = min(backoff, sleep_cap)
                     time.sleep(backoff)
                     continue
                 error = last_error
 
             except requests.exceptions.ConnectionError:
                 last_error = "Connection error"
+                ShopifyHTTPClient._set_domain_cooldown(url, settings.parser_timeout_cooldown_sec)
                 if attempt < max_retries:
                     backoff = retry_backoff_sec * (2 ** attempt)
+                    if deadline_monotonic is not None:
+                        sleep_cap = deadline_monotonic - time.monotonic()
+                        if sleep_cap <= 0:
+                            error = "SOURCE_TIMEOUT"
+                            break
+                        backoff = min(backoff, sleep_cap)
                     time.sleep(backoff)
                     continue
                 error = last_error

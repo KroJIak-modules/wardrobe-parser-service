@@ -6,14 +6,13 @@ from sqlalchemy import func
 
 from app.models import ParserProduct, ProductStatus
 from app.repositories.base import BaseRepository
-from app.repositories.catalog.product_filters import build_filtered_query
-
-
-_NO_BRAND_FILTER = "__NO_BRAND__"
+from app.repositories.parser_product_filters import build_filtered_query
 
 
 class ParserProductRepository(BaseRepository[ParserProduct]):
     """Repository for ParserProduct entity with advanced filtering."""
+
+    NO_BRAND_FILTER = "__NO_BRAND__"
 
     def __init__(self, session: Session):
         super().__init__(session, ParserProduct)
@@ -82,6 +81,13 @@ class ParserProductRepository(BaseRepository[ParserProduct]):
             q = q.filter(ParserProduct.deleted_at.is_(None))
         return q.offset(skip).limit(limit).all()
 
+    def get_all_by_source(self, source_id: int, active_only: bool = True) -> List[ParserProduct]:
+        """Get all products for source without pagination."""
+        q = self.query().filter(ParserProduct.source_id == source_id)
+        if active_only:
+            q = q.filter(ParserProduct.deleted_at.is_(None))
+        return q.all()
+
     def count_by_source(self, source_id: int, active_only: bool = True) -> int:
         """Count products for source."""
         q = self.query().filter(ParserProduct.source_id == source_id)
@@ -111,7 +117,7 @@ class ParserProductRepository(BaseRepository[ParserProduct]):
             price_min=price_min,
             price_max=price_max,
             search_text=search_text,
-            no_brand_filter=_NO_BRAND_FILTER,
+            no_brand_filter=self.NO_BRAND_FILTER,
         )
 
         return q.offset(skip).limit(limit).all()
@@ -136,7 +142,7 @@ class ParserProductRepository(BaseRepository[ParserProduct]):
             price_min=price_min,
             price_max=price_max,
             search_text=search_text,
-            no_brand_filter=_NO_BRAND_FILTER,
+            no_brand_filter=self.NO_BRAND_FILTER,
         )
 
         return q.count()

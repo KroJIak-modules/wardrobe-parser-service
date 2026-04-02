@@ -23,6 +23,8 @@ def build_preview_from_payload(
     price = ShopifyProductExtractor.extract_price(payload)
     currency = ShopifyProductExtractor.extract_currency(payload)
     image_urls = ShopifyProductExtractor.extract_image_urls(payload)
+    available = ShopifyProductExtractor.extract_availability(payload)
+    variants = ShopifyProductExtractor.extract_variants(payload)
     return ShopifyProductPreview(
         product_url=product_url,
         handle=handle,
@@ -34,4 +36,6 @@ def build_preview_from_payload(
         currency=currency,
         image_urls=image_urls,
         payload_source=payload_source,
+        available=available,
+        variants=variants,
     )

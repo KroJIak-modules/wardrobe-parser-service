@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import time
 from typing import Any, Callable
 
 from app.core.config import settings
@@ -33,6 +34,7 @@ def run_preview_fetch_pipeline(
     second_pass_enabled: bool,
     second_pass_timeout_sec: float,
     build_preview: Callable[..., Any],
+    deadline_monotonic: float | None = None,
 ) -> PreviewFetchPipelineResult:
     """Fetch previews for URLs with optional second pass on failures."""
     if not target_urls:
@@ -64,10 +66,15 @@ def run_preview_fetch_pipeline(
         max_retries=max_retries,
         retry_backoff_sec=retry_backoff_sec,
         build_preview=build_preview,
+        deadline_monotonic=deadline_monotonic,
     ):
         by_url[outcome.product_url] = outcome
 
     for product_url in target_urls:
+        if deadline_monotonic is not None and time.monotonic() >= deadline_monotonic:
+            first_pass_failures.append(product_url)
+            final_errors.append((product_url, "SOURCE_TIMEOUT"))
+            continue
         outcome = by_url.get(product_url)
         if not outcome:
             first_pass_failures.append(product_url)
@@ -85,6 +92,15 @@ def run_preview_fetch_pipeline(
         final_errors.append((product_url, outcome.error or "не удалось получить товар"))
 
     if second_pass_enabled and first_pass_failures:
+        if deadline_monotonic is not None and time.monotonic() >= deadline_monotonic:
+            return PreviewFetchPipelineResult(
+                previews=previews,
+                final_errors=final_errors,
+                http_429_count=http_429_count,
+                http_5xx_count=http_5xx_count,
+                second_pass_attempted=0,
+                second_pass_recovered=0,
+            )
         second_pass_attempted = len(first_pass_failures)
         second_pass_timeout = max(second_pass_timeout_sec, timeout_sec)
 
@@ -97,6 +113,7 @@ def run_preview_fetch_pipeline(
             max_retries=max_retries + 1,
             retry_backoff_sec=max(retry_backoff_sec, settings.parser_second_pass_min_backoff_sec),
             build_preview=build_preview,
+            deadline_monotonic=deadline_monotonic,
         )
         second_pass_by_url = {item.product_url: item for item in second_pass_results}
 

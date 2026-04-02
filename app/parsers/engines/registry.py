@@ -17,7 +17,7 @@ class ParserEngine(Protocol):
 
     parser_type: ParserType
 
-    def discover(self, base_url: str):
+    def discover(self, base_url: str, *, deadline_monotonic: float | None = None):
         """Run source discovery and return result with previews/counters."""
 
 
@@ -27,7 +27,7 @@ class ShopifyParserEngine:
 
     parser_type: ParserType = "shopify"
 
-    def discover(self, base_url: str):
+    def discover(self, base_url: str, *, deadline_monotonic: float | None = None):
         return ShopifyParser.discover(
             base_url,
             max_products=settings.parser_default_max_products,
@@ -41,6 +41,7 @@ class ShopifyParserEngine:
             retry_backoff_sec=settings.parser_default_retry_backoff_sec,
             second_pass_enabled=settings.parser_default_second_pass_enabled,
             second_pass_timeout_sec=settings.parser_default_second_pass_timeout_sec,
+            deadline_monotonic=deadline_monotonic,
         )
 
 
@@ -50,7 +51,7 @@ class CustomParserEngine:
 
     parser_type: ParserType = "custom"
 
-    def discover(self, base_url: str):
+    def discover(self, base_url: str, *, deadline_monotonic: float | None = None):
         raise ValidationError(
             f"Источник {base_url} имеет parser_type='custom', но custom parser пока не реализован"
         )

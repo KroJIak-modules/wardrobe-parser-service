@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass(slots=True)
@@ -19,6 +19,8 @@ class ShopifyProductPreview:
     currency: str | None
     image_urls: list[str]
     payload_source: str
+    available: bool = True  # ← Product availability based on variants
+    variants: list[dict] = field(default_factory=list)  # ← Size/color variants with availability
 
 
 @dataclass(slots=True)

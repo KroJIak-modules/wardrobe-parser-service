@@ -35,12 +35,13 @@ class ParserImageAssetRepository(BaseRepository[ImageAsset]):
 
     def ensure_assets(self, source_urls: list[str]) -> list[ImageAsset]:
         """Ensure image assets exist and return them in source_urls order."""
-        normalized = [item.strip() for item in source_urls if item and item.strip()]
+        normalized = list(dict.fromkeys(item.strip() for item in source_urls if item and item.strip()))
         if not normalized:
             return []
 
         existing = self.get_by_source_urls(normalized)
         by_url = {item.source_url: item for item in existing}
+        created_any = False
 
         for url in normalized:
             if url in by_url:
@@ -49,8 +50,11 @@ class ParserImageAssetRepository(BaseRepository[ImageAsset]):
                 source_url=url,
                 storage_mode="proxy",
             )
-            self.flush()
             by_url[url] = created
+            created_any = True
+
+        if created_any:
+            self.flush()
 
         ordered: list[ImageAsset] = []
         for url in normalized:

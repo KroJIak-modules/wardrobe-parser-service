@@ -70,6 +70,7 @@ class ParserJobStateService:
         return self.job_repo.get_by_id(job_id)
 
     def get_latest_job(self) -> Optional[ParserJob]:
+        self._cleanup_stale_in_progress_jobs()
         return self.job_repo.get_latest_job()
 
     def get_latest_completed_job(self) -> Optional[ParserJob]:
@@ -86,7 +87,27 @@ class ParserJobStateService:
         return None
 
     def get_in_progress_jobs(self) -> list[ParserJob]:
+        self._cleanup_stale_in_progress_jobs()
         return self.job_repo.get_in_progress()
 
     def is_sync_in_progress(self) -> bool:
         return len(self.get_in_progress_jobs()) > 0
+
+    def _cleanup_stale_in_progress_jobs(self) -> None:
+        now_utc = datetime.now(timezone.utc)
+        stale_delta = timedelta(minutes=settings.parser_job_stale_minutes)
+        jobs = self.job_repo.get_in_progress()
+        changed = False
+
+        for job in jobs:
+            started = job.started_at or job.created_at
+            if not started:
+                continue
+            if started.tzinfo is None:
+                started = started.replace(tzinfo=timezone.utc)
+            if now_utc - started >= stale_delta:
+                self.job_repo.mark_failed(job)
+                changed = True
+
+        if changed:
+            self.job_repo.session.commit()

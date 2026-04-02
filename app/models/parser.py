@@ -194,6 +194,8 @@ class ParserProduct(Base):
     image_urls = Column(JSON, nullable=False, default=list)
     image_asset_ids = Column(JSON, nullable=False, default=list)
     
+    variants = Column(JSON, nullable=False, default=list)  # Size/color variants with availability
+    
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
     deleted_at = Column(DateTime(timezone=True), nullable=True)  # Soft delete

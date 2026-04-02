@@ -76,6 +76,7 @@ class ShopifyParser:
         retry_backoff_sec: float,
         second_pass_enabled: bool,
         second_pass_timeout_sec: float,
+        deadline_monotonic: float | None = None,
     ) -> ShopifyDiscoveryResult:
         """Run discovery and optionally fetch product previews."""
         resolved_base_url = normalize_base_url(base_url)
@@ -86,6 +87,7 @@ class ShopifyParser:
             timeout_sec=timeout_sec,
             max_retries=max_retries,
             retry_backoff_sec=retry_backoff_sec,
+            deadline_monotonic=deadline_monotonic,
         )
 
         discovery_mode = resolve_discovery_mode(
@@ -99,11 +101,105 @@ class ShopifyParser:
         else:
             target_urls = discovery.discovered_urls[:sample_products]
 
+        return cls._build_result_from_target_urls(
+            resolved_base_url=resolved_base_url,
+            sitemap_url=discovery.sitemap_url,
+            discovery_mode=discovery_mode,
+            product_sitemaps_found=discovery.product_sitemaps_found,
+            product_urls_found=len(discovery.discovered_urls),
+            target_urls=target_urls,
+            payload_cache=discovery.payload_cache,
+            warnings=discovery.warnings,
+            response_products_limit=response_products_limit,
+            error_details_limit=error_details_limit,
+            fetch_all_products=fetch_all_products,
+            timeout_sec=timeout_sec,
+            parallel_workers=parallel_workers,
+            max_retries=max_retries,
+            retry_backoff_sec=retry_backoff_sec,
+            second_pass_enabled=second_pass_enabled,
+            second_pass_timeout_sec=second_pass_timeout_sec,
+            deadline_monotonic=deadline_monotonic,
+        )
+
+    @classmethod
+    def recover_from_known_product_urls(
+        cls,
+        base_url: str,
+        *,
+        known_product_urls: list[str],
+        timeout_sec: float,
+        parallel_workers: int,
+        max_retries: int,
+        retry_backoff_sec: float,
+        second_pass_enabled: bool,
+        second_pass_timeout_sec: float,
+        error_details_limit: int,
+        deadline_monotonic: float | None = None,
+    ) -> ShopifyDiscoveryResult:
+        """Fallback mode: fetch previews using URLs already known from previous syncs."""
+        resolved_base_url = normalize_base_url(base_url)
+        normalized_urls: list[str] = []
+        seen_urls: set[str] = set()
+        for raw_url in known_product_urls:
+            normalized = normalize_product_url(raw_url, resolved_base_url)
+            if not normalized or normalized in seen_urls:
+                continue
+            seen_urls.add(normalized)
+            normalized_urls.append(normalized)
+
+        return cls._build_result_from_target_urls(
+            resolved_base_url=resolved_base_url,
+            sitemap_url=f"{resolved_base_url}/sitemap.xml",
+            discovery_mode="historical_fallback",
+            product_sitemaps_found=0,
+            product_urls_found=len(normalized_urls),
+            target_urls=normalized_urls,
+            payload_cache={},
+            warnings=[
+                f"empty discovery fallback: trying known URLs from previous sync ({len(normalized_urls)})"
+            ],
+            response_products_limit=max(1, len(normalized_urls)),
+            error_details_limit=error_details_limit,
+            fetch_all_products=True,
+            timeout_sec=timeout_sec,
+            parallel_workers=parallel_workers,
+            max_retries=max_retries,
+            retry_backoff_sec=retry_backoff_sec,
+            second_pass_enabled=second_pass_enabled,
+            second_pass_timeout_sec=second_pass_timeout_sec,
+            deadline_monotonic=deadline_monotonic,
+        )
+
+    @classmethod
+    def _build_result_from_target_urls(
+        cls,
+        *,
+        resolved_base_url: str,
+        sitemap_url: str,
+        discovery_mode: str,
+        product_sitemaps_found: int,
+        product_urls_found: int,
+        target_urls: list[str],
+        payload_cache: dict[str, dict],
+        warnings: list[str],
+        response_products_limit: int,
+        error_details_limit: int,
+        fetch_all_products: bool,
+        timeout_sec: float,
+        parallel_workers: int,
+        max_retries: int,
+        retry_backoff_sec: float,
+        second_pass_enabled: bool,
+        second_pass_timeout_sec: float,
+        deadline_monotonic: float | None = None,
+    ) -> ShopifyDiscoveryResult:
+        """Build final discovery result from a prepared URL list."""
         fetch_attempted = len(target_urls)
         pipeline = run_preview_fetch_pipeline(
             base_url=resolved_base_url,
             target_urls=target_urls,
-            payload_cache=discovery.payload_cache,
+            payload_cache=payload_cache,
             timeout_sec=timeout_sec,
             parallel_workers=parallel_workers,
             max_retries=max_retries,
@@ -111,6 +207,7 @@ class ShopifyParser:
             second_pass_enabled=second_pass_enabled,
             second_pass_timeout_sec=second_pass_timeout_sec,
             build_preview=build_preview_from_payload,
+            deadline_monotonic=deadline_monotonic,
         )
         previews = pipeline.previews
         final_errors = pipeline.final_errors
@@ -135,10 +232,10 @@ class ShopifyParser:
 
         return ShopifyDiscoveryResult(
             base_url=resolved_base_url,
-            sitemap_url=discovery.sitemap_url,
+            sitemap_url=sitemap_url,
             discovery_mode=discovery_mode,
-            product_sitemaps_found=discovery.product_sitemaps_found,
-            product_urls_found=len(discovery.discovered_urls),
+            product_sitemaps_found=product_sitemaps_found,
+            product_urls_found=product_urls_found,
             requested_previews=fetch_attempted,
             products_fetch_attempted=fetch_attempted,
             products_fetch_succeeded=summary.products_fetch_succeeded,
@@ -147,10 +244,8 @@ class ShopifyParser:
             http_5xx_count=http_5xx_count,
             second_pass_attempted=second_pass_attempted,
             second_pass_recovered=second_pass_recovered,
-            warnings=discovery.warnings + summary.warnings,
+            warnings=warnings + summary.warnings,
             error_details=summary.error_details,
             previews=summary.previews,
         )
-
-
 
