@@ -15,6 +15,12 @@ from app.repositories.parser_category import (
 )
 from app.repositories.parser_dedup import ParserDedupDecisionRepository
 from app.repositories.parser_image import ParserImageAssetRepository
+from app.repositories.weight_settings import (
+    ParserWeightRuleRepository,
+    ParserWeightKeywordRepository,
+)
+from app.repositories.pricing_settings import ParserPricingSettingsRepository
+from app.repositories.pricing_suppliers import ParserSupplierRepository
 
 __all__ = [
     "BaseRepository",
@@ -26,4 +32,8 @@ __all__ = [
     "ParserCategoryKeywordRepository",
     "ParserDedupDecisionRepository",
     "ParserImageAssetRepository",
+    "ParserWeightRuleRepository",
+    "ParserWeightKeywordRepository",
+    "ParserPricingSettingsRepository",
+    "ParserSupplierRepository",
 ]

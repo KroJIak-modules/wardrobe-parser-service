@@ -5,7 +5,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 import time
-from typing import Any
+from typing import Any, Callable
 
 from app.core.config import settings
 from app.parsers.shopify.http_client import ShopifyHTTPClient
@@ -89,6 +89,7 @@ def collect_discovery_urls(
     max_retries: int,
     retry_backoff_sec: float,
     deadline_monotonic: float | None = None,
+    on_progress: Callable[[], None] | None = None,
 ) -> DiscoveryCollectionResult:
     """Collect product URLs from sitemap.xml and API fallbacks."""
     sitemap_url = f"{base_url}/sitemap.xml"
@@ -96,6 +97,24 @@ def collect_discovery_urls(
     discovered_urls: list[str] = []
     discovered_set: set[str] = set()
     payload_cache: dict[str, dict[str, Any]] = {}
+    appended_since_ping = 0
+
+    def ping_progress() -> None:
+        if on_progress:
+            on_progress()
+
+    def append_and_ping(url: str) -> None:
+        nonlocal appended_since_ping
+        append_discovered_url(
+            url,
+            discovered_urls=discovered_urls,
+            discovered_set=discovered_set,
+            max_products=max_products,
+        )
+        appended_since_ping += 1
+        if appended_since_ping >= 100:
+            appended_since_ping = 0
+            ping_progress()
 
     source_from_sitemap = False
     source_from_fallback = False
@@ -174,12 +193,7 @@ def collect_discovery_urls(
                     normalized = normalize_product_url(raw_url, base_url)
                     if not normalized:
                         continue
-                    append_discovered_url(
-                        normalized,
-                        discovered_urls=discovered_urls,
-                        discovered_set=discovered_set,
-                        max_products=max_products,
-                    )
+                    append_and_ping(normalized)
             if product_sitemaps and all(result.rate_limited for result in sitemap_results):
                 sitemap_rate_limited = True
 
@@ -189,12 +203,7 @@ def collect_discovery_urls(
             normalized = normalize_product_url(raw_url, base_url)
             if not normalized:
                 continue
-            append_discovered_url(
-                normalized,
-                discovered_urls=discovered_urls,
-                discovered_set=discovered_set,
-                max_products=max_products,
-            )
+            append_and_ping(normalized)
             source_from_sitemap = True
 
         if not product_sitemaps:
@@ -217,12 +226,7 @@ def collect_discovery_urls(
         for url in products_api_result.urls:
             if len(discovered_urls) >= max_products:
                 break
-            append_discovered_url(
-                url,
-                discovered_urls=discovered_urls,
-                discovered_set=discovered_set,
-                max_products=max_products,
-            )
+            append_and_ping(url)
             payload = products_api_result.payloads.get(url)
             if isinstance(payload, dict):
                 payload_cache[url] = payload
@@ -259,12 +263,7 @@ def collect_discovery_urls(
         for url in collections_result.urls:
             if len(discovered_urls) >= max_products:
                 break
-            append_discovered_url(
-                url,
-                discovered_urls=discovered_urls,
-                discovered_set=discovered_set,
-                max_products=max_products,
-            )
+            append_and_ping(url)
             payload = collections_result.payloads.get(url)
             if isinstance(payload, dict):
                 payload_cache[url] = payload

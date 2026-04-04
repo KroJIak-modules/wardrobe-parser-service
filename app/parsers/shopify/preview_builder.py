@@ -25,6 +25,7 @@ def build_preview_from_payload(
     image_urls = ShopifyProductExtractor.extract_image_urls(payload)
     available = ShopifyProductExtractor.extract_availability(payload)
     variants = ShopifyProductExtractor.extract_variants(payload)
+    weight_data = ShopifyProductExtractor.extract_weight(payload)
     return ShopifyProductPreview(
         product_url=product_url,
         handle=handle,
@@ -38,4 +39,9 @@ def build_preview_from_payload(
         payload_source=payload_source,
         available=available,
         variants=variants,
+        weight_grams=weight_data.get("weight_grams"),
+        weight_source="source" if weight_data.get("weight_grams") else None,
+        weight_match_keyword=None,
+        weight_value=weight_data.get("weight_value"),
+        weight_unit=weight_data.get("weight_unit"),
     )

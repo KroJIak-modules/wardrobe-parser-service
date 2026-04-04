@@ -21,6 +21,11 @@ class ShopifyProductPreview:
     payload_source: str
     available: bool = True  # ← Product availability based on variants
     variants: list[dict] = field(default_factory=list)  # ← Size/color variants with availability
+    weight_grams: float | None = None
+    weight_source: str | None = None
+    weight_match_keyword: str | None = None
+    weight_value: float | None = None
+    weight_unit: str | None = None
 
 
 @dataclass(slots=True)

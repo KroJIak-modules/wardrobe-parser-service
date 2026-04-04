@@ -35,6 +35,7 @@ def run_preview_fetch_pipeline(
     second_pass_timeout_sec: float,
     build_preview: Callable[..., Any],
     deadline_monotonic: float | None = None,
+    on_progress: Callable[[], None] | None = None,
 ) -> PreviewFetchPipelineResult:
     """Fetch previews for URLs with optional second pass on failures."""
     if not target_urls:
@@ -57,6 +58,10 @@ def run_preview_fetch_pipeline(
     by_url: dict[str, FetchOutcome] = {}
     first_pass_failures: list[str] = []
 
+    def on_outcome_processed(_outcome: FetchOutcome) -> None:
+        if on_progress:
+            on_progress()
+
     for outcome in fetch_many_product_previews(
         base_url=base_url,
         product_urls=target_urls,
@@ -67,6 +72,7 @@ def run_preview_fetch_pipeline(
         retry_backoff_sec=retry_backoff_sec,
         build_preview=build_preview,
         deadline_monotonic=deadline_monotonic,
+        on_outcome=on_outcome_processed,
     ):
         by_url[outcome.product_url] = outcome
 
@@ -114,6 +120,7 @@ def run_preview_fetch_pipeline(
             retry_backoff_sec=max(retry_backoff_sec, settings.parser_second_pass_min_backoff_sec),
             build_preview=build_preview,
             deadline_monotonic=deadline_monotonic,
+            on_outcome=on_outcome_processed,
         )
         second_pass_by_url = {item.product_url: item for item in second_pass_results}
 

@@ -80,6 +80,17 @@ class ParserSource(Base):
     url = Column(String(2048), nullable=False, unique=True)
     parser_type = Column(String(50), nullable=False, default="shopify")  # shopify, custom, etc.
     enabled = Column(Boolean, nullable=False, default=True)
+    supplier_id = Column(
+        Integer,
+        ForeignKey("parser_supplier.id", ondelete="RESTRICT"),
+        nullable=False,
+        server_default="1",
+    )
+    seller_delivery_rub = Column(Float, nullable=False, default=0.0, server_default="0")
+    promo_factor = Column(Float, nullable=False, default=1.0, server_default="1")
+    promo_only_no_discount = Column(Boolean, nullable=False, default=False, server_default="false")
+    buyout_surcharge_value = Column(Float, nullable=False, default=0.0, server_default="0")
+    buyout_surcharge_currency = Column(String(3), nullable=False, default="RUB", server_default="RUB")
     config = Column(Text, nullable=True)  # JSON for source-specific config
     
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
@@ -88,9 +99,11 @@ class ParserSource(Base):
 
     products = relationship("ParserProduct", back_populates="source")
     fingerprints = relationship("ParserProductFingerprint", back_populates="source")
+    supplier = relationship("ParserSupplier", back_populates="sources")
 
     __table_args__ = (
         Index("idx_parser_source_enabled", "enabled"),
+        Index("idx_parser_source_supplier_id", "supplier_id"),
         Index("idx_parser_source_deleted_at", "deleted_at"),
     )
 
@@ -193,6 +206,11 @@ class ParserProduct(Base):
     image_count = Column(Integer, nullable=False, default=0)
     image_urls = Column(JSON, nullable=False, default=list)
     image_asset_ids = Column(JSON, nullable=False, default=list)
+    weight_grams = Column(Float, nullable=True)
+    weight_source = Column(String(32), nullable=True)
+    weight_match_keyword = Column(String(255), nullable=True)
+    weight_value = Column(Float, nullable=True)
+    weight_unit = Column(String(16), nullable=True)
     
     variants = Column(JSON, nullable=False, default=list)  # Size/color variants with availability
     
@@ -210,6 +228,8 @@ class ParserProduct(Base):
         Index("idx_parser_product_handle", "handle"),
         Index("idx_parser_product_vendor", "vendor"),
         Index("idx_parser_product_status", "status"),
+        Index("idx_parser_product_weight_grams", "weight_grams"),
+        Index("idx_parser_product_weight_source", "weight_source"),
         Index("idx_parser_product_deleted_at", "deleted_at"),
     )
 

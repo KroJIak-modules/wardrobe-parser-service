@@ -32,6 +32,11 @@ class ParserProductRepository(BaseRepository[ParserProduct]):
         image_urls: Optional[List[str]] = None,
         image_asset_ids: Optional[List[int]] = None,
         variants: Optional[List[dict[str, Any]]] = None,
+        weight_grams: Optional[float] = None,
+        weight_source: Optional[str] = None,
+        weight_match_keyword: Optional[str] = None,
+        weight_value: Optional[float] = None,
+        weight_unit: Optional[str] = None,
         status: str = ProductStatus.AVAILABLE,
     ) -> ParserProduct:
         """Create new product."""
@@ -48,6 +53,11 @@ class ParserProductRepository(BaseRepository[ParserProduct]):
             image_urls=image_urls or [],
             image_asset_ids=image_asset_ids or [],
             variants=variants or [],
+            weight_grams=weight_grams,
+            weight_source=weight_source,
+            weight_match_keyword=weight_match_keyword,
+            weight_value=weight_value,
+            weight_unit=weight_unit,
             status=status,
         )
         self.flush()

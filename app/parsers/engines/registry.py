@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal, Protocol
+from typing import Callable, Literal, Protocol
 
 from app.core.config import settings
 from app.core.exceptions import ValidationError
@@ -17,7 +17,13 @@ class ParserEngine(Protocol):
 
     parser_type: ParserType
 
-    def discover(self, base_url: str, *, deadline_monotonic: float | None = None):
+    def discover(
+        self,
+        base_url: str,
+        *,
+        deadline_monotonic: float | None = None,
+        on_progress: Callable[[], None] | None = None,
+    ):
         """Run source discovery and return result with previews/counters."""
 
 
@@ -27,7 +33,13 @@ class ShopifyParserEngine:
 
     parser_type: ParserType = "shopify"
 
-    def discover(self, base_url: str, *, deadline_monotonic: float | None = None):
+    def discover(
+        self,
+        base_url: str,
+        *,
+        deadline_monotonic: float | None = None,
+        on_progress: Callable[[], None] | None = None,
+    ):
         return ShopifyParser.discover(
             base_url,
             max_products=settings.parser_default_max_products,
@@ -42,6 +54,7 @@ class ShopifyParserEngine:
             second_pass_enabled=settings.parser_default_second_pass_enabled,
             second_pass_timeout_sec=settings.parser_default_second_pass_timeout_sec,
             deadline_monotonic=deadline_monotonic,
+            on_progress=on_progress,
         )
 
 
@@ -51,7 +64,13 @@ class CustomParserEngine:
 
     parser_type: ParserType = "custom"
 
-    def discover(self, base_url: str, *, deadline_monotonic: float | None = None):
+    def discover(
+        self,
+        base_url: str,
+        *,
+        deadline_monotonic: float | None = None,
+        on_progress: Callable[[], None] | None = None,
+    ):
         raise ValidationError(
             f"Источник {base_url} имеет parser_type='custom', но custom parser пока не реализован"
         )

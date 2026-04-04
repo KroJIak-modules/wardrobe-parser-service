@@ -134,6 +134,7 @@ def fetch_many_product_previews(
     retry_backoff_sec: float,
     build_preview: Callable[..., Any],
     deadline_monotonic: float | None = None,
+    on_outcome: Callable[[FetchOutcome], None] | None = None,
 ) -> list[FetchOutcome]:
     """Fetch many product previews with optional thread pool concurrency."""
     if not product_urls:
@@ -141,8 +142,9 @@ def fetch_many_product_previews(
 
     if parallel_workers <= 1 or len(product_urls) <= 1:
         session = ShopifyHTTPClient.create_session()
-        return [
-            fetch_one_product_preview(
+        outcomes: list[FetchOutcome] = []
+        for product_url in product_urls:
+            outcome = fetch_one_product_preview(
                 base_url=base_url,
                 product_url=product_url,
                 cached_payload=payload_cache.get(product_url),
@@ -153,8 +155,10 @@ def fetch_many_product_previews(
                 session=session,
                 deadline_monotonic=deadline_monotonic,
             )
-            for product_url in product_urls
-        ]
+            outcomes.append(outcome)
+            if on_outcome:
+                on_outcome(outcome)
+        return outcomes
 
     results: list[FetchOutcome] = []
     workers = max(1, min(parallel_workers, len(product_urls)))
@@ -189,16 +193,20 @@ def fetch_many_product_previews(
         for future in as_completed(futures):
             product_url = futures[future]
             try:
-                results.append(future.result())
+                outcome = future.result()
+                results.append(outcome)
+                if on_outcome:
+                    on_outcome(outcome)
             except Exception as exc:  # pragma: no cover
                 LOGGER.exception("Shopify worker failed for %s", product_url)
-                results.append(
-                    FetchOutcome(
-                        product_url=product_url,
-                        preview=None,
-                        error=f"worker_exception: {exc}",
-                        http_429_count=0,
-                        http_5xx_count=0,
-                    )
+                outcome = FetchOutcome(
+                    product_url=product_url,
+                    preview=None,
+                    error=f"worker_exception: {exc}",
+                    http_429_count=0,
+                    http_5xx_count=0,
                 )
+                results.append(outcome)
+                if on_outcome:
+                    on_outcome(outcome)
     return results

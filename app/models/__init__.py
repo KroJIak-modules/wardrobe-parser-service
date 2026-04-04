@@ -16,6 +16,12 @@ from app.models.parser import (
     DedupAction,
 )
 from app.models.category import ParserCategory, ParserCategoryKeyword
+from app.models.weight import ParserWeightRule, ParserWeightKeyword
+from app.models.pricing import (
+    ParserPricingSettings,
+    ParserSupplier,
+    ParserSupplierShippingRate,
+)
 from app.core.database import Base
 
 __all__ = [
@@ -37,4 +43,9 @@ __all__ = [
     "DedupAction",
     "ParserCategory",
     "ParserCategoryKeyword",
+    "ParserWeightRule",
+    "ParserWeightKeyword",
+    "ParserPricingSettings",
+    "ParserSupplier",
+    "ParserSupplierShippingRate",
 ]

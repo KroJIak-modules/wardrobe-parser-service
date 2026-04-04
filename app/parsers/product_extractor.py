@@ -126,6 +126,7 @@ class ShopifyProductExtractor:
             quantity_raw = variant.get("inventory_quantity")
             quantity = quantity_raw if isinstance(quantity_raw, int) else 0
             available = bool(available_raw is True or quantity > 0)
+            variant_weight_grams = ShopifyProductExtractor._extract_variant_weight_grams(variant)
 
             variant_info = {
                 "title": ShopifyProductExtractor._safe_str(variant.get("title")) or "Default",
@@ -134,13 +135,70 @@ class ShopifyProductExtractor:
                 "option3": ShopifyProductExtractor._safe_str(variant.get("option3")),
                 "available": available,
                 "price": variant.get("price"),
+                "compare_at_price": variant.get("compare_at_price"),
                 "inventory_quantity": quantity,
                 "sku": ShopifyProductExtractor._safe_str(variant.get("sku")),
+                "weight_grams": variant_weight_grams,
             }
             result.append(variant_info)
         
         return result
-    
+
+    @staticmethod
+    def extract_weight(payload: dict[str, Any]) -> dict[str, Any]:
+        """
+        Extract normalized product weight from Shopify payload.
+
+        Returns:
+        - weight_grams: float | None
+        - weight_value: float | None
+        - weight_unit: str | None
+        """
+        best: dict[str, Any] | None = None
+        variants = payload.get("variants")
+        if isinstance(variants, list):
+            for variant in variants:
+                if not isinstance(variant, dict):
+                    continue
+                grams = ShopifyProductExtractor._extract_variant_weight_grams(variant)
+                if grams is None or grams <= 0:
+                    continue
+
+                weight_value = ShopifyProductExtractor._safe_float(variant.get("weight"))
+                weight_unit = ShopifyProductExtractor._safe_str(variant.get("weight_unit"))
+                if weight_value is None or weight_value <= 0:
+                    weight_value = grams
+                    weight_unit = "g"
+
+                candidate = {
+                    "weight_grams": grams,
+                    "weight_value": weight_value,
+                    "weight_unit": (weight_unit or "g").lower(),
+                }
+                if best is None or candidate["weight_grams"] > best["weight_grams"]:
+                    best = candidate
+
+        if best is not None:
+            return best
+
+        # Rare fallback: product-level weight fields.
+        root_weight = ShopifyProductExtractor._safe_float(payload.get("weight"))
+        root_unit = ShopifyProductExtractor._safe_str(payload.get("weight_unit"))
+        if root_weight and root_weight > 0 and root_unit:
+            grams = ShopifyProductExtractor._convert_to_grams(root_weight, root_unit)
+            if grams and grams > 0:
+                return {
+                    "weight_grams": grams,
+                    "weight_value": root_weight,
+                    "weight_unit": root_unit.lower(),
+                }
+
+        return {
+            "weight_grams": None,
+            "weight_value": None,
+            "weight_unit": None,
+        }
+
     @staticmethod
     def _safe_str(value: Any) -> str | None:
         """Safely convert value to string or return None."""
@@ -151,3 +209,49 @@ class ShopifyProductExtractor:
         if isinstance(value, (int, float)):
             return str(value)
         return None
+
+    @staticmethod
+    def _safe_float(value: Any) -> float | None:
+        if value is None:
+            return None
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, str):
+            stripped = value.strip().replace(",", ".")
+            if not stripped:
+                return None
+            try:
+                return float(stripped)
+            except ValueError:
+                return None
+        return None
+
+    @staticmethod
+    def _convert_to_grams(value: float, unit: str) -> float | None:
+        normalized = (unit or "").strip().lower()
+        if normalized in {"g", "gram", "grams"}:
+            return value
+        if normalized in {"kg", "kilogram", "kilograms"}:
+            return value * 1000.0
+        if normalized in {"lb", "lbs", "pound", "pounds"}:
+            return value * 453.59237
+        if normalized in {"oz", "ounce", "ounces"}:
+            return value * 28.349523125
+        return None
+
+    @staticmethod
+    def _extract_variant_weight_grams(variant: dict[str, Any]) -> float | None:
+        grams_raw = variant.get("grams")
+        grams = ShopifyProductExtractor._safe_float(grams_raw)
+        if grams is not None and grams > 0:
+            return grams
+
+        weight_raw = ShopifyProductExtractor._safe_float(variant.get("weight"))
+        weight_unit = ShopifyProductExtractor._safe_str(variant.get("weight_unit"))
+        if weight_raw is None or weight_raw <= 0 or not weight_unit:
+            return None
+
+        converted = ShopifyProductExtractor._convert_to_grams(weight_raw, weight_unit)
+        if converted is None or converted <= 0:
+            return None
+        return converted

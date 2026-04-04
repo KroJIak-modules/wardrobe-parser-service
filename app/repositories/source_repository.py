@@ -58,18 +58,45 @@ class ParserSourceRepository(BaseRepository[ParserSource]):
         url: str,
         parser_type: str = "shopify",
         enabled: bool = True,
+        supplier_id: Optional[int] = None,
+        seller_delivery_rub: Optional[float] = None,
+        promo_factor: Optional[float] = None,
+        promo_only_no_discount: Optional[bool] = None,
+        buyout_surcharge_value: Optional[float] = None,
+        buyout_surcharge_currency: Optional[str] = None,
         config: Optional[str] = None,
     ) -> ParserSource:
         """Create new source."""
-        source = self.create(
+        payload = dict(
             name=name,
             url=url,
             parser_type=parser_type,
             enabled=enabled,
             config=config,
         )
+        if supplier_id is not None:
+            payload["supplier_id"] = supplier_id
+        if seller_delivery_rub is not None:
+            payload["seller_delivery_rub"] = seller_delivery_rub
+        if promo_factor is not None:
+            payload["promo_factor"] = promo_factor
+        if promo_only_no_discount is not None:
+            payload["promo_only_no_discount"] = promo_only_no_discount
+        if buyout_surcharge_value is not None:
+            payload["buyout_surcharge_value"] = buyout_surcharge_value
+        if buyout_surcharge_currency is not None:
+            payload["buyout_surcharge_currency"] = buyout_surcharge_currency
+        source = self.create(**payload)
         self.flush()
         return source
+
+    def count_by_supplier_id(self, supplier_id: int) -> int:
+        return (
+            self.query()
+            .filter(ParserSource.supplier_id == supplier_id)
+            .filter(ParserSource.deleted_at.is_(None))
+            .count()
+        )
 
 
 class ParserProductFingerprintRepository(BaseRepository[ParserProductFingerprint]):

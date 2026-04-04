@@ -5,7 +5,7 @@ Parser job service for job orchestration.
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 import uuid
-from typing import Optional, List
+from typing import Callable, Optional, List
 from datetime import datetime
 import logging
 from sqlalchemy.orm import Session
@@ -27,6 +27,7 @@ from app.services.parser_sync.source_run_service import ParserSourceRunService
 from app.services.parser_sync.job_summary import build_job_summary_payload
 from app.services.parser_sync.job_state_service import ParserJobStateService
 from app.services.parser_sync.product_sync_service import ParserProductSyncService
+from app.services.settings.weight_rule_service import WeightRuleService
 from app.services.parser_sync.job_execution import (
     JobExecutionTotals,
     get_or_create_source,
@@ -61,9 +62,11 @@ class ParserJobService:
         self.product_repo = ParserProductRepository(session)
         self.image_repo = ParserImageAssetRepository(session)
         self.source_run_service = ParserSourceRunService(session=session, job_repo=self.job_repo)
+        self.weight_rule_service = WeightRuleService(session)
         self.product_sync_service = ParserProductSyncService(
             product_repo=self.product_repo,
             image_repo=self.image_repo,
+            weight_rule_service=self.weight_rule_service,
         )
         self.job_state_service = ParserJobStateService(job_repo=self.job_repo)
         self.source_sync_executor = ParserSourceSyncExecutor(
@@ -79,9 +82,14 @@ class ParserJobService:
         base_url: str,
         *,
         deadline_monotonic: float | None = None,
+        on_progress: Callable[[], None] | None = None,
     ):
         engine = get_parser_engine(parser_type)
-        return engine.discover(base_url, deadline_monotonic=deadline_monotonic)
+        return engine.discover(
+            base_url,
+            deadline_monotonic=deadline_monotonic,
+            on_progress=on_progress,
+        )
 
     @staticmethod
     def _sync_one_source_worker(job_id: str, source_input: SourceExecutionInput) -> SourceSyncStats:

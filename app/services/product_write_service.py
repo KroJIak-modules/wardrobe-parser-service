@@ -16,6 +16,7 @@ from app.repositories import ParserImageAssetRepository, ParserProductRepository
 from app.schemas.parser import ProductAddByUrlRequest, ProductManualCreateRequest, ProductResponse
 from app.services.product_preview_service import ProductPreviewService
 from app.services.product_read_service import ProductReadService
+from app.services.settings.weight_rule_service import WeightRuleService
 
 
 class ProductWriteService:
@@ -72,6 +73,24 @@ class ProductWriteService:
         assets = self.image_repo.ensure_assets(resolved_image_urls)
         resolved_image_asset_ids = [asset.id for asset in assets]
         final_image_count = payload.image_count if payload.image_count is not None else len(resolved_image_urls)
+        final_weight_grams = preview.weight_grams
+        final_weight_source = preview.weight_source or ("missing" if preview.weight_grams is None else "source")
+        final_weight_match_keyword = preview.weight_match_keyword
+        final_weight_value = preview.weight_value
+        final_weight_unit = preview.weight_unit
+        if final_weight_grams is None:
+            matched = WeightRuleService(self.db).match_weight_by_keywords(
+                title=final_title,
+                vendor=final_vendor,
+                product_type=final_product_type,
+                handle=preview.handle,
+            )
+            if matched.weight_grams is not None:
+                final_weight_grams = matched.weight_grams
+                final_weight_source = "keyword"
+                final_weight_match_keyword = matched.matched_keyword
+                final_weight_value = matched.weight_grams
+                final_weight_unit = "g"
 
         if existing:
             existing.title = final_title or existing.title
@@ -84,10 +103,15 @@ class ProductWriteService:
                 existing.image_count = final_image_count
             existing.image_urls = resolved_image_urls
             existing.image_asset_ids = resolved_image_asset_ids
+            existing.weight_grams = final_weight_grams
+            existing.weight_source = final_weight_source
+            existing.weight_match_keyword = final_weight_match_keyword
+            existing.weight_value = final_weight_value
+            existing.weight_unit = final_weight_unit
             existing.deleted_at = None
             self.db.commit()
             self.db.refresh(existing)
-            return self.read_service.build_product_response(existing)
+            return self.read_service.build_product_response(existing, source_profile=source)
 
         product = self.product_repo.create_product(
             source_id=source.id,
@@ -101,11 +125,16 @@ class ProductWriteService:
             image_count=final_image_count or 0,
             image_urls=resolved_image_urls,
             image_asset_ids=resolved_image_asset_ids,
+            weight_grams=final_weight_grams,
+            weight_source=final_weight_source,
+            weight_match_keyword=final_weight_match_keyword,
+            weight_value=final_weight_value,
+            weight_unit=final_weight_unit,
             status=ProductStatus.AVAILABLE,
         )
         self.db.commit()
         self.db.refresh(product)
-        return self.read_service.build_product_response(product)
+        return self.read_service.build_product_response(product, source_profile=source)
 
     def create_manual_product(self, payload: ProductManualCreateRequest) -> ProductResponse:
         self._require_db_dependencies()
@@ -133,11 +162,12 @@ class ProductWriteService:
             price=payload.price,
             currency=payload.currency.upper(),
             image_count=payload.image_count,
+            weight_source="missing",
             status=ProductStatus.AVAILABLE,
         )
         self.db.commit()
         self.db.refresh(product)
-        return self.read_service.build_product_response(product)
+        return self.read_service.build_product_response(product, source_profile=source)
 
     async def upload_product_image(self, file: UploadFile) -> dict:
         if not file.filename:

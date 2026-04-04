@@ -18,10 +18,22 @@ class ProductResponse(BaseModel):
     url: str
     price: Optional[float] = None
     currency: str
+    source_price: Optional[float] = None
+    source_currency: Optional[str] = None
+    final_price: Optional[float] = None
+    final_currency: Optional[str] = None
+    pricing_manual_required: bool = False
+    pricing_reason: Optional[str] = None
+    pricing_components: dict = Field(default_factory=dict)
     status: str
     image_count: int
     image_urls: list[str] = Field(default_factory=list)
     image_ids: list[int] = Field(default_factory=list)
+    weight_grams: Optional[float] = None
+    weight_source: Optional[str] = None
+    weight_match_keyword: Optional[str] = None
+    weight_value: Optional[float] = None
+    weight_unit: Optional[str] = None
     variants: list[dict] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
@@ -247,6 +259,123 @@ class ErrorResponse(BaseModel):
     code: str
     message: str
     details: Optional[dict] = None
+
+
+class WeightRuleKeywordRequest(BaseModel):
+    """Add keyword to weight rule."""
+
+    keyword: str = Field(min_length=1, max_length=255)
+
+
+class WeightRuleCreateRequest(BaseModel):
+    """Create weight rule."""
+
+    weight_grams: int = Field(ge=1, le=100000)
+
+
+class WeightRuleUpdateRequest(BaseModel):
+    """Update weight rule."""
+
+    weight_grams: int = Field(ge=1, le=100000)
+
+
+class WeightRuleResponse(BaseModel):
+    """Weight rule with keywords."""
+
+    id: int
+    weight_grams: int
+    keywords: list[str] = Field(default_factory=list)
+
+    class Config:
+        from_attributes = True
+
+
+class WeightMissingProductResponse(BaseModel):
+    """One product where weight could not be resolved."""
+
+    id: int
+    title: str
+    url: str
+    source_id: int
+    source_name: str
+
+
+class PricingSettingsUpdateRequest(BaseModel):
+    """Patchable parameters of final pricing formula."""
+
+    markup_multiplier: Optional[float] = Field(default=None, ge=0.1, le=20.0)
+    weight_tolerance: Optional[float] = Field(default=None, ge=0.1, le=5.0)
+    promo_factor: Optional[float] = Field(default=None, ge=0.1, le=5.0)
+    customs_threshold_eur: Optional[float] = Field(default=None, ge=0.0, le=10000.0)
+    customs_threshold_currency: Optional[str] = Field(default=None, min_length=3, max_length=3)
+    customs_duty_rate: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    seller_delivery_rub: Optional[float] = Field(default=None, ge=0.0, le=1000000.0)
+    usd_to_rub: Optional[float] = Field(default=None, ge=0.01, le=100000.0)
+    eur_to_rub: Optional[float] = Field(default=None, ge=0.01, le=100000.0)
+
+
+class PricingSupplierRateResponse(BaseModel):
+    """One SSR row for supplier by 500g step."""
+
+    step_500g: int
+    rate_rub: float
+
+
+class PricingSupplierResponse(BaseModel):
+    """Supplier with SSR table."""
+
+    id: int
+    key: str
+    name: str
+    country_code: str
+    country_name: str
+    rate_currency: str
+    rate_per_500g_value: float
+    rate_per_500g_rub: float
+    max_step_500g: int
+    rates: list[PricingSupplierRateResponse] = Field(default_factory=list)
+
+
+class PricingSupplierUpdateRequest(BaseModel):
+    """Editable supplier SSR parameters."""
+
+    name: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    country_code: Optional[str] = Field(default=None, min_length=2, max_length=16)
+    country_name: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    rate_currency: Optional[str] = Field(default=None, min_length=3, max_length=3)
+    rate_per_500g_value: Optional[float] = Field(default=None, ge=0.0, le=1000000.0)
+    rate_per_500g_rub: Optional[float] = Field(default=None, ge=0.0, le=1000000.0)
+    max_step_500g: Optional[int] = Field(default=None, ge=1, le=1000)
+
+
+class PricingSupplierCreateRequest(BaseModel):
+    """Create a new supplier and bootstrap SSR table."""
+
+    key: Optional[str] = Field(default=None, min_length=1, max_length=64)
+    name: str = Field(min_length=1, max_length=255)
+    country_code: str = Field(default="N/A", min_length=2, max_length=16)
+    country_name: str = Field(default="Unknown", min_length=1, max_length=255)
+    rate_currency: str = Field(default="RUB", min_length=3, max_length=3)
+    rate_per_500g_value: float = Field(default=0.0, ge=0.0, le=1000000.0)
+    max_step_500g: int = Field(default=120, ge=1, le=1000)
+
+
+class PricingSettingsResponse(BaseModel):
+    """Current pricing settings and formula help content."""
+
+    markup_multiplier: float
+    weight_tolerance: float
+    promo_factor: float
+    customs_threshold_eur: float
+    customs_threshold_currency: str
+    customs_duty_rate: float
+    seller_delivery_rub: float
+    usd_to_rub: float
+    eur_to_rub: float
+    suppliers: list[PricingSupplierResponse] = Field(default_factory=list)
+    formula_latex: str = ""
+    formula_lines: list[str] = Field(default_factory=list)
+    formula_legend: list[dict[str, str]] = Field(default_factory=list)
 
 
 CategoryTreeNodeResponse.model_rebuild()

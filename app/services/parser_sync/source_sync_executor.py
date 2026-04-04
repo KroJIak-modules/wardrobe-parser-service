@@ -54,9 +54,17 @@ class ParserSourceSyncExecutor:
         product_urls_found: int,
         attempt_number: int,
         max_attempts: int,
+        warnings: list[str] | None = None,
     ) -> bool:
         """Retry only when discovery unexpectedly returns zero for a known source."""
-        return previous_products > 0 and product_urls_found == 0 and attempt_number < max_attempts
+        warning_items = [str(item).upper() for item in (warnings or [])]
+        hard_blocked = any("BOT_PROTECTION_429" in item for item in warning_items)
+        return (
+            previous_products > 0
+            and product_urls_found == 0
+            and attempt_number < max_attempts
+            and not hard_blocked
+        )
 
     @staticmethod
     def _build_empty_discovery_error(previous_products: int, attempts_used: int) -> str:
@@ -74,6 +82,7 @@ class ParserSourceSyncExecutor:
         source_id: int,
         base_url: str,
         deadline_monotonic: float | None = None,
+        on_progress: Callable[[], None] | None = None,
     ):
         """Fallback for completeness: retry product fetch from previously known URLs."""
         known_products = []
@@ -125,6 +134,11 @@ class ParserSourceSyncExecutor:
                         payload_source="cache_fallback",
                         available=product.status == ProductStatus.AVAILABLE,
                         variants=list(product.variants or []),
+                        weight_grams=product.weight_grams,
+                        weight_source=product.weight_source,
+                        weight_match_keyword=product.weight_match_keyword,
+                        weight_value=product.weight_value,
+                        weight_unit=product.weight_unit,
                     )
                 )
 
@@ -158,6 +172,7 @@ class ParserSourceSyncExecutor:
             second_pass_timeout_sec=settings.parser_recovery_second_pass_timeout_sec,
             error_details_limit=settings.parser_default_error_details_limit,
             deadline_monotonic=deadline_monotonic,
+            on_progress=on_progress,
         )
 
     def sync_source(
@@ -203,6 +218,7 @@ class ParserSourceSyncExecutor:
                     parser_type,
                     base_url,
                     deadline_monotonic=source_deadline_monotonic,
+                    on_progress=bump_progress,
                 )
                 bump_progress()
                 if not self._should_retry_empty_discovery(
@@ -210,6 +226,7 @@ class ParserSourceSyncExecutor:
                     product_urls_found=result.product_urls_found,
                     attempt_number=attempts_used,
                     max_attempts=max_attempts,
+                    warnings=result.warnings,
                 ):
                     break
 
@@ -248,6 +265,7 @@ class ParserSourceSyncExecutor:
                     source_id=source_id,
                     base_url=base_url,
                     deadline_monotonic=source_deadline_monotonic,
+                    on_progress=bump_progress,
                 )
                 if recovered_result:
                     recovered_result.http_429_count += result.http_429_count

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from typing import Callable
 from urllib.parse import urlparse
 
 from app.core.config import settings
@@ -77,6 +78,7 @@ class ShopifyParser:
         second_pass_enabled: bool,
         second_pass_timeout_sec: float,
         deadline_monotonic: float | None = None,
+        on_progress: Callable[[], None] | None = None,
     ) -> ShopifyDiscoveryResult:
         """Run discovery and optionally fetch product previews."""
         resolved_base_url = normalize_base_url(base_url)
@@ -88,6 +90,7 @@ class ShopifyParser:
             max_retries=max_retries,
             retry_backoff_sec=retry_backoff_sec,
             deadline_monotonic=deadline_monotonic,
+            on_progress=on_progress,
         )
 
         discovery_mode = resolve_discovery_mode(
@@ -120,6 +123,7 @@ class ShopifyParser:
             second_pass_enabled=second_pass_enabled,
             second_pass_timeout_sec=second_pass_timeout_sec,
             deadline_monotonic=deadline_monotonic,
+            on_progress=on_progress,
         )
 
     @classmethod
@@ -136,6 +140,7 @@ class ShopifyParser:
         second_pass_timeout_sec: float,
         error_details_limit: int,
         deadline_monotonic: float | None = None,
+        on_progress: Callable[[], None] | None = None,
     ) -> ShopifyDiscoveryResult:
         """Fallback mode: fetch previews using URLs already known from previous syncs."""
         resolved_base_url = normalize_base_url(base_url)
@@ -169,6 +174,7 @@ class ShopifyParser:
             second_pass_enabled=second_pass_enabled,
             second_pass_timeout_sec=second_pass_timeout_sec,
             deadline_monotonic=deadline_monotonic,
+            on_progress=on_progress,
         )
 
     @classmethod
@@ -193,6 +199,7 @@ class ShopifyParser:
         second_pass_enabled: bool,
         second_pass_timeout_sec: float,
         deadline_monotonic: float | None = None,
+        on_progress: Callable[[], None] | None = None,
     ) -> ShopifyDiscoveryResult:
         """Build final discovery result from a prepared URL list."""
         fetch_attempted = len(target_urls)
@@ -208,6 +215,7 @@ class ShopifyParser:
             second_pass_timeout_sec=second_pass_timeout_sec,
             build_preview=build_preview_from_payload,
             deadline_monotonic=deadline_monotonic,
+            on_progress=on_progress,
         )
         previews = pipeline.previews
         final_errors = pipeline.final_errors
@@ -248,4 +256,3 @@ class ShopifyParser:
             error_details=summary.error_details,
             previews=summary.previews,
         )
-

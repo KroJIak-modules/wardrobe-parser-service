@@ -139,6 +139,21 @@ class ShopifyHTTPClient:
             return None
 
     @staticmethod
+    def _is_bot_protection_429(response: requests.Response) -> bool:
+        """Detect challenge pages where retries are typically useless."""
+        try:
+            body = (response.text or "")[:4096].lower()
+        except Exception:
+            body = ""
+        markers = (
+            "verifying your connection",
+            "challenge-platform",
+            "cf-chl",
+            "security challenge",
+        )
+        return any(marker in body for marker in markers)
+
+    @staticmethod
     def validate_url(url: str) -> None:
         """Validate URL for SSRF and malformed patterns."""
         url = url.strip()
@@ -224,8 +239,14 @@ class ShopifyHTTPClient:
 
                 if status_code == 429:
                     http_429_count += 1
-                    last_error = "HTTP 429"
+                    if ShopifyHTTPClient._is_bot_protection_429(response):
+                        last_error = "BOT_PROTECTION_429"
+                    else:
+                        last_error = "HTTP 429"
                     ShopifyHTTPClient._record_429(url)
+                    if last_error == "BOT_PROTECTION_429":
+                        error = last_error
+                        break
                     retry_after_sec = ShopifyHTTPClient._retry_after_seconds(response)
                     backoff_base = retry_backoff_sec * (2 ** attempt)
                     cooldown_sec = max(

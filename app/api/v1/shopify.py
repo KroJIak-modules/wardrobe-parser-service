@@ -9,6 +9,7 @@ from app.schemas.shopify import (
     ShopifyDiscoveryResponse,
     ShopifySourceResponse,
     ShopifySourceAdminResponse,
+    ShopifySourceSupplierRequest,
     ShopifySourceToggleRequest,
 )
 from app.services.shopify_discovery_service import ShopifyDiscoveryService
@@ -46,3 +47,14 @@ def toggle_shopify_source(
     """Persist source enabled/disabled flag in DB and return updated admin view row."""
     service = ShopifySourceService(db)
     return service.toggle_source(source_key=source_key, payload=payload)
+
+
+@router.patch("/sources/{source_key}/supplier", response_model=ShopifySourceAdminResponse, summary="Assign source supplier")
+def assign_shopify_source_supplier(
+    source_key: str,
+    payload: ShopifySourceSupplierRequest,
+    db: Session = Depends(get_db),
+) -> ShopifySourceAdminResponse:
+    """Persist supplier mapping for source and return updated row."""
+    service = ShopifySourceService(db)
+    return service.assign_source_supplier(source_key=source_key, payload=payload)
