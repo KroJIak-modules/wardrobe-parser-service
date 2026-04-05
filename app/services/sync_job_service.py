@@ -100,26 +100,21 @@ class SyncJobService:
         db_processed_products = sum((row.products_fetched or 0) for row in source_run_rows)
 
         in_progress_row = (
-            self.db.query(ParserSource.name, ParserJobSourceRun.id)
+            self.db.query(ParserJobSourceRun, ParserSource.name)
             .join(ParserSource, ParserSource.id == ParserJobSourceRun.source_id)
             .filter(ParserJobSourceRun.job_id == job.id)
             .filter(ParserJobSourceRun.status == SourceRunStatus.IN_PROGRESS)
             .order_by(ParserJobSourceRun.id.desc())
             .first()
         )
-        current_source_name = in_progress_row.name if in_progress_row else None
+        current_source_name = in_progress_row[1] if in_progress_row else None
         current_source_processed_products = 0
         current_source_total_products = 0
 
         if in_progress_row:
-            in_progress_run = (
-                self.db.query(ParserJobSourceRun)
-                .filter(ParserJobSourceRun.id == in_progress_row.id)
-                .first()
-            )
-            if in_progress_run:
-                current_source_processed_products = in_progress_run.products_fetched or 0
-                current_source_total_products = in_progress_run.products_discovered or 0
+            in_progress_run = in_progress_row[0]
+            current_source_processed_products = in_progress_run.products_fetched or 0
+            current_source_total_products = in_progress_run.products_discovered or 0
 
         tracker_state = job_progress_tracker.get(job_id=job.id)
         current_source_index = 0

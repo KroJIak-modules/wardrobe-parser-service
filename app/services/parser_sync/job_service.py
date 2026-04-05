@@ -282,26 +282,6 @@ class ParserJobService:
 
         return job
 
-    def run_sync_job(self, triggered_by: str = "manual") -> ParserJob:
-        """Create and execute sync job against enabled configured sources."""
-        job = self.create_pending_job(triggered_by=triggered_by)
-        executed = self.execute_job(job.id)
-        return executed or job
-
-    def create_sync_job(
-        self, triggered_by: str = "scheduled"
-    ) -> ParserJob:
-        """
-        Create new sync job.
-
-        Args:
-            triggered_by: "scheduled" or "manual"
-
-        Returns:
-            ParserJob instance
-        """
-        return self.run_sync_job(triggered_by=triggered_by)
-
     def get_job(self, job_id: str) -> Optional[ParserJob]:
         """Get job by ID."""
         return self.job_state_service.get_job(job_id)

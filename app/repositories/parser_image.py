@@ -14,14 +14,6 @@ class ParserImageAssetRepository(BaseRepository[ImageAsset]):
     def __init__(self, session: Session):
         super().__init__(session, ImageAsset)
 
-    def get_by_source_url(self, source_url: str) -> ImageAsset | None:
-        return (
-            self.query()
-            .filter(ImageAsset.deleted_at.is_(None))
-            .filter(ImageAsset.source_url == source_url)
-            .first()
-        )
-
     def get_by_source_urls(self, source_urls: Iterable[str]) -> list[ImageAsset]:
         urls = [item for item in source_urls if item]
         if not urls:

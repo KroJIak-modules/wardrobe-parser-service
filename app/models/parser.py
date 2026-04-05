@@ -2,8 +2,6 @@
 SQLAlchemy models for parser job orchestration and product delta tracking.
 """
 
-from datetime import datetime, timezone
-from typing import Optional
 from enum import Enum
 
 from sqlalchemy import (
@@ -48,15 +46,6 @@ class SourceRunStatus(str, Enum):
     PARTIAL = "partial"  # Some products failed
     FAILED = "failed"
 
-
-class DeltaType(str, Enum):
-    """Type of change detected in product."""
-    NEW = "new"
-    UPDATED = "updated"
-    UNCHANGED = "unchanged"
-    DELETED = "deleted"
-
-
 class ProductStatus(str, Enum):
     """Product availability status."""
     AVAILABLE = "available"
@@ -98,7 +87,6 @@ class ParserSource(Base):
     deleted_at = Column(DateTime(timezone=True), nullable=True)  # Soft delete
 
     products = relationship("ParserProduct", back_populates="source")
-    fingerprints = relationship("ParserProductFingerprint", back_populates="source")
     supplier = relationship("ParserSupplier", back_populates="sources")
 
     __table_args__ = (
@@ -136,7 +124,6 @@ class ParserJob(Base):
     deleted_at = Column(DateTime(timezone=True), nullable=True)  # Soft delete
 
     source_runs = relationship("ParserJobSourceRun", back_populates="job", cascade="all, delete-orphan")
-    deltas = relationship("ParserProductDelta", back_populates="job", cascade="all, delete-orphan")
 
     __table_args__ = (
         Index("idx_parser_job_status", "status"),
@@ -219,8 +206,6 @@ class ParserProduct(Base):
     deleted_at = Column(DateTime(timezone=True), nullable=True)  # Soft delete
 
     source = relationship("ParserSource", back_populates="products")
-    fingerprints = relationship("ParserProductFingerprint", back_populates="product")
-    deltas = relationship("ParserProductDelta", back_populates="product")
 
     __table_args__ = (
         UniqueConstraint("source_id", "handle", name="uq_source_handle"),
@@ -232,61 +217,6 @@ class ParserProduct(Base):
         Index("idx_parser_product_weight_source", "weight_source"),
         Index("idx_parser_product_deleted_at", "deleted_at"),
     )
-
-
-class ParserProductFingerprint(Base):
-    """SHA256 fingerprint for delta detection."""
-    __tablename__ = "parser_product_fingerprint"
-
-    id = Column(Integer, primary_key=True)
-    source_id = Column(Integer, ForeignKey("parser_source.id"), nullable=False)
-    product_id = Column(Integer, ForeignKey("parser_product.id"), nullable=False)
-    
-    fingerprint = Column(String(64), nullable=False)  # SHA256 hex
-    
-    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
-    deleted_at = Column(DateTime(timezone=True), nullable=True)
-
-    source = relationship("ParserSource", back_populates="fingerprints")
-    product = relationship("ParserProduct", back_populates="fingerprints")
-
-    __table_args__ = (
-        UniqueConstraint("product_id", name="uq_product_fingerprint"),
-        Index("idx_parser_product_fingerprint_source_id", "source_id"),
-        Index("idx_parser_product_fingerprint_product_id", "product_id"),
-    )
-
-
-class ParserProductDelta(Base):
-    """Delta changes detected in product during sync."""
-    __tablename__ = "parser_product_delta"
-
-    id = Column(Integer, primary_key=True)
-    job_id = Column(String(36), ForeignKey("parser_job.id"), nullable=False)
-    product_id = Column(Integer, ForeignKey("parser_product.id"), nullable=False)
-    
-    delta_type = Column(SQLEnum(DeltaType, values_callable=_enum_values), nullable=False)
-    
-    old_price = Column(Float, nullable=True)
-    new_price = Column(Float, nullable=True)
-    
-    old_status = Column(SQLEnum(ProductStatus, values_callable=_enum_values), nullable=True)
-    new_status = Column(SQLEnum(ProductStatus, values_callable=_enum_values), nullable=True)
-    
-    old_image_count = Column(Integer, nullable=True)
-    new_image_count = Column(Integer, nullable=True)
-    
-    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
-
-    job = relationship("ParserJob", back_populates="deltas")
-    product = relationship("ParserProduct", back_populates="deltas")
-
-    __table_args__ = (
-        Index("idx_parser_product_delta_job_id", "job_id"),
-        Index("idx_parser_product_delta_product_id", "product_id"),
-        Index("idx_parser_product_delta_type", "delta_type"),
-    )
-
 
 class ImageAsset(Base):
     """Cached or stored product images."""

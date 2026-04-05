@@ -16,56 +16,6 @@ class ParserJobStateService:
     def __init__(self, job_repo: ParserJobRepository):
         self.job_repo = job_repo
 
-    def start_job(self, job_id: str) -> Optional[ParserJob]:
-        job = self.job_repo.get_by_id(job_id)
-        if job:
-            self.job_repo.mark_started(job)
-            self.job_repo.session.commit()
-        return job
-
-    def complete_job(
-        self,
-        job_id: str,
-        total_products: int,
-        new_products: int = 0,
-        updated_products: int = 0,
-    ) -> Optional[ParserJob]:
-        job = self.job_repo.get_by_id(job_id)
-        if job:
-            self.job_repo.mark_completed(
-                job,
-                total_products=total_products,
-                new_products=new_products,
-                updated_products=updated_products,
-            )
-            self.job_repo.session.commit()
-        return job
-
-    def fail_job(self, job_id: str) -> Optional[ParserJob]:
-        job = self.job_repo.get_by_id(job_id)
-        if job:
-            self.job_repo.mark_failed(job)
-            self.job_repo.session.commit()
-        return job
-
-    def add_error(
-        self,
-        job_id: str,
-        count: int = 1,
-        http_429_count: int = 0,
-        http_5xx_count: int = 0,
-    ) -> Optional[ParserJob]:
-        job = self.job_repo.get_by_id(job_id)
-        if job:
-            self.job_repo.increment_error_count(
-                job,
-                count=count,
-                http_429_count=http_429_count,
-                http_5xx_count=http_5xx_count,
-            )
-            self.job_repo.session.commit()
-        return job
-
     def get_job(self, job_id: str) -> Optional[ParserJob]:
         return self.job_repo.get_by_id(job_id)
 

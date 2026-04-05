@@ -2,9 +2,8 @@
 Base Repository pattern for data access layer.
 """
 
-from typing import TypeVar, Generic, List, Optional, Any, Dict
+from typing import TypeVar, Generic, Optional
 from sqlalchemy.orm import Session
-from sqlalchemy.exc import IntegrityError
 
 T = TypeVar("T")
 
@@ -39,14 +38,6 @@ class BaseRepository(Generic[T]):
             self.model_class.id == entity_id
         ).first()
 
-    def get_all(self, skip: int = 0, limit: int = 100) -> List[T]:
-        """Get all entities with pagination."""
-        return self.session.query(self.model_class).offset(skip).limit(limit).all()
-
-    def get_count(self) -> int:
-        """Get total count of entities."""
-        return self.session.query(self.model_class).count()
-
     def update(self, entity: T, **kwargs) -> T:
         """Update entity with provided fields."""
         for key, value in kwargs.items():
@@ -57,13 +48,6 @@ class BaseRepository(Generic[T]):
     def delete(self, entity: T) -> None:
         """Delete entity from session (hard delete)."""
         self.session.delete(entity)
-
-    def soft_delete(self, entity: T) -> T:
-        """Soft delete entity by setting deleted_at."""
-        from datetime import datetime, timezone
-        if hasattr(entity, "deleted_at"):
-            entity.deleted_at = datetime.now(timezone.utc)
-        return entity
 
     def query(self):
         """Get raw query builder for complex queries."""

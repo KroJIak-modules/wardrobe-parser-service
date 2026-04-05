@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from sqlalchemy.orm import selectinload
 
-from app.models import ParserJob, JobStatus, ParserJobSourceRun
+from app.models import ParserJob, JobStatus
 from app.repositories.base import BaseRepository
 
 
@@ -68,15 +68,6 @@ class ParserJobRepository(BaseRepository[ParserJob]):
             .all()
         )
 
-    def get_pending(self) -> List[ParserJob]:
-        """Get all pending jobs."""
-        return (
-            self.query()
-            .filter(ParserJob.status == JobStatus.PENDING)
-            .filter(ParserJob.deleted_at.is_(None))
-            .all()
-        )
-
     def mark_started(self, job: ParserJob) -> ParserJob:
         """Mark job as started."""
         return self.update(
@@ -102,13 +93,13 @@ class ParserJobRepository(BaseRepository[ParserJob]):
             updated_products=updated_products,
         )
 
-    def mark_failed(self, job: ParserJob, error_message: str = None) -> ParserJob:
+    def mark_failed(self, job: ParserJob) -> ParserJob:
         """Mark job as failed."""
-        update_data = {
-            "status": JobStatus.FAILED,
-            "completed_at": datetime.now(timezone.utc),
-        }
-        return self.update(job, **update_data)
+        return self.update(
+            job,
+            status=JobStatus.FAILED,
+            completed_at=datetime.now(timezone.utc),
+        )
 
     def mark_cancelled(self, job: ParserJob) -> ParserJob:
         """Mark job as cancelled by user/system."""
