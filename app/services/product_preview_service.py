@@ -25,22 +25,75 @@ class ProductPreviewService:
         return (host or "").lower().replace("www.", "")
 
     @staticmethod
-    def normalize_preview_price(raw_price: str | None, payload_source: str | None) -> float | None:
-        if raw_price is None:
+    def normalize_preview_money(
+        raw_value: str | int | float | None,
+        payload_source: str | None,
+        currency: str | None = None,
+    ) -> float | None:
+        if raw_value is None:
             return None
+        normalized_text: str | None = None
+        if isinstance(raw_value, str):
+            normalized_text = raw_value.strip().replace(",", ".")
+            if not normalized_text:
+                return None
         try:
-            parsed = float(raw_price)
-        except ValueError:
+            parsed = float(normalized_text if normalized_text is not None else raw_value)
+        except (TypeError, ValueError):
             return None
 
-        # Shopify .js often returns integer cents while .json returns decimal currency units.
+        payload_tag = (payload_source or "").strip().lower()
+        normalized_currency = (currency or "").strip().upper()
+        # Shopify Ajax payloads (.js and products.json discovery cache) often return integer cents.
         if (
-            payload_source == "js"
-            and parsed >= settings.preview_js_price_cents_threshold
+            payload_tag in {"js", "products_json"}
             and parsed.is_integer()
+            and normalized_currency not in {"JPY", "KRW"}
         ):
             return parsed / settings.preview_js_price_cents_divisor
+        # Legacy guard for already-saved cent values without decimal separator.
+        if (
+            normalized_currency in {"USD", "EUR", "GBP"}
+            and parsed >= 10_000
+            and parsed.is_integer()
+        ):
+            if normalized_text is not None:
+                if "." not in normalized_text and normalized_text.isdigit():
+                    return parsed / settings.preview_js_price_cents_divisor
+            elif isinstance(raw_value, (int, float)) and float(raw_value).is_integer():
+                return parsed / settings.preview_js_price_cents_divisor
         return parsed
+
+    @classmethod
+    def normalize_preview_price(
+        cls,
+        raw_price: str | int | float | None,
+        payload_source: str | None,
+        currency: str | None = None,
+    ) -> float | None:
+        return cls.normalize_preview_money(raw_price, payload_source, currency)
+
+    @classmethod
+    def normalize_preview_variants(
+        cls,
+        variants: list[dict] | None,
+        payload_source: str | None,
+        currency: str | None = None,
+    ) -> list[dict]:
+        normalized: list[dict] = []
+        for variant in variants or []:
+            if not isinstance(variant, dict):
+                normalized.append(variant)
+                continue
+            item = dict(variant)
+            price_value = cls.normalize_preview_money(item.get("price"), payload_source, currency)
+            if price_value is not None:
+                item["price"] = int(price_value) if float(price_value).is_integer() else round(float(price_value), 2)
+            compare_at = cls.normalize_preview_money(item.get("compare_at_price"), payload_source, currency)
+            if compare_at is not None:
+                item["compare_at_price"] = int(compare_at) if float(compare_at).is_integer() else round(float(compare_at), 2)
+            normalized.append(item)
+        return normalized
 
     def allowed_shopify_hosts(self) -> list[str]:
         hosts: list[str] = []

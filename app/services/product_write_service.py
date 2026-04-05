@@ -64,6 +64,12 @@ class ProductWriteService:
         price = payload.price if payload.price is not None else self.preview_service.normalize_preview_price(
             preview.price,
             preview.payload_source,
+            preview.currency,
+        )
+        variants = self.preview_service.normalize_preview_variants(
+            preview.variants,
+            preview.payload_source,
+            preview.currency,
         )
         final_title = payload.title.strip() if payload.title else (preview.title or preview.handle)
         final_vendor = payload.vendor if payload.vendor is not None else preview.vendor
@@ -103,6 +109,7 @@ class ProductWriteService:
                 existing.image_count = final_image_count
             existing.image_urls = resolved_image_urls
             existing.image_asset_ids = resolved_image_asset_ids
+            existing.variants = variants
             existing.weight_grams = final_weight_grams
             existing.weight_source = final_weight_source
             existing.weight_match_keyword = final_weight_match_keyword
@@ -125,6 +132,7 @@ class ProductWriteService:
             image_count=final_image_count or 0,
             image_urls=resolved_image_urls,
             image_asset_ids=resolved_image_asset_ids,
+            variants=variants,
             weight_grams=final_weight_grams,
             weight_source=final_weight_source,
             weight_match_keyword=final_weight_match_keyword,

@@ -20,7 +20,6 @@ from app.schemas.parser import (
 from app.services.product_preview_service import ProductPreviewService
 from app.services.product_read_service import ProductReadService
 from app.services.product_write_service import ProductWriteService
-from app.services.settings.pricing_service import PricingSettingsService
 
 
 class ProductCatalogService:
@@ -31,20 +30,17 @@ class ProductCatalogService:
         self.product_repo = ParserProductRepository(db) if db is not None else None
         self.source_repo = ParserSourceRepository(db) if db is not None else None
         self.image_repo = ParserImageAssetRepository(db) if db is not None else None
-        self.pricing_settings_service = PricingSettingsService(db) if db is not None else None
         self.preview_service = ProductPreviewService(source_repo=self.source_repo)
         self.read_service = (
             ProductReadService(
                 product_repo=self.product_repo,
                 source_repo=self.source_repo,
                 image_repo=self.image_repo,
-                pricing_settings_service=self.pricing_settings_service,
             )
             if (
                 self.product_repo is not None
                 and self.source_repo is not None
                 and self.image_repo is not None
-                and self.pricing_settings_service is not None
             )
             else None
         )
@@ -78,7 +74,11 @@ class ProductCatalogService:
             vendor=preview.vendor,
             product_type=preview.product_type,
             product_url=preview.product_url,
-            price=self.preview_service.normalize_preview_price(preview.price, preview.payload_source),
+            price=self.preview_service.normalize_preview_price(
+                preview.price,
+                preview.payload_source,
+                preview.currency,
+            ),
             currency=(preview.currency or "USD").upper(),
             image_urls=preview.image_urls,
         )

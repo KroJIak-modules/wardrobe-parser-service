@@ -68,4 +68,6 @@ def build_filtered_query(
             )
         )
 
+    query = query.order_by(ParserProduct.updated_at.desc(), ParserProduct.id.desc())
+
     return query

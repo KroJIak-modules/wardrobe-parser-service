@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 from typing import Callable, Optional
 
+from app.core.config import settings
 from app.models import ProductStatus
 from app.repositories import ParserImageAssetRepository, ParserProductRepository
 from app.schemas.parser import WeightRuleResponse
@@ -27,13 +28,87 @@ class ParserProductSyncService:
         self.weight_rule_service = weight_rule_service
 
     @staticmethod
-    def _to_float(value: str | None) -> float | None:
+    def _to_float(
+        value: Any,
+        *,
+        payload_source: str | None = None,
+        currency: str | None = None,
+    ) -> float | None:
         if value is None:
             return None
+        normalized_text: str | None = None
+        if isinstance(value, str):
+            normalized_text = value.strip().replace(",", ".")
+            if not normalized_text:
+                return None
         try:
-            return float(str(value).strip())
+            parsed = float(normalized_text if normalized_text is not None else value)
         except (TypeError, ValueError):
             return None
+
+        payload_tag = (payload_source or "").strip().lower()
+        normalized_currency = (currency or "").strip().upper()
+        # Shopify Ajax payloads (.js and products.json discovery cache) often carry integer cents.
+        if (
+            payload_tag in {"js", "products_json"}
+            and parsed.is_integer()
+            and normalized_currency not in {"JPY", "KRW"}
+        ):
+            return parsed / settings.preview_js_price_cents_divisor
+
+        # Legacy guard: historical rows could keep non-RUB values in cents without decimal separator.
+        if (
+            normalized_currency in {"USD", "EUR", "GBP"}
+            and parsed >= 10_000
+            and parsed.is_integer()
+        ):
+            if normalized_text is not None:
+                if "." not in normalized_text and normalized_text.isdigit():
+                    return parsed / settings.preview_js_price_cents_divisor
+            elif isinstance(value, (int, float)) and float(value).is_integer():
+                return parsed / settings.preview_js_price_cents_divisor
+
+        return parsed
+
+    @classmethod
+    def _normalize_variant_money(cls, value: Any, *, payload_source: str | None, currency: str | None) -> Any:
+        if value is None:
+            return None
+        parsed = cls._to_float(value, payload_source=payload_source, currency=currency)
+        if parsed is None:
+            return value
+        rounded = round(parsed, 2)
+        if rounded.is_integer():
+            return int(rounded)
+        return rounded
+
+    @classmethod
+    def _normalize_preview_variants(
+        cls,
+        variants: list[dict],
+        *,
+        payload_source: str | None,
+        currency: str | None,
+    ) -> list[dict]:
+        normalized: list[dict] = []
+        for variant in variants:
+            if not isinstance(variant, dict):
+                normalized.append(variant)
+                continue
+            item = dict(variant)
+            item["price"] = cls._normalize_variant_money(
+                item.get("price"),
+                payload_source=payload_source,
+                currency=currency,
+            )
+            if "compare_at_price" in item:
+                item["compare_at_price"] = cls._normalize_variant_money(
+                    item.get("compare_at_price"),
+                    payload_source=payload_source,
+                    currency=currency,
+                )
+            normalized.append(item)
+        return normalized
 
     def _upsert_product_from_preview(
         self,
@@ -49,11 +124,19 @@ class ParserProductSyncService:
         if existing is None:
             existing = existing_by_url.get(preview.product_url)
 
-        parsed_price = self._to_float(preview.price)
+        parsed_price = self._to_float(
+            preview.price,
+            payload_source=getattr(preview, "payload_source", None),
+            currency=preview.currency,
+        )
         preview_image_urls = preview.image_urls or []
         assets = [image_asset_cache[url] for url in preview_image_urls if url in image_asset_cache]
         preview_image_asset_ids = [asset.id for asset in assets]
-        preview_variants = preview.variants or []
+        preview_variants = self._normalize_preview_variants(
+            preview.variants or [],
+            payload_source=getattr(preview, "payload_source", None),
+            currency=preview.currency,
+        )
         status = ProductStatus.AVAILABLE if preview.available else ProductStatus.OUT_OF_STOCK
         weight_grams = preview.weight_grams
         weight_source = preview.weight_source

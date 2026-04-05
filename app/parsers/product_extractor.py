@@ -27,10 +27,15 @@ class ShopifyProductExtractor:
             for variant in variants:
                 if not isinstance(variant, dict):
                     continue
-                currency = ShopifyProductExtractor._safe_str(variant.get("currency"))
-                if currency:
-                    return currency
-        return ShopifyProductExtractor._safe_str(payload.get("currency"))
+                for key in ("currency", "price_currency", "compare_at_price_currency", "currency_code"):
+                    currency = ShopifyProductExtractor._safe_str(variant.get(key))
+                    if currency:
+                        return currency
+        for key in ("currency", "currency_code", "price_currency"):
+            currency = ShopifyProductExtractor._safe_str(payload.get(key))
+            if currency:
+                return currency
+        return None
 
     @staticmethod
     def extract_image_urls(payload: dict[str, Any]) -> list[str]:
