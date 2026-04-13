@@ -37,7 +37,6 @@ class ParserSourceRepository(BaseRepository[ParserSource]):
         parser_type: str = "shopify",
         enabled: bool = True,
         supplier_id: Optional[int] = None,
-        seller_delivery_rub: Optional[float] = None,
         promo_factor: Optional[float] = None,
         promo_only_no_discount: Optional[bool] = None,
         buyout_surcharge_value: Optional[float] = None,
@@ -54,8 +53,6 @@ class ParserSourceRepository(BaseRepository[ParserSource]):
         )
         if supplier_id is not None:
             payload["supplier_id"] = supplier_id
-        if seller_delivery_rub is not None:
-            payload["seller_delivery_rub"] = seller_delivery_rub
         if promo_factor is not None:
             payload["promo_factor"] = promo_factor
         if promo_only_no_discount is not None:

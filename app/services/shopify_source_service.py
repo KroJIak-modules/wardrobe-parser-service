@@ -28,7 +28,7 @@ class ShopifySourceService:
     @staticmethod
     def _normalize_currency(raw: str | None, *, default: str = "RUB") -> str:
         value = (raw or default).strip().upper()
-        if value not in {"RUB", "USD", "EUR"}:
+        if value not in {"RUB", "USD", "EUR", "GBP"}:
             return default
         return value
 
@@ -97,7 +97,6 @@ class ShopifySourceService:
                     supplier_id=supplier.id,
                     supplier_key=supplier.key,
                     supplier_name=supplier.name,
-                    seller_delivery_rub=float(db_source.seller_delivery_rub) if db_source else 0.0,
                     promo_factor=float(db_source.promo_factor) if db_source else 1.0,
                     promo_only_no_discount=bool(db_source.promo_only_no_discount) if db_source else False,
                     buyout_surcharge_value=float(db_source.buyout_surcharge_value) if db_source else 0.0,
@@ -145,7 +144,6 @@ class ShopifySourceService:
             supplier_id=db_source.supplier.id if db_source.supplier else default_supplier.id,
             supplier_key=db_source.supplier.key if db_source.supplier else default_supplier.key,
             supplier_name=db_source.supplier.name if db_source.supplier else default_supplier.name,
-            seller_delivery_rub=float(db_source.seller_delivery_rub),
             promo_factor=float(db_source.promo_factor),
             promo_only_no_discount=bool(db_source.promo_only_no_discount),
             buyout_surcharge_value=float(db_source.buyout_surcharge_value),
@@ -181,8 +179,6 @@ class ShopifySourceService:
 
         if supplier is not None:
             db_source.supplier_id = supplier.id
-        if payload.seller_delivery_rub is not None:
-            db_source.seller_delivery_rub = float(payload.seller_delivery_rub)
         if payload.promo_factor is not None:
             db_source.promo_factor = float(payload.promo_factor)
         if payload.promo_only_no_discount is not None:
@@ -214,7 +210,6 @@ class ShopifySourceService:
             supplier_id=supplier_data.id,
             supplier_key=supplier_data.key,
             supplier_name=supplier_data.name,
-            seller_delivery_rub=float(db_source.seller_delivery_rub),
             promo_factor=float(db_source.promo_factor),
             promo_only_no_discount=bool(db_source.promo_only_no_discount),
             buyout_surcharge_value=float(db_source.buyout_surcharge_value),

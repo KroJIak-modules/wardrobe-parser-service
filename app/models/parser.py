@@ -75,7 +75,6 @@ class ParserSource(Base):
         nullable=False,
         server_default="1",
     )
-    seller_delivery_rub = Column(Float, nullable=False, default=0.0, server_default="0")
     promo_factor = Column(Float, nullable=False, default=1.0, server_default="1")
     promo_only_no_discount = Column(Boolean, nullable=False, default=False, server_default="false")
     buyout_surcharge_value = Column(Float, nullable=False, default=0.0, server_default="0")

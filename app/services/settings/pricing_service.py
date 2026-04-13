@@ -26,13 +26,13 @@ _FORMULA_LINES = [
     "STC_RUB = SSR[SUPPLIER][STEP]",
     "BSC_RUB = buyout surcharge in source currency converted to RUB",
     "SP_AFTER_PROMO_RUB = SP_RUB * PROMO",
-    "TP_RUB = SP_AFTER_PROMO_RUB + BSC_RUB + CDT_RUB + SDC_RUB + STC_RUB",
+    "TP_RUB = SP_AFTER_PROMO_RUB + BSC_RUB + CDT_RUB + STC_RUB",
     "FP_RUB = ceil(TP_RUB * MP)",
 ]
 
 _FORMULA_LATEX = (
     r"\left\lceil\left(SP_{RUB}\cdot PROMO + BSC_{RUB} + \max(0,SP_{EUR}-THR_{EUR})\cdot DUTY\cdot EUR2RUB + "
-    r"SDC_{RUB} + SSR_{SUPPLIER,\left\lceil\frac{WEIGHT_G\cdot WT}{500}\right\rceil}\right)\cdot MP\right\rceil"
+    r"SSR_{SUPPLIER,\left\lceil\frac{WEIGHT_G\cdot WT}{500}\right\rceil}\right)\cdot MP\right\rceil"
 )
 
 _FORMULA_LEGEND = [
@@ -44,7 +44,6 @@ _FORMULA_LEGEND = [
     {"key": "EUR2RUB", "description": "Курс EUR к RUB"},
     {"key": "CDT_EUR", "description": "Пошлина в EUR"},
     {"key": "CDT_RUB", "description": "Пошлина в RUB"},
-    {"key": "SDC_RUB", "description": "Доставка от продавца в RUB"},
     {"key": "STC_RUB", "description": "Транспортировка поставщиком в RUB"},
     {"key": "BSC_RUB", "description": "Доплата к стоимости выкупа в RUB"},
     {"key": "MP", "description": "Коэффициент наценки"},
@@ -84,7 +83,14 @@ class PricingSettingsService:
     @staticmethod
     def _normalize_currency(raw: str | None, *, default: str = "RUB") -> str:
         value = (raw or default).strip().upper()
-        if value not in {"RUB", "USD", "EUR"}:
+        if value not in {"RUB", "USD", "EUR", "GBP"}:
+            return default
+        return value
+
+    @staticmethod
+    def _normalize_supplier_category(raw: str | None, *, default: str = "main") -> str:
+        value = (raw or default).strip().lower()
+        if value not in {"main", "alt"}:
             return default
         return value
 
@@ -144,7 +150,6 @@ class PricingSettingsService:
                 default="EUR",
             ),
             customs_duty_rate=float(entity.customs_duty_rate),
-            seller_delivery_rub=float(entity.seller_delivery_rub),
             usd_to_rub=float(entity.usd_to_rub),
             eur_to_rub=float(entity.eur_to_rub),
             suppliers=[
@@ -185,8 +190,7 @@ class PricingSettingsService:
             id=int(supplier.id),
             key=supplier.key,
             name=supplier.name,
-            country_code=supplier.country_code,
-            country_name=supplier.country_name,
+            category=PricingSettingsService._normalize_supplier_category(getattr(supplier, "category", None)),
             rate_currency=rate_currency,
             rate_per_500g_value=rate_per_500g_value,
             rate_per_500g_rub=rate_per_500g,
@@ -211,9 +215,11 @@ class PricingSettingsService:
 
         patch = payload.model_dump(exclude_none=True)
         settings_entity, _ = self.repo.get_or_create_default()
-        for key in ("name", "country_code", "country_name"):
+        for key in ("name",):
             if key in patch:
                 setattr(supplier, key, patch[key])
+        if "category" in patch:
+            supplier.category = self._normalize_supplier_category(patch.get("category"), default=supplier.category)
         if "rate_currency" in patch:
             supplier.rate_currency = self._normalize_currency(patch.get("rate_currency"), default=supplier.rate_currency)
 
@@ -288,8 +294,7 @@ class PricingSettingsService:
         supplier = self.supplier_repo.create(
             key=key,
             name=payload.name.strip(),
-            country_code=payload.country_code.strip().upper(),
-            country_name=payload.country_name.strip(),
+            category=self._normalize_supplier_category(payload.category, default="main"),
             rate_currency=self._normalize_currency(payload.rate_currency, default="RUB"),
         )
         self.supplier_repo.flush()

@@ -309,7 +309,6 @@ class PricingSettingsUpdateRequest(BaseModel):
     customs_threshold_eur: Optional[float] = Field(default=None, ge=0.0, le=10000.0)
     customs_threshold_currency: Optional[str] = Field(default=None, min_length=3, max_length=3)
     customs_duty_rate: Optional[float] = Field(default=None, ge=0.0, le=1.0)
-    seller_delivery_rub: Optional[float] = Field(default=None, ge=0.0, le=1000000.0)
     usd_to_rub: Optional[float] = Field(default=None, ge=0.01, le=100000.0)
     eur_to_rub: Optional[float] = Field(default=None, ge=0.01, le=100000.0)
 
@@ -327,8 +326,7 @@ class PricingSupplierResponse(BaseModel):
     id: int
     key: str
     name: str
-    country_code: str
-    country_name: str
+    category: str
     rate_currency: str
     rate_per_500g_value: float
     rate_per_500g_rub: float
@@ -340,8 +338,7 @@ class PricingSupplierUpdateRequest(BaseModel):
     """Editable supplier SSR parameters."""
 
     name: Optional[str] = Field(default=None, min_length=1, max_length=255)
-    country_code: Optional[str] = Field(default=None, min_length=2, max_length=16)
-    country_name: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    category: Optional[str] = Field(default=None, min_length=3, max_length=16)
     rate_currency: Optional[str] = Field(default=None, min_length=3, max_length=3)
     rate_per_500g_value: Optional[float] = Field(default=None, ge=0.0, le=1000000.0)
     rate_per_500g_rub: Optional[float] = Field(default=None, ge=0.0, le=1000000.0)
@@ -353,8 +350,7 @@ class PricingSupplierCreateRequest(BaseModel):
 
     key: Optional[str] = Field(default=None, min_length=1, max_length=64)
     name: str = Field(min_length=1, max_length=255)
-    country_code: str = Field(default="N/A", min_length=2, max_length=16)
-    country_name: str = Field(default="Unknown", min_length=1, max_length=255)
+    category: str = Field(default="main", min_length=3, max_length=16)
     rate_currency: str = Field(default="RUB", min_length=3, max_length=3)
     rate_per_500g_value: float = Field(default=0.0, ge=0.0, le=1000000.0)
     max_step_500g: int = Field(default=120, ge=1, le=1000)
@@ -369,7 +365,6 @@ class PricingSettingsResponse(BaseModel):
     customs_threshold_eur: float
     customs_threshold_currency: str
     customs_duty_rate: float
-    seller_delivery_rub: float
     usd_to_rub: float
     eur_to_rub: float
     suppliers: list[PricingSupplierResponse] = Field(default_factory=list)

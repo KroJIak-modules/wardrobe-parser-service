@@ -130,7 +130,6 @@ class ShopifySourceAdminResponse(BaseModel):
     supplier_id: int | None = None
     supplier_key: str | None = None
     supplier_name: str | None = None
-    seller_delivery_rub: float = 0.0
     promo_factor: float = 1.0
     promo_only_no_discount: bool = False
     buyout_surcharge_value: float = 0.0
@@ -147,7 +146,6 @@ class ShopifySourceSupplierRequest(BaseModel):
     """Update source pricing settings and supplier mapping."""
 
     supplier_id: int | None = Field(default=None, ge=1)
-    seller_delivery_rub: float | None = Field(default=None, ge=0.0, le=1000000.0)
     promo_factor: float | None = Field(default=None, ge=0.1, le=5.0)
     promo_only_no_discount: bool | None = None
     buyout_surcharge_value: float | None = Field(default=None, ge=0.0, le=1000000.0)
