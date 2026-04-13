@@ -45,6 +45,18 @@ def _normalize_match_haystack(*parts: str | None) -> str:
     return " ".join(normalized.split())
 
 
+def _unique_normalized_keywords(keywords: list[str]) -> list[str]:
+    unique: list[str] = []
+    seen: set[str] = set()
+    for keyword in keywords:
+        normalized = _normalize_keyword(keyword)
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        unique.append(normalized)
+    return unique
+
+
 DEFAULT_WEIGHT_RULES: list[tuple[int, list[str]]] = [
     (80, ["ring", "rings", "earring", "earrings", "ear cuff", "earcuff", "stud earring", "hoop earring", "brooch", "pin badge", "lapel pin", "cufflink", "tie clip", "charm", "nose ring"]),
     (130, ["necklace", "chain", "chain necklace", "pendant", "choker", "bracelet", "bangle", "bangles", "anklet", "body chain", "wallet chain", "key chain", "keychain", "lanyard"]),
@@ -98,8 +110,7 @@ class WeightRuleService:
                     sort_order=index,
                 )
                 self.rule_repo.flush()
-                for keyword in keywords:
-                    normalized = _normalize_keyword(keyword)
+                for normalized in _unique_normalized_keywords(keywords):
                     self.keyword_repo.create(rule_id=created.id, keyword=normalized)
             changed = True
             active = self.rule_repo.get_all_active()
@@ -120,8 +131,7 @@ class WeightRuleService:
                 changed = True
 
             existing = {item.keyword for item in self.keyword_repo.get_by_rule(rule.id)}
-            for keyword in keywords:
-                normalized = _normalize_keyword(keyword)
+            for normalized in _unique_normalized_keywords(keywords):
                 if normalized not in existing:
                     self.keyword_repo.create(rule_id=rule.id, keyword=normalized)
                     existing.add(normalized)
