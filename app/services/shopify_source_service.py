@@ -46,6 +46,7 @@ class ShopifySourceService:
                 parser_type=source.parser_type,
                 enabled=source.enabled,
                 notes=source.notes,
+                status_label=source.status_label,
             )
             for source in sources
         ]
@@ -92,6 +93,7 @@ class ShopifySourceService:
                     parser_type=source.parser_type,
                     enabled=effective_enabled,
                     notes=source.notes,
+                    status_label=source.status_label,
                     products_count=products_count,
                     categories_count=categories_count,
                     supplier_id=supplier.id,
@@ -139,6 +141,7 @@ class ShopifySourceService:
             parser_type=source_cfg.parser_type,
             enabled=db_source.enabled,
             notes=source_cfg.notes,
+            status_label=source_cfg.status_label,
             products_count=products_count,
             categories_count=categories_count,
             supplier_id=db_source.supplier.id if db_source.supplier else default_supplier.id,
@@ -205,6 +208,7 @@ class ShopifySourceService:
             parser_type=source_cfg.parser_type,
             enabled=db_source.enabled,
             notes=source_cfg.notes,
+            status_label=source_cfg.status_label,
             products_count=products_count,
             categories_count=categories_count,
             supplier_id=supplier_data.id,

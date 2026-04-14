@@ -44,25 +44,29 @@ class ProductPreviewService:
 
         payload_tag = (payload_source or "").strip().lower()
         normalized_currency = (currency or "").strip().upper()
-        # Shopify Ajax payloads (.js and products.json discovery cache) often return integer cents.
+        # Shopify .js payloads often return integer cents.
         if (
-            payload_tag in {"js", "products_json"}
+            payload_tag == "js"
             and parsed.is_integer()
             and normalized_currency not in {"JPY", "KRW"}
         ):
             return parsed / settings.preview_js_price_cents_divisor
-        # Legacy guard for already-saved cent values without decimal separator.
-        if (
-            normalized_currency in {"USD", "EUR", "GBP"}
-            and parsed >= 10_000
-            and parsed.is_integer()
-        ):
-            if normalized_text is not None:
-                if "." not in normalized_text and normalized_text.isdigit():
-                    return parsed / settings.preview_js_price_cents_divisor
-            elif isinstance(raw_value, (int, float)) and float(raw_value).is_integer():
-                return parsed / settings.preview_js_price_cents_divisor
         return parsed
+
+    @staticmethod
+    def require_preview_currency(raw_currency: str | None, *, product_url: str | None = None) -> str:
+        normalized_currency = (raw_currency or "").strip().upper()
+        if len(normalized_currency) != 3:
+            if product_url:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Не удалось определить валюту товара: {product_url}",
+                )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Не удалось определить валюту товара",
+            )
+        return normalized_currency
 
     @classmethod
     def normalize_preview_price(

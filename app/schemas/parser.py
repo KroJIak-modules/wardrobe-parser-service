@@ -171,7 +171,7 @@ class ProductUrlPreviewResponse(BaseModel):
     product_type: Optional[str] = None
     product_url: str
     price: Optional[float] = None
-    currency: str = "USD"
+    currency: str
     image_urls: list[str] = Field(default_factory=list)
 
 

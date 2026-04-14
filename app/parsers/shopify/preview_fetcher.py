@@ -36,6 +36,7 @@ def fetch_one_product_preview(
     max_retries: int,
     retry_backoff_sec: float,
     build_preview: Callable[..., Any],
+    store_currency: str | None = None,
     session: requests.Session | None = None,
     deadline_monotonic: float | None = None,
 ) -> FetchOutcome:
@@ -51,10 +52,13 @@ def fetch_one_product_preview(
         )
 
     if isinstance(cached_payload, dict):
+        payload = dict(cached_payload)
+        if store_currency and not payload.get("currency") and not payload.get("currency_code"):
+            payload["currency"] = store_currency
         preview = build_preview(
             product_url,
             handle,
-            cached_payload,
+            payload,
             payload_source="products_json",
         )
         return FetchOutcome(
@@ -100,6 +104,10 @@ def fetch_one_product_preview(
             last_error = f"некорректный payload .{payload_source}"
             continue
 
+        payload = dict(payload)
+        if store_currency and not payload.get("currency") and not payload.get("currency_code"):
+            payload["currency"] = store_currency
+
         preview = build_preview(
             product_url,
             handle,
@@ -123,6 +131,38 @@ def fetch_one_product_preview(
     )
 
 
+def fetch_store_currency(
+    *,
+    base_url: str,
+    timeout_sec: float,
+    max_retries: int,
+    retry_backoff_sec: float,
+    session: requests.Session | None = None,
+    deadline_monotonic: float | None = None,
+) -> str | None:
+    """Read Shopify store currency from lightweight public endpoints."""
+    http_client = ShopifyHTTPClient()
+    for endpoint in ("meta.json", "cart.js"):
+        payload, _, _, _, error = http_client.request_with_retries(
+            url=f"{base_url}/{endpoint}",
+            is_json=True,
+            timeout_sec=timeout_sec,
+            max_retries=max_retries,
+            retry_backoff_sec=retry_backoff_sec,
+            session=session,
+            deadline_monotonic=deadline_monotonic,
+        )
+        if error or not isinstance(payload, dict):
+            continue
+        raw_currency = payload.get("currency")
+        if not isinstance(raw_currency, str):
+            continue
+        normalized = raw_currency.strip().upper()
+        if len(normalized) == 3:
+            return normalized
+    return None
+
+
 def fetch_many_product_previews(
     *,
     base_url: str,
@@ -142,6 +182,14 @@ def fetch_many_product_previews(
 
     if parallel_workers <= 1 or len(product_urls) <= 1:
         session = ShopifyHTTPClient.create_session()
+        store_currency = fetch_store_currency(
+            base_url=base_url,
+            timeout_sec=timeout_sec,
+            max_retries=max_retries,
+            retry_backoff_sec=retry_backoff_sec,
+            session=session,
+            deadline_monotonic=deadline_monotonic,
+        )
         outcomes: list[FetchOutcome] = []
         for product_url in product_urls:
             outcome = fetch_one_product_preview(
@@ -152,6 +200,7 @@ def fetch_many_product_previews(
                 max_retries=max_retries,
                 retry_backoff_sec=retry_backoff_sec,
                 build_preview=build_preview,
+                store_currency=store_currency,
                 session=session,
                 deadline_monotonic=deadline_monotonic,
             )
@@ -164,6 +213,15 @@ def fetch_many_product_previews(
     workers = max(1, min(parallel_workers, len(product_urls)))
     workers = ShopifyHTTPClient.get_adaptive_workers(base_url, workers)
     thread_state = local()
+    main_session = ShopifyHTTPClient.create_session()
+    store_currency = fetch_store_currency(
+        base_url=base_url,
+        timeout_sec=timeout_sec,
+        max_retries=max_retries,
+        retry_backoff_sec=retry_backoff_sec,
+        session=main_session,
+        deadline_monotonic=deadline_monotonic,
+    )
 
     def fetch_with_thread_session(product_url: str) -> FetchOutcome:
         session = getattr(thread_state, "session", None)
@@ -178,6 +236,7 @@ def fetch_many_product_previews(
             max_retries=max_retries,
             retry_backoff_sec=retry_backoff_sec,
             build_preview=build_preview,
+            store_currency=store_currency,
             session=session,
             deadline_monotonic=deadline_monotonic,
         )

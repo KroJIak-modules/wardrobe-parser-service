@@ -11,6 +11,7 @@ from app.core.config import settings
 from app.parsers.shopify.http_client import ShopifyHTTPClient
 from app.parsers.shopify.discovery.api import (
     discover_collections_all_products,
+    discover_collections_all_html_products,
     discover_products_json,
 )
 from app.parsers.shopify_url_utils import append_discovered_url, normalize_product_url
@@ -267,6 +268,24 @@ def collect_discovery_urls(
             payload = collections_result.payloads.get(url)
             if isinstance(payload, dict):
                 payload_cache[url] = payload
+
+    if len(discovered_urls) < max_products:
+        html_collections_result = discover_collections_all_html_products(
+            base_url=base_url,
+            max_products=max_products - len(discovered_urls),
+            timeout_sec=timeout_sec,
+            max_retries=max_retries,
+            retry_backoff_sec=retry_backoff_sec,
+            session=session,
+            deadline_monotonic=deadline_monotonic,
+        )
+        warnings.extend(html_collections_result.warnings)
+        if html_collections_result.urls:
+            source_from_fallback = True
+        for url in html_collections_result.urls:
+            if len(discovered_urls) >= max_products:
+                break
+            append_and_ping(url)
 
     return DiscoveryCollectionResult(
         sitemap_url=sitemap_url,

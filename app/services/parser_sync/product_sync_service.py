@@ -48,27 +48,24 @@ class ParserProductSyncService:
 
         payload_tag = (payload_source or "").strip().lower()
         normalized_currency = (currency or "").strip().upper()
-        # Shopify Ajax payloads (.js and products.json discovery cache) often carry integer cents.
+        # Shopify .js payloads often carry integer cents.
         if (
-            payload_tag in {"js", "products_json"}
+            payload_tag == "js"
             and parsed.is_integer()
             and normalized_currency not in {"JPY", "KRW"}
         ):
             return parsed / settings.preview_js_price_cents_divisor
 
-        # Legacy guard: historical rows could keep non-RUB values in cents without decimal separator.
-        if (
-            normalized_currency in {"USD", "EUR", "GBP"}
-            and parsed >= 10_000
-            and parsed.is_integer()
-        ):
-            if normalized_text is not None:
-                if "." not in normalized_text and normalized_text.isdigit():
-                    return parsed / settings.preview_js_price_cents_divisor
-            elif isinstance(value, (int, float)) and float(value).is_integer():
-                return parsed / settings.preview_js_price_cents_divisor
-
         return parsed
+
+    @staticmethod
+    def _require_currency(raw_currency: str | None, *, product_url: str | None = None) -> str:
+        normalized_currency = (raw_currency or "").strip().upper()
+        if len(normalized_currency) != 3:
+            if product_url:
+                raise ValueError(f"Не удалось определить валюту товара: {product_url}")
+            raise ValueError("Не удалось определить валюту товара")
+        return normalized_currency
 
     @classmethod
     def _normalize_variant_money(cls, value: Any, *, payload_source: str | None, currency: str | None) -> Any:
@@ -129,13 +126,14 @@ class ParserProductSyncService:
             payload_source=getattr(preview, "payload_source", None),
             currency=preview.currency,
         )
+        resolved_currency = self._require_currency(preview.currency, product_url=getattr(preview, "product_url", None))
         preview_image_urls = preview.image_urls or []
         assets = [image_asset_cache[url] for url in preview_image_urls if url in image_asset_cache]
         preview_image_asset_ids = [asset.id for asset in assets]
         preview_variants = self._normalize_preview_variants(
             preview.variants or [],
             payload_source=getattr(preview, "payload_source", None),
-            currency=preview.currency,
+            currency=resolved_currency,
         )
         status = ProductStatus.AVAILABLE if preview.available else ProductStatus.OUT_OF_STOCK
         weight_grams = preview.weight_grams
@@ -173,7 +171,7 @@ class ParserProductSyncService:
                 vendor=preview.vendor,
                 product_type=preview.product_type,
                 price=parsed_price,
-                currency=preview.currency or "USD",
+                currency=resolved_currency,
                 image_count=len(preview_image_urls),
                 image_urls=preview_image_urls,
                 image_asset_ids=preview_image_asset_ids,
@@ -197,7 +195,7 @@ class ParserProductSyncService:
             or existing.vendor != preview.vendor
             or existing.product_type != preview.product_type
             or existing.price != parsed_price
-            or existing.currency != (preview.currency or "USD")
+            or existing.currency != resolved_currency
             or (existing.image_urls or []) != preview_image_urls
             or (existing.image_asset_ids or []) != preview_image_asset_ids
             or existing.image_count != len(preview_image_urls)
@@ -223,7 +221,7 @@ class ParserProductSyncService:
             vendor=preview.vendor,
             product_type=preview.product_type,
             price=parsed_price,
-            currency=preview.currency or "USD",
+            currency=resolved_currency,
             image_count=len(preview_image_urls),
             image_urls=preview_image_urls,
             image_asset_ids=preview_image_asset_ids,

@@ -7,6 +7,34 @@ class ShopifyProductExtractor:
     """Extract and normalize product fields from Shopify API/JS payloads."""
 
     @staticmethod
+    def _extract_currency_from_presentment_prices(value: Any) -> str | None:
+        if isinstance(value, dict):
+            items = [value]
+        elif isinstance(value, list):
+            items = value
+        else:
+            return None
+
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            for key in ("currency_code", "currency", "iso_code"):
+                currency = ShopifyProductExtractor._safe_str(item.get(key))
+                if currency:
+                    return currency.upper()
+
+            for money_key in ("price", "compare_at_price"):
+                money_value = item.get(money_key)
+                if not isinstance(money_value, dict):
+                    continue
+                for key in ("currency_code", "currency", "iso_code"):
+                    currency = ShopifyProductExtractor._safe_str(money_value.get(key))
+                    if currency:
+                        return currency.upper()
+
+        return None
+
+    @staticmethod
     def extract_price(payload: dict[str, Any]) -> str | None:
         """Extract price from variants or root level."""
         variants = payload.get("variants")
@@ -30,11 +58,21 @@ class ShopifyProductExtractor:
                 for key in ("currency", "price_currency", "compare_at_price_currency", "currency_code"):
                     currency = ShopifyProductExtractor._safe_str(variant.get(key))
                     if currency:
-                        return currency
+                        return currency.upper()
+                presentment_currency = ShopifyProductExtractor._extract_currency_from_presentment_prices(
+                    variant.get("presentment_prices") or variant.get("presentment_price")
+                )
+                if presentment_currency:
+                    return presentment_currency
         for key in ("currency", "currency_code", "price_currency"):
             currency = ShopifyProductExtractor._safe_str(payload.get(key))
             if currency:
-                return currency
+                return currency.upper()
+        presentment_currency = ShopifyProductExtractor._extract_currency_from_presentment_prices(
+            payload.get("presentment_prices") or payload.get("presentment_price")
+        )
+        if presentment_currency:
+            return presentment_currency
         return None
 
     @staticmethod

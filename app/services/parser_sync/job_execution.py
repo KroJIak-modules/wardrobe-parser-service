@@ -50,6 +50,7 @@ def get_or_create_source(
     if source:
         source.name = name
         source.parser_type = parser_type
+        source.enabled = enabled
         return source
 
     return source_repo.create_source(

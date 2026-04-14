@@ -25,6 +25,7 @@ class SourceEntry(BaseModel):
     parser_type: Literal["shopify", "custom"]
     enabled: bool = True
     notes: str | None = None
+    status_label: str | None = None
 
 
 def _resolve_sources_file_path() -> Path:

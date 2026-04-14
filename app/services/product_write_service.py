@@ -58,23 +58,24 @@ class ProductWriteService:
     def add_product_by_url(self, payload: ProductAddByUrlRequest) -> ProductResponse:
         self._require_db_dependencies()
         preview = self.preview_service.fetch_preview(payload.url)
+        resolved_currency = self.preview_service.require_preview_currency(preview.currency, product_url=preview.product_url)
 
         source = self.preview_service.resolve_or_create_source(preview.product_url)
         existing = self.product_repo.get_by_source_and_handle(source.id, preview.handle)
         price = payload.price if payload.price is not None else self.preview_service.normalize_preview_price(
             preview.price,
             preview.payload_source,
-            preview.currency,
+            resolved_currency,
         )
         variants = self.preview_service.normalize_preview_variants(
             preview.variants,
             preview.payload_source,
-            preview.currency,
+            resolved_currency,
         )
         final_title = payload.title.strip() if payload.title else (preview.title or preview.handle)
         final_vendor = payload.vendor if payload.vendor is not None else preview.vendor
         final_product_type = payload.product_type.strip() if payload.product_type else None
-        final_currency = (payload.currency or preview.currency or "USD").upper()
+        final_currency = (payload.currency or resolved_currency).upper()
         resolved_image_urls = preview.image_urls or []
         assets = self.image_repo.ensure_assets(resolved_image_urls)
         resolved_image_asset_ids = [asset.id for asset in assets]
@@ -164,9 +165,9 @@ class ProductWriteService:
             source_id=source.id,
             handle=handle,
             title=payload.title,
-                vendor=(payload.vendor or settings.manual_product_vendor_default),
+            vendor=(payload.vendor or settings.manual_product_vendor_default),
             product_type=payload.product_type,
-                url=f"{settings.manual_source_url.rstrip('/')}/products/{handle}",
+            url=f"{settings.manual_source_url.rstrip('/')}/products/{handle}",
             price=payload.price,
             currency=payload.currency.upper(),
             image_count=payload.image_count,

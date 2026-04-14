@@ -5,8 +5,9 @@
       "name": "Jaded LDN",
       "base_url": "https://jadedldn.com",
       "parser_type": "shopify",
-      "enabled": true,
-      "notes": "15% discount, not for already discounted items"
+      "enabled": false,
+      "notes": "15% discount, not for already discounted items",
+      "status_label": "ошибка: антибот"
     },
     {
       "key": "racerworldwide",
@@ -88,7 +89,8 @@
       "base_url": "https://remnantsvintage.com",
       "parser_type": "shopify",
       "enabled": false,
-      "notes": "Temporarily disabled: storefront currently requires /password"
+      "notes": "Storefront is publicly accessible and products.json returns active catalog",
+      "status_label": "ошибка: антибот"
     },
     {
       "key": "misssixty",

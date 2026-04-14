@@ -68,6 +68,7 @@ class ProductCatalogService:
 
     def preview_product_by_url(self, payload: ProductAddByUrlRequest) -> ProductUrlPreviewResponse:
         preview = self.preview_service.fetch_preview(payload.url)
+        resolved_currency = self.preview_service.require_preview_currency(preview.currency, product_url=preview.product_url)
         return ProductUrlPreviewResponse(
             handle=preview.handle,
             title=preview.title or preview.handle,
@@ -77,9 +78,9 @@ class ProductCatalogService:
             price=self.preview_service.normalize_preview_price(
                 preview.price,
                 preview.payload_source,
-                preview.currency,
+                resolved_currency,
             ),
-            currency=(preview.currency or "USD").upper(),
+            currency=resolved_currency,
             image_urls=preview.image_urls,
         )
 
