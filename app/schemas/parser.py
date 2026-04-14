@@ -204,6 +204,7 @@ class CategoryUpdateRequest(BaseModel):
 
     name: Optional[str] = Field(default=None, min_length=1, max_length=255)
     parent_id: Optional[int] = None
+    is_enabled: Optional[bool] = None
 
 
 class CategoryTreeNodeResponse(BaseModel):
@@ -214,6 +215,14 @@ class CategoryTreeNodeResponse(BaseModel):
     slug: str
     parent_id: Optional[int] = None
     is_fallback: bool
+    is_favorite: bool = False
+    is_enabled: bool = True
+    is_system: bool = False
+    has_children: bool = False
+    keywords_editable: bool = True
+    keywords_locked_reason: Optional[str] = None
+    is_designers_root: bool = False
+    is_in_designers_branch: bool = False
     keywords: list[str] = Field(default_factory=list)
     effective_keywords: list[str] = Field(default_factory=list)
     children: list["CategoryTreeNodeResponse"] = Field(default_factory=list)

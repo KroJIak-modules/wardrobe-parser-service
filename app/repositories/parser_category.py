@@ -18,7 +18,8 @@ class ParserCategoryRepository(BaseRepository[ParserCategory]):
         return (
             self.query()
             .filter(ParserCategory.deleted_at.is_(None))
-            .order_by(ParserCategory.parent_id.asc().nullsfirst(), ParserCategory.name.asc())
+            # Keep explicit UI/menu order stable by creation order inside each parent.
+            .order_by(ParserCategory.parent_id.asc().nullsfirst(), ParserCategory.id.asc())
             .all()
         )
 
@@ -68,3 +69,14 @@ class ParserCategoryKeywordRepository(BaseRepository[ParserCategoryKeyword]):
             .filter(ParserCategoryKeyword.keyword == keyword)
             .first()
         )
+
+    def get_grouped_keywords(self) -> dict[int, list[str]]:
+        grouped: dict[int, list[str]] = {}
+        rows = (
+            self.query()
+            .order_by(ParserCategoryKeyword.category_id.asc(), ParserCategoryKeyword.keyword.asc())
+            .all()
+        )
+        for row in rows:
+            grouped.setdefault(int(row.category_id), []).append(str(row.keyword))
+        return grouped

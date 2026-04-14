@@ -17,18 +17,29 @@ def build_tree(
         by_parent.setdefault(category.parent_id, []).append(category)
 
     for nodes in by_parent.values():
-        nodes.sort(key=lambda c: (not c.is_fallback, c.name.lower()))
+        nodes.sort(key=lambda c: c.id)
+
+    keyword_map = keyword_repo.get_grouped_keywords()
 
     def walk(node: ParserCategory, inherited: list[str]) -> CategoryTreeNodeResponse:
-        own_keywords = [] if node.is_fallback else [item.keyword for item in keyword_repo.get_by_category(node.id)]
+        own_keywords = [] if node.is_fallback else list(keyword_map.get(int(node.id), []))
         effective = sorted(set([*inherited, *own_keywords]))
         children = [walk(child, effective) for child in by_parent.get(node.id, [])]
+        has_children = len(by_parent.get(node.id, [])) > 0
         return CategoryTreeNodeResponse(
             id=node.id,
             name=node.name,
             slug=node.slug,
             parent_id=node.parent_id,
             is_fallback=node.is_fallback,
+            is_favorite=bool(getattr(node, "is_favorite", False)),
+            is_enabled=bool(getattr(node, "is_enabled", True)),
+            is_system=bool(node.is_fallback) or bool(getattr(node, "is_favorite", False)),
+            has_children=has_children,
+            keywords_editable=not has_children and (not node.is_fallback),
+            keywords_locked_reason="Ключевые слова доступны только у конечных (листовых) категорий." if has_children else None,
+            is_designers_root=False,
+            is_in_designers_branch=False,
             keywords=own_keywords,
             effective_keywords=effective,
             children=children,
@@ -80,6 +91,14 @@ def build_single_node_response(
         slug=category.slug,
         parent_id=category.parent_id,
         is_fallback=category.is_fallback,
+        is_favorite=bool(getattr(category, "is_favorite", False)),
+        is_enabled=bool(getattr(category, "is_enabled", True)),
+        is_system=bool(category.is_fallback) or bool(getattr(category, "is_favorite", False)),
+        has_children=False,
+        keywords_editable=not category.is_fallback,
+        keywords_locked_reason=None,
+        is_designers_root=False,
+        is_in_designers_branch=False,
         keywords=own_keywords,
         effective_keywords=own_keywords,
         children=[],

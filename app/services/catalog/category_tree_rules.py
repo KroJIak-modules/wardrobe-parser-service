@@ -41,6 +41,7 @@ def ensure_fallback(category_repo: ParserCategoryRepository) -> ParserCategory:
         slug="prochee",
         parent_id=None,
         is_fallback=True,
+        is_enabled=True,
     )
     category_repo.flush()
     return created
