@@ -140,6 +140,13 @@ class PricingSettingsService:
 
     @staticmethod
     def _to_response(entity, *, suppliers: list[ParserSupplier]) -> PricingSettingsResponse:
+        svc_rules = getattr(entity, "svc_rules", None) or []
+        if isinstance(svc_rules, str):
+            try:
+                import json
+                svc_rules = json.loads(svc_rules)
+            except Exception:
+                svc_rules = []
         return PricingSettingsResponse(
             markup_multiplier=float(entity.markup_multiplier),
             weight_tolerance=float(entity.weight_tolerance),
@@ -163,6 +170,8 @@ class PricingSettingsService:
             formula_latex=_FORMULA_LATEX,
             formula_lines=list(_FORMULA_LINES),
             formula_legend=[dict(item) for item in _FORMULA_LEGEND],
+            svc_rules=svc_rules,
+            pricing_supplier_updated_at=getattr(entity, "updated_at", None).isoformat() if getattr(entity, "updated_at", None) else None,
         )
 
     @staticmethod

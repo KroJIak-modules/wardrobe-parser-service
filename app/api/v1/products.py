@@ -52,7 +52,7 @@ def get_products(
     - source_id: Filter by source (Shopify store)
     - vendor: Filter by brand/vendor
     - product_type: Filter by category
-    - status: Filter by availability (available|out_of_stock|discontinued)
+    - status: Filter by availability (available|out_of_stock|hidden)
     - price_min, price_max: Price range filter
     - search: Full-text search (title, handle, vendor)
     - limit: Items per page (1-200, default 20)

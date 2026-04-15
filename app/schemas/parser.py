@@ -380,6 +380,8 @@ class PricingSettingsResponse(BaseModel):
     formula_latex: str = ""
     formula_lines: list[str] = Field(default_factory=list)
     formula_legend: list[dict[str, str]] = Field(default_factory=list)
+    svc_rules: list[dict] = Field(default_factory=list)
+    pricing_supplier_updated_at: Optional[str] = None
 
 
 CategoryTreeNodeResponse.model_rebuild()

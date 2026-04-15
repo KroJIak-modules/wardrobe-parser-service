@@ -77,11 +77,21 @@ class ProductReadService:
         product_types = [t.strip() for t in product_type.split(",")] if product_type else None
         source_ids = [source_id] if source_id else None
 
+        normalized_status = None
+        if status_value:
+            raw_status = str(status_value).strip().lower()
+            if raw_status not in {ProductStatus.AVAILABLE, ProductStatus.OUT_OF_STOCK, ProductStatus.HIDDEN}:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Допустимые статусы: available, out_of_stock, hidden",
+                )
+            normalized_status = raw_status
+
         products = self.product_repo.filter_products(
             source_ids=source_ids,
             vendors=vendors,
             product_types=product_types,
-            status=status_value,
+            status=normalized_status,
             price_min=price_min,
             price_max=price_max,
             search_text=search,
@@ -92,7 +102,7 @@ class ProductReadService:
             source_ids=source_ids,
             vendors=vendors,
             product_types=product_types,
-            status=status_value,
+            status=normalized_status,
             price_min=price_min,
             price_max=price_max,
             search_text=search,
@@ -124,7 +134,7 @@ class ProductReadService:
             "statuses": [
                 {"name": ProductStatus.AVAILABLE, "label": "Available"},
                 {"name": ProductStatus.OUT_OF_STOCK, "label": "Out of Stock"},
-                {"name": ProductStatus.DISCONTINUED, "label": "Discontinued"},
+                {"name": ProductStatus.HIDDEN, "label": "Hidden"},
             ],
         }
 
