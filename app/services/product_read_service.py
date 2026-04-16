@@ -34,6 +34,7 @@ class ProductReadService:
             source_id=product.source_id,
             handle=product.handle,
             title=product.title,
+            description=product.description,
             vendor=product.vendor,
             product_type=product.product_type,
             url=product.url,

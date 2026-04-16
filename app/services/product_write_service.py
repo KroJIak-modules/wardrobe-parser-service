@@ -107,6 +107,7 @@ class ProductWriteService:
 
         if existing:
             existing.title = final_title or existing.title
+            existing.description = preview.description
             existing.vendor = final_vendor
             existing.product_type = final_product_type
             existing.url = preview.product_url
@@ -132,6 +133,7 @@ class ProductWriteService:
             source_id=source.id,
             handle=preview.handle,
             title=final_title,
+            description=preview.description,
             vendor=final_vendor,
             product_type=final_product_type,
             url=preview.product_url,

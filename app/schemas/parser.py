@@ -13,6 +13,7 @@ class ProductResponse(BaseModel):
     source_id: int
     handle: str
     title: str
+    description: Optional[str] = None
     vendor: Optional[str] = None
     product_type: Optional[str] = None
     url: str

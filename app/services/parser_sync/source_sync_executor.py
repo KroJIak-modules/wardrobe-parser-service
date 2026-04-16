@@ -126,6 +126,7 @@ class ParserSourceSyncExecutor:
                         handle=handle,
                         product_id=str(product.id),
                         title=product.title,
+                        description=product.description,
                         vendor=product.vendor,
                         product_type=product.product_type,
                         price=None if product.price is None else str(product.price),

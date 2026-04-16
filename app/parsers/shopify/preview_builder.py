@@ -18,6 +18,7 @@ def build_preview_from_payload(
     """Build preview from raw payload extracted from .js or .json product endpoints."""
     product_id = ShopifyProductExtractor._safe_str(payload.get("id"))
     title = ShopifyProductExtractor._safe_str(payload.get("title"))
+    description = ShopifyProductExtractor.extract_description(payload)
     vendor = ShopifyProductExtractor._safe_str(payload.get("vendor"))
     product_type = ShopifyProductExtractor._safe_str(payload.get("product_type"))
     price = ShopifyProductExtractor.extract_price(payload)
@@ -31,6 +32,7 @@ def build_preview_from_payload(
         handle=handle,
         product_id=product_id,
         title=title,
+        description=description,
         vendor=vendor,
         product_type=product_type,
         price=price,

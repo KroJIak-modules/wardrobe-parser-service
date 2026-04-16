@@ -172,6 +172,7 @@ class ParserProductSyncService:
                 handle=preview.handle,
                 title=preview.title or preview.handle,
                 url=preview.product_url,
+                description=preview.description,
                 vendor=preview.vendor,
                 product_type=preview.product_type,
                 price=parsed_price,
@@ -195,6 +196,7 @@ class ParserProductSyncService:
             existing.source_id != source_id
             or existing.handle != preview.handle
             or existing.title != (preview.title or preview.handle)
+            or existing.description != preview.description
             or existing.url != preview.product_url
             or existing.vendor != preview.vendor
             or existing.product_type != preview.product_type
@@ -222,6 +224,7 @@ class ParserProductSyncService:
             handle=preview.handle,
             title=preview.title or preview.handle,
             url=preview.product_url,
+            description=preview.description,
             vendor=preview.vendor,
             product_type=preview.product_type,
             price=parsed_price,

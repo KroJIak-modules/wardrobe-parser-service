@@ -13,6 +13,7 @@ class ShopifyProductPreview:
     handle: str
     product_id: str | None
     title: str | None
+    description: str | None
     vendor: str | None
     product_type: str | None
     price: str | None

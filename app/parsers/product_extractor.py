@@ -1,10 +1,35 @@
 """Product data extraction from Shopify JSON payloads."""
 
+import html
+import re
 from typing import Any
 
 
 class ShopifyProductExtractor:
     """Extract and normalize product fields from Shopify API/JS payloads."""
+
+    _HTML_TAG_RE = re.compile(r"<[^>]+>")
+
+    @staticmethod
+    def extract_description(payload: dict[str, Any]) -> str | None:
+        """Extract product description and normalize it to plain text."""
+        raw = ShopifyProductExtractor._safe_str(
+            payload.get("description")
+            or payload.get("body_html")
+            or payload.get("body")
+        )
+        if not raw:
+            return None
+        text = raw
+        text = re.sub(r"(?i)<br\s*/?>", "\n", text)
+        text = re.sub(r"(?i)</p\s*>", "\n\n", text)
+        text = re.sub(r"(?i)<p[^>]*>", "", text)
+        text = ShopifyProductExtractor._HTML_TAG_RE.sub("", text)
+        text = html.unescape(text)
+        text = re.sub(r"[ \t\r\f\v]+", " ", text)
+        text = re.sub(r"\n{3,}", "\n\n", text)
+        normalized = text.strip()
+        return normalized or None
 
     @staticmethod
     def _extract_currency_from_presentment_prices(value: Any) -> str | None:

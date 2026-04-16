@@ -178,6 +178,7 @@ class ParserProduct(Base):
     
     handle = Column(String(1024), nullable=False)
     title = Column(String(2048), nullable=False)
+    description = Column(Text, nullable=True)
     vendor = Column(String(255), nullable=True)
     product_type = Column(String(255), nullable=True)
     
