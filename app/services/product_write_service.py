@@ -16,6 +16,7 @@ from app.repositories import ParserImageAssetRepository, ParserProductRepository
 from app.schemas.parser import ProductAddByUrlRequest, ProductManualCreateRequest, ProductResponse
 from app.services.product_preview_service import ProductPreviewService
 from app.services.product_read_service import ProductReadService
+from app.services.product_status_service import resolve_product_status
 from app.services.settings.weight_rule_service import WeightRuleService
 
 
@@ -72,6 +73,11 @@ class ProductWriteService:
             preview.payload_source,
             resolved_currency,
         )
+        resolved_status = resolve_product_status(
+            variants=variants,
+            preview_available=preview.available,
+            existing_status=getattr(existing, "status", None),
+        )
         final_title = payload.title.strip() if payload.title else (preview.title or preview.handle)
         final_vendor = payload.vendor if payload.vendor is not None else preview.vendor
         final_product_type = payload.product_type.strip() if payload.product_type else None
@@ -111,6 +117,7 @@ class ProductWriteService:
             existing.image_urls = resolved_image_urls
             existing.image_asset_ids = resolved_image_asset_ids
             existing.variants = variants
+            existing.status = resolved_status
             existing.weight_grams = final_weight_grams
             existing.weight_source = final_weight_source
             existing.weight_match_keyword = final_weight_match_keyword
@@ -139,7 +146,7 @@ class ProductWriteService:
             weight_match_keyword=final_weight_match_keyword,
             weight_value=final_weight_value,
             weight_unit=final_weight_unit,
-            status=ProductStatus.AVAILABLE,
+            status=resolved_status,
         )
         self.db.commit()
         self.db.refresh(product)

@@ -6,9 +6,9 @@ from typing import Any
 from typing import Callable, Optional
 
 from app.core.config import settings
-from app.models import ProductStatus
 from app.repositories import ParserImageAssetRepository, ParserProductRepository
 from app.schemas.parser import WeightRuleResponse
+from app.services.product_status_service import resolve_product_status
 from app.services.settings.weight_rule_service import WeightRuleService
 
 
@@ -135,7 +135,11 @@ class ParserProductSyncService:
             payload_source=getattr(preview, "payload_source", None),
             currency=resolved_currency,
         )
-        status = ProductStatus.AVAILABLE if preview.available else ProductStatus.OUT_OF_STOCK
+        status = resolve_product_status(
+            variants=preview_variants,
+            preview_available=preview.available,
+            existing_status=getattr(existing, "status", None),
+        )
         weight_grams = preview.weight_grams
         weight_source = preview.weight_source
         weight_match_keyword = preview.weight_match_keyword
