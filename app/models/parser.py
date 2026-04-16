@@ -51,6 +51,7 @@ class ProductStatus(str, Enum):
     AVAILABLE = "available"
     OUT_OF_STOCK = "out_of_stock"
     HIDDEN = "hidden"
+    UNAVAILABLE = "unavailable"
 
 
 class DedupAction(str, Enum):

@@ -66,19 +66,8 @@ class PricingSettingsService:
         self.source_repo = ParserSourceRepository(db)
 
     def _bootstrap_suppliers(self) -> bool:
-        changed = False
-        if self.supplier_repo.get_by_key("default") is None:
-            changed = True
-        default_supplier = self.supplier_repo.get_default_supplier()
-        if not default_supplier.shipping_rates:
-            self.supplier_repo.ensure_linear_rates(
-                supplier_id=default_supplier.id,
-                per_500g_rub=0.0,
-                max_step_500g=120,
-            )
-            self.db.flush()
-            changed = True
-        return changed
+        # Service layer should not silently mutate supplier tariffs.
+        return False
 
     @staticmethod
     def _normalize_currency(raw: str | None, *, default: str = "RUB") -> str:
@@ -238,7 +227,7 @@ class PricingSettingsService:
             current_rate_per_500g = float(current_rates[0].rate_rub) / float(first_step)
         else:
             current_rate_per_500g = 0.0
-        current_max_step = int(current_rates[-1].step_500g) if current_rates else 120
+        current_max_step = int(current_rates[-1].step_500g) if current_rates else 1
         active_currency = self._normalize_currency(
             patch.get("rate_currency"),
             default=self._normalize_currency(getattr(supplier, "rate_currency", None), default="RUB"),
@@ -338,11 +327,6 @@ class PricingSettingsService:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Поставщик не найден",
-            )
-        if supplier.key == "default":
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Нельзя удалить поставщика default",
             )
         assigned_sources = self.source_repo.count_by_supplier_id(supplier.id)
         if assigned_sources > 0:

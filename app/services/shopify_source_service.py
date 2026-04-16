@@ -69,10 +69,19 @@ class ShopifySourceService:
         )
         return int(products_count), int(categories_count)
 
+    def _resolve_fallback_supplier(self):
+        supplier = self.supplier_repo.get_fallback_supplier()
+        if supplier is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Нет доступных тарифов SSR: сначала создай хотя бы один тариф в настройках.",
+            )
+        return supplier
+
     def list_sources_admin(self) -> list[ShopifySourceAdminResponse]:
         configured = list_sources(parser_type="shopify")
         result: list[ShopifySourceAdminResponse] = []
-        default_supplier = self.supplier_repo.get_default_supplier()
+        fallback_supplier = self._resolve_fallback_supplier()
 
         for source in configured:
             db_source = self.source_repo.get_by_url(source.base_url)
@@ -82,7 +91,7 @@ class ShopifySourceService:
 
             if db_source:
                 products_count, categories_count = self._collect_counts(db_source.id)
-            supplier = db_source.supplier if db_source and db_source.supplier else default_supplier
+            supplier = db_source.supplier if db_source and db_source.supplier else fallback_supplier
 
             result.append(
                 ShopifySourceAdminResponse(
@@ -117,7 +126,7 @@ class ShopifySourceService:
         if not source_cfg:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Источник не найден")
 
-        default_supplier = self.supplier_repo.get_default_supplier()
+        fallback_supplier = self._resolve_fallback_supplier()
         db_source = self.source_repo.get_by_url(source_cfg.base_url)
         if not db_source:
             db_source = self.source_repo.create_source(
@@ -125,7 +134,7 @@ class ShopifySourceService:
                 url=source_cfg.base_url,
                 parser_type=source_cfg.parser_type,
                 enabled=source_cfg.enabled,
-                supplier_id=default_supplier.id,
+                supplier_id=fallback_supplier.id,
             )
 
         db_source.enabled = payload.enabled
@@ -144,9 +153,9 @@ class ShopifySourceService:
             status_label=source_cfg.status_label,
             products_count=products_count,
             categories_count=categories_count,
-            supplier_id=db_source.supplier.id if db_source.supplier else default_supplier.id,
-            supplier_key=db_source.supplier.key if db_source.supplier else default_supplier.key,
-            supplier_name=db_source.supplier.name if db_source.supplier else default_supplier.name,
+            supplier_id=db_source.supplier.id if db_source.supplier else fallback_supplier.id,
+            supplier_key=db_source.supplier.key if db_source.supplier else fallback_supplier.key,
+            supplier_name=db_source.supplier.name if db_source.supplier else fallback_supplier.name,
             promo_factor=float(db_source.promo_factor),
             promo_only_no_discount=bool(db_source.promo_only_no_discount),
             buyout_surcharge_value=float(db_source.buyout_surcharge_value),
@@ -177,7 +186,7 @@ class ShopifySourceService:
                 url=source_cfg.base_url,
                 parser_type=source_cfg.parser_type,
                 enabled=source_cfg.enabled,
-                supplier_id=supplier.id if supplier else self.supplier_repo.get_default_supplier().id,
+                supplier_id=supplier.id if supplier else self._resolve_fallback_supplier().id,
             )
 
         if supplier is not None:
@@ -199,7 +208,7 @@ class ShopifySourceService:
         products_count, categories_count = self._collect_counts(db_source.id)
         supplier_data = db_source.supplier if db_source.supplier else supplier
         if supplier_data is None:
-            supplier_data = self.supplier_repo.get_default_supplier()
+            supplier_data = self._resolve_fallback_supplier()
         return ShopifySourceAdminResponse(
             key=source_cfg.key,
             source_id=db_source.id,
