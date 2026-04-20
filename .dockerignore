@@ -8,3 +8,5 @@ __pycache__
 venv
 .env
 .env.*
+crawlee/node_modules
+browser-parser/node_modules

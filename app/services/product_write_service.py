@@ -161,7 +161,7 @@ class ProductWriteService:
             source = self.source_repo.create_source(
                 name=settings.manual_source_name,
                 url=settings.manual_source_url,
-                parser_type=settings.manual_source_parser_type,
+                parser_type="crawlee",
                 enabled=True,
             )
 

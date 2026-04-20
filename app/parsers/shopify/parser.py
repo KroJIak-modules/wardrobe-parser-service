@@ -127,57 +127,6 @@ class ShopifyParser:
         )
 
     @classmethod
-    def recover_from_known_product_urls(
-        cls,
-        base_url: str,
-        *,
-        known_product_urls: list[str],
-        timeout_sec: float,
-        parallel_workers: int,
-        max_retries: int,
-        retry_backoff_sec: float,
-        second_pass_enabled: bool,
-        second_pass_timeout_sec: float,
-        error_details_limit: int,
-        deadline_monotonic: float | None = None,
-        on_progress: Callable[[], None] | None = None,
-    ) -> ShopifyDiscoveryResult:
-        """Fallback mode: fetch previews using URLs already known from previous syncs."""
-        resolved_base_url = normalize_base_url(base_url)
-        normalized_urls: list[str] = []
-        seen_urls: set[str] = set()
-        for raw_url in known_product_urls:
-            normalized = normalize_product_url(raw_url, resolved_base_url)
-            if not normalized or normalized in seen_urls:
-                continue
-            seen_urls.add(normalized)
-            normalized_urls.append(normalized)
-
-        return cls._build_result_from_target_urls(
-            resolved_base_url=resolved_base_url,
-            sitemap_url=f"{resolved_base_url}/sitemap.xml",
-            discovery_mode="historical_fallback",
-            product_sitemaps_found=0,
-            product_urls_found=len(normalized_urls),
-            target_urls=normalized_urls,
-            payload_cache={},
-            warnings=[
-                f"empty discovery fallback: trying known URLs from previous sync ({len(normalized_urls)})"
-            ],
-            response_products_limit=max(1, len(normalized_urls)),
-            error_details_limit=error_details_limit,
-            fetch_all_products=True,
-            timeout_sec=timeout_sec,
-            parallel_workers=parallel_workers,
-            max_retries=max_retries,
-            retry_backoff_sec=retry_backoff_sec,
-            second_pass_enabled=second_pass_enabled,
-            second_pass_timeout_sec=second_pass_timeout_sec,
-            deadline_monotonic=deadline_monotonic,
-            on_progress=on_progress,
-        )
-
-    @classmethod
     def _build_result_from_target_urls(
         cls,
         *,

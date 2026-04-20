@@ -22,10 +22,8 @@ class SourceEntry(BaseModel):
     key: str = Field(min_length=1, max_length=128)
     name: str = Field(min_length=1, max_length=255)
     base_url: str = Field(min_length=1, max_length=1024)
-    parser_type: Literal["shopify", "custom"]
+    parser_type: Literal["shopify", "crawlee"]
     enabled: bool = True
-    notes: str | None = None
-    status_label: str | None = None
 
 
 def _resolve_sources_file_path() -> Path:
@@ -41,13 +39,6 @@ def _resolve_sources_file_path() -> Path:
         (Path.cwd() / path).resolve(),
         (_service_root / path).resolve(),
     ]
-
-    # Compatibility for values like "service/config/sources.json":
-    # - on host it can be relative to repo root
-    # - inside service container file lives under "/app/config/sources.json"
-    if path.parts and path.parts[0] == "service":
-        trimmed = Path(*path.parts[1:])
-        candidates.append((_service_root / trimmed).resolve())
 
     for candidate in candidates:
         if candidate.exists():
@@ -97,7 +88,7 @@ def get_source_by_key(source_key: str) -> SourceEntry:
     raise ValidationError(f"Источник с key='{key}' не найден в sources файле")
 
 
-def list_sources(*, parser_type: Literal["shopify", "custom"] | None = None) -> list[SourceEntry]:
+def list_sources(*, parser_type: Literal["shopify", "crawlee"] | None = None) -> list[SourceEntry]:
     """List sources optionally filtered by parser_type."""
     items = load_sources()
     if parser_type is None:

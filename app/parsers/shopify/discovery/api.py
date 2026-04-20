@@ -12,7 +12,7 @@ import requests
 
 from app.core.config import settings
 from app.parsers.shopify.http_client import ShopifyHTTPClient
-from app.parsers.shopify_url_utils import normalize_product_url
+from app.parsers.shopify_url_utils import append_discovered_url, normalize_product_url
 from app.parsers.shopify.discovery.products_json import (
     collect_products_from_payload,
     discover_products_json_page,

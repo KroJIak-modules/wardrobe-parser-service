@@ -68,7 +68,7 @@ class ParserSource(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String(255), nullable=False, unique=True)
     url = Column(String(2048), nullable=False, unique=True)
-    parser_type = Column(String(50), nullable=False, default="shopify")  # shopify, custom, etc.
+    parser_type = Column(String(50), nullable=False, default="shopify")  # shopify, crawlee, etc.
     enabled = Column(Boolean, nullable=False, default=True)
     supplier_id = Column(
         Integer,

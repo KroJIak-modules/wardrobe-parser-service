@@ -32,6 +32,7 @@ _DEFAULT_HEADERS = {
 class ShopifyHTTPClient:
     """Low-level HTTP client for Shopify stores with security checks."""
     _domain_cooldown_until: dict[str, float] = {}
+    _domain_last_request_at: dict[str, float] = {}
     _domain_cb_state: dict[str, "DomainCircuitState"] = {}
     _cooldown_lock = Lock()
 
@@ -58,15 +59,40 @@ class ShopifyHTTPClient:
         return reduced
 
     @classmethod
-    def _apply_domain_cooldown_if_needed(cls, url: str) -> None:
+    def _apply_domain_cooldown_if_needed(
+        cls,
+        url: str,
+        *,
+        deadline_monotonic: float | None = None,
+    ) -> bool:
         host = cls._host(url)
         if not host:
-            return
+            return True
         now = time.time()
         with cls._cooldown_lock:
             until = cls._domain_cooldown_until.get(host, 0.0)
+            last_request_at = cls._domain_last_request_at.get(host, 0.0)
         if until > now:
-            time.sleep(until - now)
+            sleep_sec = until - now
+            if deadline_monotonic is not None:
+                remaining = deadline_monotonic - time.monotonic()
+                if remaining <= 0:
+                    return False
+                sleep_sec = min(sleep_sec, remaining)
+            sleep_sec = min(sleep_sec, cls._MAX_COOLDOWN_SLEEP_SEC)
+            if sleep_sec > 0:
+                time.sleep(sleep_sec)
+        min_gap_sec = max(0.0, settings.parser_request_spacing_sec)
+        if min_gap_sec > 0:
+            gap_sleep_sec = (last_request_at + min_gap_sec) - time.time()
+            if gap_sleep_sec > 0:
+                if deadline_monotonic is not None:
+                    remaining = deadline_monotonic - time.monotonic()
+                    if remaining <= 0:
+                        return False
+                    gap_sleep_sec = min(gap_sleep_sec, remaining)
+                time.sleep(gap_sleep_sec)
+        return True
 
     @classmethod
     def _set_domain_cooldown(cls, url: str, cooldown_sec: float) -> None:
@@ -124,6 +150,15 @@ class ShopifyHTTPClient:
             ):
                 state.penalty_level -= 1
                 state.success_streak = 0
+            cls._domain_last_request_at[host] = time.time()
+
+    @classmethod
+    def _record_attempt(cls, url: str) -> None:
+        host = cls._host(url)
+        if not host:
+            return
+        with cls._cooldown_lock:
+            cls._domain_last_request_at[host] = time.time()
 
     @staticmethod
     def _retry_after_seconds(response: requests.Response) -> float | None:
@@ -225,11 +260,17 @@ class ShopifyHTTPClient:
                 error = "SOURCE_TIMEOUT"
                 break
             try:
-                ShopifyHTTPClient._apply_domain_cooldown_if_needed(url)
+                if not ShopifyHTTPClient._apply_domain_cooldown_if_needed(
+                    url,
+                    deadline_monotonic=deadline_monotonic,
+                ):
+                    error = "SOURCE_TIMEOUT"
+                    break
                 request_timeout = timeout_sec
                 if deadline_monotonic is not None:
                     request_timeout = max(0.2, min(timeout_sec, deadline_monotonic - time.monotonic()))
                 response = active_session.get(url, timeout=request_timeout, allow_redirects=True)
+                ShopifyHTTPClient._record_attempt(url)
                 status_code = response.status_code
 
                 # Password gate detection
@@ -239,21 +280,23 @@ class ShopifyHTTPClient:
 
                 if status_code == 429:
                     http_429_count += 1
-                    if ShopifyHTTPClient._is_bot_protection_429(response):
+                    is_bot_429 = ShopifyHTTPClient._is_bot_protection_429(response)
+                    if is_bot_429:
                         last_error = "BOT_PROTECTION_429"
                     else:
                         last_error = "HTTP 429"
                     ShopifyHTTPClient._record_429(url)
-                    if last_error == "BOT_PROTECTION_429":
-                        error = last_error
-                        break
                     retry_after_sec = ShopifyHTTPClient._retry_after_seconds(response)
                     backoff_base = retry_backoff_sec * (2 ** attempt)
+                    if is_bot_429:
+                        # Bot challenge pages often need a longer quiet window.
+                        backoff_base = max(backoff_base, settings.parser_rate_limit_min_cooldown_sec * 4)
                     cooldown_sec = max(
                         settings.parser_rate_limit_min_cooldown_sec,
                         retry_after_sec or 0.0,
                         backoff_base,
                     )
+                    cooldown_sec = min(cooldown_sec, ShopifyHTTPClient._MAX_RETRY_AFTER_COOLDOWN_SEC)
                     ShopifyHTTPClient._set_domain_cooldown(url, cooldown_sec)
                     if attempt < max_retries:
                         if deadline_monotonic is not None:
@@ -342,3 +385,5 @@ class ShopifyHTTPClient:
         session = requests.Session()
         session.headers.update(_DEFAULT_HEADERS)
         return session
+    _MAX_COOLDOWN_SLEEP_SEC = 8.0
+    _MAX_RETRY_AFTER_COOLDOWN_SEC = 45.0

@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "Testing Browser Parser Bridge",
+  "version": "0.1.0",
+  "description": "Command bridge extension for testing browser parser worker.",
+  "permissions": ["tabs", "scripting", "activeTab", "storage"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "minimum_chrome_version": "109"
+}

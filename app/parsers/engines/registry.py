@@ -7,9 +7,11 @@ from typing import Callable, Literal, Protocol
 
 from app.core.config import settings
 from app.core.exceptions import ValidationError
+from app.parsers.crawlee.engine import CrawleeParserEngine
 from app.parsers.shopify.parser import ShopifyParser
+from app.parsers.shopify.fallback import discover_with_browser_fallback
 
-ParserType = Literal["shopify", "custom"]
+ParserType = Literal["shopify", "crawlee"]
 
 
 class ParserEngine(Protocol):
@@ -40,7 +42,7 @@ class ShopifyParserEngine:
         deadline_monotonic: float | None = None,
         on_progress: Callable[[], None] | None = None,
     ):
-        return ShopifyParser.discover(
+        primary_result = ShopifyParser.discover(
             base_url,
             max_products=settings.parser_default_max_products,
             sample_products=settings.parser_default_sample_products,
@@ -56,29 +58,17 @@ class ShopifyParserEngine:
             deadline_monotonic=deadline_monotonic,
             on_progress=on_progress,
         )
-
-
-@dataclass(slots=True)
-class CustomParserEngine:
-    """Placeholder adapter for custom parser sources."""
-
-    parser_type: ParserType = "custom"
-
-    def discover(
-        self,
-        base_url: str,
-        *,
-        deadline_monotonic: float | None = None,
-        on_progress: Callable[[], None] | None = None,
-    ):
-        raise ValidationError(
-            f"Источник {base_url} имеет parser_type='custom', но custom parser пока не реализован"
+        return discover_with_browser_fallback(
+            primary_result=primary_result,
+            base_url=base_url,
+            deadline_monotonic=deadline_monotonic,
+            on_progress=on_progress,
         )
 
 
 _ENGINES: dict[ParserType, ParserEngine] = {
     "shopify": ShopifyParserEngine(),
-    "custom": CustomParserEngine(),
+    "crawlee": CrawleeParserEngine(),
 }
 
 

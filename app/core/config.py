@@ -26,12 +26,18 @@ class Settings(BaseSettings):
     parser_default_max_products: int = Field(default=5000, ge=1, le=100000, env="PARSER_DEFAULT_MAX_PRODUCTS")
     parser_default_sample_products: int = Field(default=5, ge=1, le=1000, env="PARSER_DEFAULT_SAMPLE_PRODUCTS")
     parser_default_parallel_workers: int = Field(default=12, ge=1, le=64, env="PARSER_DEFAULT_PARALLEL_WORKERS")
-    parser_default_max_retries: int = Field(default=2, ge=0, le=10, env="PARSER_DEFAULT_MAX_RETRIES")
+    parser_default_max_retries: int = Field(default=4, ge=0, le=10, env="PARSER_DEFAULT_MAX_RETRIES")
     parser_default_retry_backoff_sec: float = Field(
-        default=0.4,
+        default=1.0,
         ge=0.0,
         le=5.0,
         env="PARSER_DEFAULT_RETRY_BACKOFF_SEC",
+    )
+    parser_request_spacing_sec: float = Field(
+        default=0.12,
+        ge=0.0,
+        le=2.0,
+        env="PARSER_REQUEST_SPACING_SEC",
     )
     parser_default_second_pass_enabled: bool = Field(
         default=True,
@@ -43,17 +49,96 @@ class Settings(BaseSettings):
         le=240.0,
         env="PARSER_DEFAULT_SECOND_PASS_TIMEOUT_SEC",
     )
-    parser_empty_discovery_source_retries: int = Field(
+    parser_crawlee_node_bin: str = Field(default="node", env="PARSER_CRAWLEE_NODE_BIN")
+    parser_crawlee_script_path: str = Field(
+        default=str(_service_root / "crawlee" / "src" / "cli.mjs"),
+        env="PARSER_CRAWLEE_SCRIPT_PATH",
+    )
+    parser_crawlee_max_products: int = Field(
+        default=5000,
+        ge=1,
+        le=100000,
+        env="PARSER_CRAWLEE_MAX_PRODUCTS",
+    )
+    parser_crawlee_timeout_sec: float = Field(
+        default=20.0,
+        ge=3.0,
+        le=240.0,
+        env="PARSER_CRAWLEE_TIMEOUT_SEC",
+    )
+    parser_crawlee_process_timeout_sec: float = Field(
+        default=300.0,
+        ge=5.0,
+        le=3600.0,
+        env="PARSER_CRAWLEE_PROCESS_TIMEOUT_SEC",
+    )
+    parser_crawlee_max_discovery_pages: int = Field(
+        default=80,
+        ge=1,
+        le=10000,
+        env="PARSER_CRAWLEE_MAX_DISCOVERY_PAGES",
+    )
+    parser_crawlee_max_concurrency: int = Field(
+        default=8,
+        ge=1,
+        le=64,
+        env="PARSER_CRAWLEE_MAX_CONCURRENCY",
+    )
+    parser_crawlee_max_retries: int = Field(
         default=1,
         ge=0,
-        le=5,
-        env="PARSER_EMPTY_DISCOVERY_SOURCE_RETRIES",
+        le=10,
+        env="PARSER_CRAWLEE_MAX_RETRIES",
     )
-    parser_empty_discovery_retry_backoff_sec: float = Field(
-        default=1.5,
+    parser_browser_fallback_enabled: bool = Field(
+        default=True,
+        env="PARSER_BROWSER_FALLBACK_ENABLED",
+    )
+    parser_browser_fallback_min_success_ratio: float = Field(
+        default=0.85,
         ge=0.0,
-        le=30.0,
-        env="PARSER_EMPTY_DISCOVERY_RETRY_BACKOFF_SEC",
+        le=1.0,
+        env="PARSER_BROWSER_FALLBACK_MIN_SUCCESS_RATIO",
+    )
+    parser_browser_node_bin: str = Field(default="node", env="PARSER_BROWSER_NODE_BIN")
+    parser_browser_script_path: str = Field(
+        default=str(_service_root / "browser-parser" / "src" / "index.mjs"),
+        env="PARSER_BROWSER_SCRIPT_PATH",
+    )
+    parser_browser_binary: str = Field(default="chromium", env="PARSER_BROWSER_BINARY")
+    parser_browser_process_timeout_sec: float = Field(
+        default=1200.0,
+        ge=5.0,
+        le=7200.0,
+        env="PARSER_BROWSER_PROCESS_TIMEOUT_SEC",
+    )
+    parser_browser_wait_extension_timeout_ms: int = Field(
+        default=120000,
+        ge=5000,
+        le=600000,
+        env="PARSER_BROWSER_WAIT_EXTENSION_TIMEOUT_MS",
+    )
+    parser_browser_max_product_sitemaps: int = Field(
+        default=128,
+        ge=1,
+        le=10000,
+        env="PARSER_BROWSER_MAX_PRODUCT_SITEMAPS",
+    )
+    parser_browser_js_sample_size: int = Field(
+        default=120,
+        ge=1,
+        le=10000,
+        env="PARSER_BROWSER_JS_SAMPLE_SIZE",
+    )
+    parser_browser_export_concurrency: int = Field(
+        default=8,
+        ge=1,
+        le=64,
+        env="PARSER_BROWSER_EXPORT_CONCURRENCY",
+    )
+    parser_browser_force_live_fallback: bool = Field(
+        default=False,
+        env="PARSER_BROWSER_FORCE_LIVE_FALLBACK",
     )
     parser_default_error_details_limit: int = Field(
         default=200,
@@ -82,44 +167,6 @@ class Settings(BaseSettings):
     parser_discovery_fail_fast_on_rate_limit: bool = Field(
         default=False,
         env="PARSER_DISCOVERY_FAIL_FAST_ON_RATE_LIMIT",
-    )
-    parser_recover_from_existing_urls_enabled: bool = Field(
-        default=True,
-        env="PARSER_RECOVER_FROM_EXISTING_URLS_ENABLED",
-    )
-    parser_recovery_network_enabled: bool = Field(
-        default=False,
-        env="PARSER_RECOVERY_NETWORK_ENABLED",
-    )
-    parser_recovery_parallel_workers: int = Field(
-        default=96,
-        ge=1,
-        le=256,
-        env="PARSER_RECOVERY_PARALLEL_WORKERS",
-    )
-    parser_recovery_timeout_sec: float = Field(
-        default=6.0,
-        ge=1.0,
-        le=120.0,
-        env="PARSER_RECOVERY_TIMEOUT_SEC",
-    )
-    parser_recovery_max_retries: int = Field(
-        default=0,
-        ge=0,
-        le=10,
-        env="PARSER_RECOVERY_MAX_RETRIES",
-    )
-    parser_recovery_retry_backoff_sec: float = Field(
-        default=0.2,
-        ge=0.0,
-        le=10.0,
-        env="PARSER_RECOVERY_RETRY_BACKOFF_SEC",
-    )
-    parser_recovery_second_pass_timeout_sec: float = Field(
-        default=8.0,
-        ge=1.0,
-        le=240.0,
-        env="PARSER_RECOVERY_SECOND_PASS_TIMEOUT_SEC",
     )
     parser_shopify_page_size: int = Field(
         default=250,
@@ -268,7 +315,6 @@ class Settings(BaseSettings):
     )
     manual_source_name: str = Field(default="Manual Upload", env="MANUAL_SOURCE_NAME")
     manual_source_url: str = Field(default="https://manual.local", env="MANUAL_SOURCE_URL")
-    manual_source_parser_type: str = Field(default="custom", env="MANUAL_SOURCE_PARSER_TYPE")
     manual_product_vendor_default: str = Field(default="Manual", env="MANUAL_PRODUCT_VENDOR_DEFAULT")
 
     @model_validator(mode="after")

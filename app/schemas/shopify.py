@@ -112,8 +112,6 @@ class ShopifySourceResponse(BaseModel):
     base_url: str
     parser_type: str
     enabled: bool
-    notes: str | None
-    status_label: str | None = None
 
 
 class ShopifySourceAdminResponse(BaseModel):
@@ -125,8 +123,6 @@ class ShopifySourceAdminResponse(BaseModel):
     base_url: str
     parser_type: str
     enabled: bool
-    notes: str | None
-    status_label: str | None = None
     products_count: int = 0
     categories_count: int = 0
     supplier_id: int | None = None

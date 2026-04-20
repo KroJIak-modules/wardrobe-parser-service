@@ -147,6 +147,7 @@ def collect_discovery_urls(
             source_from_sitemap = True
             sitemap_results: list[ProductSitemapFetchResult] = []
             sitemap_workers = max(1, min(settings.parser_discovery_sitemap_workers, len(product_sitemaps)))
+            sitemap_workers = ShopifyHTTPClient.get_adaptive_workers(base_url, sitemap_workers)
 
             if sitemap_workers == 1:
                 for index, product_sitemap_url in enumerate(product_sitemaps):
@@ -210,11 +211,10 @@ def collect_discovery_urls(
         if not product_sitemaps:
             warnings.append("В sitemap не найден product-sitemap, используем fallback /products.json")
 
-    remaining_slots = max(0, max_products - len(discovered_urls))
-    if remaining_slots > 0:
+    if max_products > 0:
         products_api_result = discover_products_json(
             base_url=base_url,
-            max_products=remaining_slots,
+            max_products=max_products,
             timeout_sec=timeout_sec,
             max_retries=max_retries,
             retry_backoff_sec=retry_backoff_sec,
@@ -222,15 +222,19 @@ def collect_discovery_urls(
             deadline_monotonic=deadline_monotonic,
         )
         warnings.extend(products_api_result.warnings)
-        if products_api_result.urls:
-            source_from_fallback = True
+        added_from_fallback = False
         for url in products_api_result.urls:
-            if len(discovered_urls) >= max_products:
-                break
-            append_and_ping(url)
+            was_known = url in discovered_set
+            if not was_known and len(discovered_urls) < max_products:
+                append_and_ping(url)
+                if url in discovered_set and not was_known:
+                    added_from_fallback = True
             payload = products_api_result.payloads.get(url)
-            if isinstance(payload, dict):
+            # Keep payload cache enriched even for URLs already discovered from sitemap.
+            if isinstance(payload, dict) and url in discovered_set:
                 payload_cache[url] = payload
+        if added_from_fallback:
+            source_from_fallback = True
         if (
             settings.parser_discovery_fail_fast_on_rate_limit
             and not discovered_urls
