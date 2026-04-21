@@ -116,7 +116,7 @@ class ParserProductSyncService:
         existing_by_url: dict[str, Any],
         image_asset_cache: dict[str, Any],
         weight_rules: list[WeightRuleResponse],
-    ) -> tuple[int, int]:
+    ) -> tuple[int, int, int]:
         existing = existing_by_handle.get(preview.handle)
         if existing is None:
             existing = existing_by_url.get(preview.product_url)
@@ -192,7 +192,7 @@ class ParserProductSyncService:
             )
             existing_by_handle[created.handle] = created
             existing_by_url[created.url] = created
-            return 1, 0
+            return 1, 0, int(created.id)
 
         changed = (
             existing.source_id != source_id
@@ -218,7 +218,7 @@ class ParserProductSyncService:
         if not changed:
             existing_by_handle[existing.handle] = existing
             existing_by_url[existing.url] = existing
-            return 0, 0
+            return 0, 0, int(existing.id)
 
         self.product_repo.update(
             existing,
@@ -245,7 +245,7 @@ class ParserProductSyncService:
         )
         existing_by_handle[existing.handle] = existing
         existing_by_url[existing.url] = existing
-        return 0, 1
+        return 0, 1, int(existing.id)
 
     def _prepare_image_asset_cache(self, previews: list) -> dict[str, Any]:
         """Preload image assets for the whole source in DB-friendly batches."""
@@ -285,9 +285,10 @@ class ParserProductSyncService:
         image_asset_cache = self._prepare_image_asset_cache(previews)
         created_for_source = 0
         updated_for_source = 0
+        touched_product_ids: set[int] = set()
         total_previews = len(previews)
         for index, preview in enumerate(previews, start=1):
-            created_delta, updated_delta = self._upsert_product_from_preview(
+            created_delta, updated_delta, product_id = self._upsert_product_from_preview(
                 source_id=source_id,
                 preview=preview,
                 existing_by_handle=existing_by_handle,
@@ -297,6 +298,17 @@ class ParserProductSyncService:
             )
             created_for_source += created_delta
             updated_for_source += updated_delta
+            touched_product_ids.add(product_id)
             if on_product_processed:
                 on_product_processed(preview.title, index, total_previews)
+
+        # Any product from this source not seen in current sync should become unavailable.
+        for product in existing_products:
+            if int(product.id) in touched_product_ids:
+                continue
+            if str(product.status or "").strip().lower() == "unavailable":
+                continue
+            self.product_repo.update(product, status="unavailable")
+            updated_for_source += 1
+
         return created_for_source, updated_for_source
