@@ -124,6 +124,9 @@ class ParserJobService:
                     processed_in_current_source=processed_in_source,
                 )
 
+            def on_discovery_progress() -> None:
+                job_progress_tracker.mark_discovery_progress(job_id=job_id)
+
             return service.source_sync_executor.sync_source(
                 job_id=job_id,
                 source_id=source_input.source_id,
@@ -131,6 +134,7 @@ class ParserJobService:
                 parser_type=source_input.parser_type,
                 on_source_discovered=on_source_discovered,
                 on_product_processed=on_product_processed,
+                on_discovery_progress=on_discovery_progress,
             )
         except Exception:
             db.rollback()
@@ -166,7 +170,7 @@ class ParserJobService:
         self.session.commit()
 
         totals = JobExecutionTotals()
-        sources = resolve_enabled_sources()
+        sources = resolve_enabled_sources(source_repo=self.source_repo)
         job_progress_tracker.start_job(job_id=job_id, total_sources=len(sources))
 
         if not sources:

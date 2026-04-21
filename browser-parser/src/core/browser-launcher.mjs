@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { sleep } from './helpers.mjs';
@@ -20,9 +20,58 @@ function attachLogs(proc, prefix, onStderrLine = null) {
   });
 }
 
-export function launchVirtualDisplay() {
+function _processAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 1) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function _cleanupStaleDisplayArtifacts(displayNumber) {
+  const lockFile = `/tmp/.X${displayNumber}-lock`;
+  const socketFile = `/tmp/.X11-unix/X${displayNumber}`;
+  if (!existsSync(lockFile)) return;
+  let stale = true;
+  try {
+    const raw = readFileSync(lockFile, 'utf8').trim();
+    const pid = Number.parseInt(raw, 10);
+    stale = !_processAlive(pid);
+  } catch {
+    stale = true;
+  }
+  if (!stale) return;
+  try {
+    unlinkSync(lockFile);
+  } catch {
+    // ignore
+  }
+  try {
+    unlinkSync(socketFile);
+  } catch {
+    // ignore
+  }
+}
+
+function _pickDisplayNumber() {
+  const preferred = Number.parseInt(String(process.env.BROWSER_PARSER_XVFB_DISPLAY || '99'), 10);
+  const base = Number.isFinite(preferred) ? preferred : 99;
+  for (let i = 0; i < 200; i += 1) {
+    const candidate = base + i;
+    _cleanupStaleDisplayArtifacts(candidate);
+    const lockFile = `/tmp/.X${candidate}-lock`;
+    if (!existsSync(lockFile)) {
+      return candidate;
+    }
+  }
+  throw new Error('No free Xvfb display slot found');
+}
+
+export function launchVirtualDisplay(displayNumber) {
   let launchError = null;
-  const proc = spawn('Xvfb', [':99', '-screen', '0', '1360x900x24', '-nolisten', 'tcp'], {
+  const proc = spawn('Xvfb', [`:${displayNumber}`, '-screen', '0', '1360x900x24', '-nolisten', 'tcp'], {
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   proc.on('error', (err) => {
@@ -39,7 +88,7 @@ export function launchChromium({ browserBinary, showUi, noSandbox = false }) {
     throw new Error('BROWSER_PARSER_SHOW_UI=true requires DISPLAY to be set');
   }
 
-  const userDataDir = '/tmp/browser-parser-profile';
+  const userDataDir = `/tmp/browser-parser-profile-${Date.now()}-${process.pid}-${Math.floor(Math.random() * 100000)}`;
   const args = [
     `--user-data-dir=${userDataDir}`,
     `--disable-extensions-except=${extensionDir}`,
@@ -89,14 +138,18 @@ export function launchChromium({ browserBinary, showUi, noSandbox = false }) {
   proc.__didExit = () => didExit;
   proc.__exitCode = () => exitCode;
   proc.__launchError = () => launchError;
+  proc.__userDataDir = userDataDir;
   return proc;
 }
 
 export async function startBrowserEnvironment({ browserBinary, showUi }) {
   let xvfbProc = null;
+  let xvfbDisplay = null;
   if (!showUi) {
-    xvfbProc = launchVirtualDisplay();
-    process.env.DISPLAY = ':99';
+    const displayNumber = _pickDisplayNumber();
+    xvfbDisplay = `:${displayNumber}`;
+    xvfbProc = launchVirtualDisplay(displayNumber);
+    process.env.DISPLAY = xvfbDisplay;
     await sleep(1200);
   }
 
@@ -144,9 +197,18 @@ export async function startBrowserEnvironment({ browserBinary, showUi }) {
   return {
     chromiumProc,
     xvfbProc,
+    xvfbDisplay,
     stop: async () => {
       try {
         chromiumProc.kill('SIGTERM');
+      } catch {
+        // ignore
+      }
+      try {
+        const profileDir = typeof chromiumProc.__userDataDir === 'string' ? chromiumProc.__userDataDir : null;
+        if (profileDir) {
+          rmSync(profileDir, { recursive: true, force: true });
+        }
       } catch {
         // ignore
       }

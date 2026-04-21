@@ -39,6 +39,8 @@ class ParserProductRepository(BaseRepository[ParserProduct]):
         weight_value: Optional[float] = None,
         weight_unit: Optional[str] = None,
         status: str = ProductStatus.AVAILABLE,
+        is_auto_added: bool = True,
+        auto_hide_force_visible: bool = False,
     ) -> ParserProduct:
         """Create new product."""
         product = self.create(
@@ -61,6 +63,8 @@ class ParserProductRepository(BaseRepository[ParserProduct]):
             weight_value=weight_value,
             weight_unit=weight_unit,
             status=status,
+            is_auto_added=is_auto_added,
+            auto_hide_force_visible=auto_hide_force_visible,
         )
         self.flush()
         return product

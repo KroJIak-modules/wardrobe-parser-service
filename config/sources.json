@@ -5,7 +5,7 @@
       "name": "Jaded LDN",
       "base_url": "https://jadedldn.com",
       "parser_type": "shopify",
-      "enabled": false
+      "enabled": true
     },
     {
       "key": "racerworldwide",
@@ -82,7 +82,7 @@
       "name": "Remnants Vintage",
       "base_url": "https://remnantsvintage.com",
       "parser_type": "shopify",
-      "enabled": false
+      "enabled": true
     },
     {
       "key": "misssixty",
@@ -131,7 +131,7 @@
       "name": "Junalyx",
       "base_url": "https://junalyx.com",
       "parser_type": "shopify",
-      "enabled": false
+      "enabled": true
     },
     {
       "key": "archived",

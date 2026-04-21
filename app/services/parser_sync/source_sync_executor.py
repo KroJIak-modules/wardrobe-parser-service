@@ -46,11 +46,28 @@ class ParserSourceSyncExecutor:
         self.discover_source = discover_source
 
     @staticmethod
+    def _is_non_fatal_warning(message: str) -> bool:
+        text = message.lower()
+        return (
+            "bot_protection_429" in text
+            or "fallback used" in text
+            or "список previews обрезан" in text
+            or "второй проход:" in text
+        )
+
+    @staticmethod
     def _build_run_error_message(result, *, error_details_limit: int) -> str | None:
         details = [str(item).strip() for item in (result.error_details or []) if str(item).strip()]
         if details:
             return "; ".join(details[:error_details_limit])
         warnings = [str(item).strip() for item in (result.warnings or []) if str(item).strip()]
+        if (
+            warnings
+            and int(getattr(result, "products_fetch_failed", 0) or 0) == 0
+            and int(getattr(result, "product_urls_found", 0) or 0) > 0
+            and all(ParserSourceSyncExecutor._is_non_fatal_warning(item) for item in warnings)
+        ):
+            return None
         if warnings:
             return "; ".join(warnings[:2])
         return None
@@ -64,6 +81,7 @@ class ParserSourceSyncExecutor:
         parser_type: str,
         on_source_discovered: Optional[Callable[[int], None]] = None,
         on_product_processed: Optional[Callable[[str | None, int, int], None]] = None,
+        on_discovery_progress: Optional[Callable[[], None]] = None,
     ) -> SourceSyncStats:
         source_run = self.source_run_service.create_source_run(job_id=job_id, source_id=source_id)
         if not source_run:
@@ -73,40 +91,37 @@ class ParserSourceSyncExecutor:
         self.session.commit()
 
         try:
-            stall_timeout_sec = float(settings.parser_source_timeout_sec)
-            source_deadline_monotonic = time.monotonic() + stall_timeout_sec
-
-            def bump_progress() -> None:
-                nonlocal source_deadline_monotonic
-                source_deadline_monotonic = time.monotonic() + stall_timeout_sec
-
-            def ensure_source_not_timed_out(stage: str) -> None:
-                if time.monotonic() >= source_deadline_monotonic:
-                    raise TimeoutError(
-                        f"SOURCE_STALLED_TIMEOUT: no progress for {stall_timeout_sec:.0f}s at stage={stage}"
-                    )
-
-            ensure_source_not_timed_out("discovery")
+            source_deadline_monotonic = time.monotonic() + float(settings.parser_source_timeout_sec)
+            LOGGER.info(
+                "Source sync started source_id=%s parser_type=%s base_url=%s timeout_sec=%s",
+                source_id,
+                parser_type,
+                base_url,
+                settings.parser_source_timeout_sec,
+            )
             result = self.discover_source(
                 parser_type,
                 base_url,
                 deadline_monotonic=source_deadline_monotonic,
-                on_progress=bump_progress,
+                on_progress=on_discovery_progress,
             )
-            bump_progress()
-            ensure_source_not_timed_out("post_discovery")
+            LOGGER.info(
+                "Source discovery completed source_id=%s discovered=%s fetched=%s failed=%s mode=%s",
+                source_id,
+                result.product_urls_found,
+                result.products_fetch_succeeded,
+                result.products_fetch_failed,
+                result.discovery_mode,
+            )
 
             if on_source_discovered:
                 on_source_discovered(len(result.previews))
-
-            ensure_source_not_timed_out("before_product_sync")
 
             def on_product_processed_with_heartbeat(
                 product_title: str | None,
                 processed_in_source: int,
                 total_in_source: int,
             ) -> None:
-                bump_progress()
                 if on_product_processed:
                     on_product_processed(product_title, processed_in_source, total_in_source)
 
@@ -145,6 +160,14 @@ class ParserSourceSyncExecutor:
                 error_message=run_error_message,
             )
             self.session.commit()
+            LOGGER.info(
+                "Source sync finished source_id=%s status=%s discovered=%s fetched=%s failed=%s",
+                source_id,
+                run_status.value,
+                result.product_urls_found,
+                result.products_fetch_succeeded,
+                result.products_fetch_failed,
+            )
             return stats
         except Exception as exc:
             LOGGER.exception(
@@ -161,4 +184,3 @@ class ParserSourceSyncExecutor:
             )
             self.session.commit()
             return SourceSyncStats(errors=1)
-

@@ -22,6 +22,7 @@ class JobProgressState:
     processed_products_total: int = 0
     expected_products_total: int = 0
     current_product_title: Optional[str] = None
+    discovery_ticks: int = 0
     updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -51,6 +52,17 @@ class ParserJobProgressTracker:
             state.current_source_total_products = 0
             state.current_source_processed_products = 0
             state.current_product_title = None
+            state.discovery_ticks = 0
+            state.updated_at = datetime.now(timezone.utc)
+
+    def mark_discovery_progress(self, *, job_id: str) -> None:
+        with self._lock:
+            state = self._states.get(job_id)
+            if not state:
+                return
+            # Keep this lightweight: each tick means parser is alive and moving.
+            state.discovery_ticks += 1
+            state.current_stage = "discovering_urls"
             state.updated_at = datetime.now(timezone.utc)
 
     def set_current_source_expected_products(self, *, job_id: str, total_products: int) -> None:
@@ -110,6 +122,7 @@ class ParserJobProgressTracker:
                 processed_products_total=state.processed_products_total,
                 expected_products_total=state.expected_products_total,
                 current_product_title=state.current_product_title,
+                discovery_ticks=state.discovery_ticks,
                 updated_at=state.updated_at,
             )
 

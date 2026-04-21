@@ -7,12 +7,14 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.config.source_registry import list_sources
-from app.models import ParserProduct
+from app.models import ParserJobSourceRun, ParserProduct
 from app.repositories import ParserSourceRepository, ParserSupplierRepository
 from app.schemas.shopify import (
+    ShopifySourceAutoHideToggleRequest,
     ShopifySourceSupplierRequest,
     ShopifySourceAdminResponse,
     ShopifySourceResponse,
+    ShopifySourceSyncToggleRequest,
     ShopifySourceToggleRequest,
 )
 
@@ -67,6 +69,27 @@ class ShopifySourceService:
         )
         return int(products_count), int(categories_count)
 
+    def _collect_last_sync_data(self, source_id: int) -> tuple[str | None, int | None, str | None]:
+        row = (
+            self.db.query(
+                ParserJobSourceRun.completed_at,
+                ParserJobSourceRun.started_at,
+                ParserJobSourceRun.status,
+            )
+            .filter(ParserJobSourceRun.source_id == source_id)
+            .filter(ParserJobSourceRun.completed_at.isnot(None))
+            .order_by(ParserJobSourceRun.completed_at.desc())
+            .first()
+        )
+        if not row:
+            return None, None, None
+
+        completed_at = row[0].isoformat() if row[0] else None
+        duration_sec: int | None = None
+        if row[0] and row[1]:
+            duration_sec = max(0, int((row[0] - row[1]).total_seconds()))
+        return completed_at, duration_sec, row[2].value if row[2] else None
+
     def _resolve_fallback_supplier(self):
         supplier = self.supplier_repo.get_fallback_supplier()
         if supplier is None:
@@ -84,11 +107,17 @@ class ShopifySourceService:
         for source in configured:
             db_source = self.source_repo.get_by_url(source.base_url)
             effective_enabled = db_source.enabled if db_source else source.enabled
+            effective_sync_enabled = db_source.sync_enabled if db_source else True
+            effective_hide_auto_added_products = db_source.hide_auto_added_products if db_source else False
             products_count = 0
             categories_count = 0
+            last_sync_at = None
+            last_sync_duration_sec = None
+            last_sync_status = None
 
             if db_source:
                 products_count, categories_count = self._collect_counts(db_source.id)
+                last_sync_at, last_sync_duration_sec, last_sync_status = self._collect_last_sync_data(db_source.id)
             supplier = db_source.supplier if db_source and db_source.supplier else fallback_supplier
 
             result.append(
@@ -99,8 +128,13 @@ class ShopifySourceService:
                     base_url=source.base_url,
                     parser_type=source.parser_type,
                     enabled=effective_enabled,
+                    sync_enabled=effective_sync_enabled,
+                    hide_auto_added_products=effective_hide_auto_added_products,
                     products_count=products_count,
                     categories_count=categories_count,
+                    last_sync_at=last_sync_at,
+                    last_sync_duration_sec=last_sync_duration_sec,
+                    last_sync_status=last_sync_status,
                     supplier_id=supplier.id,
                     supplier_key=supplier.key,
                     supplier_name=supplier.name,
@@ -130,6 +164,8 @@ class ShopifySourceService:
                 url=source_cfg.base_url,
                 parser_type=source_cfg.parser_type,
                 enabled=source_cfg.enabled,
+                sync_enabled=True,
+                hide_auto_added_products=False,
                 supplier_id=fallback_supplier.id,
             )
 
@@ -138,6 +174,7 @@ class ShopifySourceService:
         self.db.refresh(db_source)
 
         products_count, categories_count = self._collect_counts(db_source.id)
+        last_sync_at, last_sync_duration_sec, last_sync_status = self._collect_last_sync_data(db_source.id)
         return ShopifySourceAdminResponse(
             key=source_cfg.key,
             source_id=db_source.id,
@@ -145,8 +182,13 @@ class ShopifySourceService:
             base_url=source_cfg.base_url,
             parser_type=source_cfg.parser_type,
             enabled=db_source.enabled,
+            sync_enabled=db_source.sync_enabled,
+            hide_auto_added_products=bool(db_source.hide_auto_added_products),
             products_count=products_count,
             categories_count=categories_count,
+            last_sync_at=last_sync_at,
+            last_sync_duration_sec=last_sync_duration_sec,
+            last_sync_status=last_sync_status,
             supplier_id=db_source.supplier.id if db_source.supplier else fallback_supplier.id,
             supplier_key=db_source.supplier.key if db_source.supplier else fallback_supplier.key,
             supplier_name=db_source.supplier.name if db_source.supplier else fallback_supplier.name,
@@ -180,6 +222,8 @@ class ShopifySourceService:
                 url=source_cfg.base_url,
                 parser_type=source_cfg.parser_type,
                 enabled=source_cfg.enabled,
+                sync_enabled=True,
+                hide_auto_added_products=False,
                 supplier_id=supplier.id if supplier else self._resolve_fallback_supplier().id,
             )
 
@@ -200,6 +244,7 @@ class ShopifySourceService:
         self.db.refresh(db_source)
 
         products_count, categories_count = self._collect_counts(db_source.id)
+        last_sync_at, last_sync_duration_sec, last_sync_status = self._collect_last_sync_data(db_source.id)
         supplier_data = db_source.supplier if db_source.supplier else supplier
         if supplier_data is None:
             supplier_data = self._resolve_fallback_supplier()
@@ -210,8 +255,115 @@ class ShopifySourceService:
             base_url=source_cfg.base_url,
             parser_type=source_cfg.parser_type,
             enabled=db_source.enabled,
+            sync_enabled=db_source.sync_enabled,
+            hide_auto_added_products=bool(db_source.hide_auto_added_products),
             products_count=products_count,
             categories_count=categories_count,
+            last_sync_at=last_sync_at,
+            last_sync_duration_sec=last_sync_duration_sec,
+            last_sync_status=last_sync_status,
+            supplier_id=supplier_data.id,
+            supplier_key=supplier_data.key,
+            supplier_name=supplier_data.name,
+            promo_factor=float(db_source.promo_factor),
+            promo_only_no_discount=bool(db_source.promo_only_no_discount),
+            buyout_surcharge_value=float(db_source.buyout_surcharge_value),
+            buyout_surcharge_currency=self._normalize_currency(db_source.buyout_surcharge_currency, default="RUB"),
+        )
+
+    def toggle_source_sync(self, source_key: str, payload: ShopifySourceSyncToggleRequest) -> ShopifySourceAdminResponse:
+        configured = {item.key: item for item in list_sources(parser_type="shopify")}
+        source_cfg = configured.get(source_key)
+        if not source_cfg:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Источник не найден")
+
+        fallback_supplier = self._resolve_fallback_supplier()
+        db_source = self.source_repo.get_by_url(source_cfg.base_url)
+        if not db_source:
+            db_source = self.source_repo.create_source(
+                name=source_cfg.name,
+                url=source_cfg.base_url,
+                parser_type=source_cfg.parser_type,
+                enabled=source_cfg.enabled,
+                sync_enabled=True,
+                hide_auto_added_products=False,
+                supplier_id=fallback_supplier.id,
+            )
+
+        db_source.sync_enabled = payload.sync_enabled
+        self.db.commit()
+        self.db.refresh(db_source)
+
+        products_count, categories_count = self._collect_counts(db_source.id)
+        last_sync_at, last_sync_duration_sec, last_sync_status = self._collect_last_sync_data(db_source.id)
+        supplier_data = db_source.supplier if db_source.supplier else fallback_supplier
+        return ShopifySourceAdminResponse(
+            key=source_cfg.key,
+            source_id=db_source.id,
+            name=source_cfg.name,
+            base_url=source_cfg.base_url,
+            parser_type=source_cfg.parser_type,
+            enabled=db_source.enabled,
+            sync_enabled=db_source.sync_enabled,
+            hide_auto_added_products=bool(db_source.hide_auto_added_products),
+            products_count=products_count,
+            categories_count=categories_count,
+            last_sync_at=last_sync_at,
+            last_sync_duration_sec=last_sync_duration_sec,
+            last_sync_status=last_sync_status,
+            supplier_id=supplier_data.id,
+            supplier_key=supplier_data.key,
+            supplier_name=supplier_data.name,
+            promo_factor=float(db_source.promo_factor),
+            promo_only_no_discount=bool(db_source.promo_only_no_discount),
+            buyout_surcharge_value=float(db_source.buyout_surcharge_value),
+            buyout_surcharge_currency=self._normalize_currency(db_source.buyout_surcharge_currency, default="RUB"),
+        )
+
+    def toggle_source_auto_hide(
+        self,
+        source_key: str,
+        payload: ShopifySourceAutoHideToggleRequest,
+    ) -> ShopifySourceAdminResponse:
+        configured = {item.key: item for item in list_sources(parser_type="shopify")}
+        source_cfg = configured.get(source_key)
+        if not source_cfg:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Источник не найден")
+
+        fallback_supplier = self._resolve_fallback_supplier()
+        db_source = self.source_repo.get_by_url(source_cfg.base_url)
+        if not db_source:
+            db_source = self.source_repo.create_source(
+                name=source_cfg.name,
+                url=source_cfg.base_url,
+                parser_type=source_cfg.parser_type,
+                enabled=source_cfg.enabled,
+                sync_enabled=True,
+                hide_auto_added_products=False,
+                supplier_id=fallback_supplier.id,
+            )
+
+        db_source.hide_auto_added_products = bool(payload.hide_auto_added_products)
+        self.db.commit()
+        self.db.refresh(db_source)
+
+        products_count, categories_count = self._collect_counts(db_source.id)
+        last_sync_at, last_sync_duration_sec, last_sync_status = self._collect_last_sync_data(db_source.id)
+        supplier_data = db_source.supplier if db_source.supplier else fallback_supplier
+        return ShopifySourceAdminResponse(
+            key=source_cfg.key,
+            source_id=db_source.id,
+            name=source_cfg.name,
+            base_url=source_cfg.base_url,
+            parser_type=source_cfg.parser_type,
+            enabled=db_source.enabled,
+            sync_enabled=db_source.sync_enabled,
+            hide_auto_added_products=bool(db_source.hide_auto_added_products),
+            products_count=products_count,
+            categories_count=categories_count,
+            last_sync_at=last_sync_at,
+            last_sync_duration_sec=last_sync_duration_sec,
+            last_sync_status=last_sync_status,
             supplier_id=supplier_data.id,
             supplier_key=supplier_data.key,
             supplier_name=supplier_data.name,

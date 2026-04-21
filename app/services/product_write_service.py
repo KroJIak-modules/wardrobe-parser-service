@@ -119,6 +119,8 @@ class ProductWriteService:
             existing.image_asset_ids = resolved_image_asset_ids
             existing.variants = variants
             existing.status = resolved_status
+            existing.is_auto_added = False
+            existing.auto_hide_force_visible = False
             existing.weight_grams = final_weight_grams
             existing.weight_source = final_weight_source
             existing.weight_match_keyword = final_weight_match_keyword
@@ -149,6 +151,8 @@ class ProductWriteService:
             weight_value=final_weight_value,
             weight_unit=final_weight_unit,
             status=resolved_status,
+            is_auto_added=False,
+            auto_hide_force_visible=False,
         )
         self.db.commit()
         self.db.refresh(product)
@@ -182,6 +186,8 @@ class ProductWriteService:
             image_count=payload.image_count,
             weight_source="missing",
             status=ProductStatus.AVAILABLE,
+            is_auto_added=False,
+            auto_hide_force_visible=False,
         )
         self.db.commit()
         self.db.refresh(product)

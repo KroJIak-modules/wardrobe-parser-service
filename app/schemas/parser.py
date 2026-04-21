@@ -122,6 +122,7 @@ class JobLatestResponse(BaseModel):
     failed_products: int = 0
     products_progress_percent: int = 0
     current_source_name: Optional[str] = None
+    current_source_parser_type: Optional[str] = None
     current_source_index: int = 0
     current_stage: Optional[str] = None
     current_source_processed_products: int = 0

@@ -36,6 +36,8 @@ class ParserSourceRepository(BaseRepository[ParserSource]):
         url: str,
         parser_type: str = "shopify",
         enabled: bool = True,
+        sync_enabled: bool = True,
+        hide_auto_added_products: bool = False,
         supplier_id: Optional[int] = None,
         promo_factor: Optional[float] = None,
         promo_only_no_discount: Optional[bool] = None,
@@ -49,6 +51,8 @@ class ParserSourceRepository(BaseRepository[ParserSource]):
             url=url,
             parser_type=parser_type,
             enabled=enabled,
+            sync_enabled=sync_enabled,
+            hide_auto_added_products=hide_auto_added_products,
             config=config,
         )
         if supplier_id is not None:

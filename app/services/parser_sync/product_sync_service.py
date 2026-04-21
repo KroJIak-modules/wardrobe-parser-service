@@ -187,6 +187,8 @@ class ParserProductSyncService:
                 weight_value=weight_value,
                 weight_unit=weight_unit,
                 status=status,
+                is_auto_added=True,
+                auto_hide_force_visible=False,
             )
             existing_by_handle[created.handle] = created
             existing_by_url[created.url] = created

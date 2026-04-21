@@ -23,7 +23,9 @@ _USER_AGENT = (
 )
 _DEFAULT_HEADERS = {
     "User-Agent": _USER_AGENT,
-    "Accept": "application/json, text/xml, application/xml, text/html;q=0.9, */*;q=0.8",
+    # Keep request signature aligned with testing/parser/shopify_export_products.py
+    # to reduce anti-bot divergence between script and service runtime.
+    "Accept": "*/*",
     "Accept-Language": "en-US,en;q=0.9",
     "Connection": "keep-alive",
 }
@@ -286,11 +288,20 @@ class ShopifyHTTPClient:
                     else:
                         last_error = "HTTP 429"
                     ShopifyHTTPClient._record_429(url)
+                    if is_bot_429:
+                        # Challenge pages are rarely recoverable by immediate retries.
+                        # Fail fast to avoid hanging discovery for many minutes.
+                        ShopifyHTTPClient._set_domain_cooldown(
+                            url,
+                            max(
+                                settings.parser_rate_limit_min_cooldown_sec,
+                                retry_backoff_sec,
+                            ),
+                        )
+                        error = last_error
+                        break
                     retry_after_sec = ShopifyHTTPClient._retry_after_seconds(response)
                     backoff_base = retry_backoff_sec * (2 ** attempt)
-                    if is_bot_429:
-                        # Bot challenge pages often need a longer quiet window.
-                        backoff_base = max(backoff_base, settings.parser_rate_limit_min_cooldown_sec * 4)
                     cooldown_sec = max(
                         settings.parser_rate_limit_min_cooldown_sec,
                         retry_after_sec or 0.0,

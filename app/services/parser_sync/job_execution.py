@@ -29,9 +29,19 @@ class JobExecutionTotals:
         self.http_5xx += stats.http_5xx
 
 
-def resolve_enabled_sources():
+def resolve_enabled_sources(*, source_repo: ParserSourceRepository | None = None):
     """Return enabled configured sources, respecting configured max limit."""
     sources = [item for item in list_sources() if item.enabled]
+    if source_repo is not None:
+        db_sources_by_url = {row.url: row for row in source_repo.get_all_active()}
+        filtered = []
+        for item in sources:
+            db_source = db_sources_by_url.get(item.base_url)
+            effective_enabled = db_source.enabled if db_source is not None else item.enabled
+            sync_enabled = db_source.sync_enabled if db_source is not None else True
+            if effective_enabled and sync_enabled:
+                filtered.append(item)
+        sources = filtered
     if settings.parser_sync_max_sources > 0:
         sources = sources[: settings.parser_sync_max_sources]
     return sources

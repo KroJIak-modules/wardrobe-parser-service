@@ -54,7 +54,7 @@ def discover_products_json_since_id(
             deadline_monotonic=deadline_monotonic,
         )
         if error:
-            if error == "HTTP 429":
+            if error in {"HTTP 429", "BOT_PROTECTION_429"}:
                 rate_limited = True
             warnings.append(f"products.json(since_id) недоступен: {error}")
             break
@@ -128,7 +128,7 @@ def discover_products_json_page(
             deadline_monotonic=deadline_monotonic,
         )
         if error:
-            if error == "HTTP 429":
+            if error in {"HTTP 429", "BOT_PROTECTION_429"}:
                 rate_limited = True
             warnings.append(f"products.json(page) остановлен на page={page}: {error}")
             break

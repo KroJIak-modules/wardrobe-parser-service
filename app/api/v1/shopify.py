@@ -9,7 +9,9 @@ from app.schemas.shopify import (
     ShopifyDiscoveryResponse,
     ShopifySourceResponse,
     ShopifySourceAdminResponse,
+    ShopifySourceAutoHideToggleRequest,
     ShopifySourceSupplierRequest,
+    ShopifySourceSyncToggleRequest,
     ShopifySourceToggleRequest,
 )
 from app.services.shopify_discovery_service import ShopifyDiscoveryService
@@ -47,6 +49,32 @@ def toggle_shopify_source(
     """Persist source enabled/disabled flag in DB and return updated admin view row."""
     service = ShopifySourceService(db)
     return service.toggle_source(source_key=source_key, payload=payload)
+
+
+@router.patch("/sources/{source_key}/sync-enabled", response_model=ShopifySourceAdminResponse, summary="Toggle source sync enabled")
+def toggle_shopify_source_sync(
+    source_key: str,
+    payload: ShopifySourceSyncToggleRequest,
+    db: Session = Depends(get_db),
+) -> ShopifySourceAdminResponse:
+    """Persist source sync_enabled flag in DB and return updated admin view row."""
+    service = ShopifySourceService(db)
+    return service.toggle_source_sync(source_key=source_key, payload=payload)
+
+
+@router.patch(
+    "/sources/{source_key}/hide-auto-added-products",
+    response_model=ShopifySourceAdminResponse,
+    summary="Toggle source auto-hide for auto-added products",
+)
+def toggle_shopify_source_auto_hide(
+    source_key: str,
+    payload: ShopifySourceAutoHideToggleRequest,
+    db: Session = Depends(get_db),
+) -> ShopifySourceAdminResponse:
+    """Persist source-level auto-hide flag for auto-added products and return updated row."""
+    service = ShopifySourceService(db)
+    return service.toggle_source_auto_hide(source_key=source_key, payload=payload)
 
 
 @router.patch("/sources/{source_key}/supplier", response_model=ShopifySourceAdminResponse, summary="Assign source supplier")

@@ -70,6 +70,8 @@ class ParserSource(Base):
     url = Column(String(2048), nullable=False, unique=True)
     parser_type = Column(String(50), nullable=False, default="shopify")  # shopify, crawlee, etc.
     enabled = Column(Boolean, nullable=False, default=True)
+    sync_enabled = Column(Boolean, nullable=False, default=True, server_default="true")
+    hide_auto_added_products = Column(Boolean, nullable=False, default=False, server_default="false")
     supplier_id = Column(
         Integer,
         ForeignKey("parser_supplier.id", ondelete="RESTRICT"),
@@ -91,6 +93,8 @@ class ParserSource(Base):
 
     __table_args__ = (
         Index("idx_parser_source_enabled", "enabled"),
+        Index("idx_parser_source_sync_enabled", "sync_enabled"),
+        Index("idx_parser_source_hide_auto_added_products", "hide_auto_added_products"),
         Index("idx_parser_source_supplier_id", "supplier_id"),
         Index("idx_parser_source_deleted_at", "deleted_at"),
     )
@@ -201,6 +205,8 @@ class ParserProduct(Base):
     weight_unit = Column(String(16), nullable=True)
     
     variants = Column(JSON, nullable=False, default=list)  # Size/color variants with availability
+    is_auto_added = Column(Boolean, nullable=False, default=True, server_default="true")
+    auto_hide_force_visible = Column(Boolean, nullable=False, default=False, server_default="false")
     
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())

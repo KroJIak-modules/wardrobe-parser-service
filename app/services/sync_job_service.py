@@ -19,6 +19,7 @@ from app.schemas.parser import (
     JobResponse,
     JobCancelResponse,
 )
+from app.repositories import ParserSourceRepository
 from app.services.parser_sync.job_execution import resolve_enabled_sources
 from app.services.parser_sync.job_service import ParserJobService
 from app.services.parser_sync.progress_tracker import job_progress_tracker
@@ -66,7 +67,7 @@ class SyncJobService:
             return None
 
         next_scheduled = self.parser_job_service.get_next_scheduled_sync()
-        total_sources = len(resolve_enabled_sources())
+        total_sources = len(resolve_enabled_sources(source_repo=ParserSourceRepository(self.db)))
         source_runs_count = (
             self.db.query(ParserJobSourceRun)
             .filter(ParserJobSourceRun.job_id == job.id)
@@ -100,7 +101,7 @@ class SyncJobService:
         db_processed_products = sum((row.products_fetched or 0) for row in source_run_rows)
 
         in_progress_row = (
-            self.db.query(ParserJobSourceRun, ParserSource.name)
+            self.db.query(ParserJobSourceRun, ParserSource.name, ParserSource.parser_type)
             .join(ParserSource, ParserSource.id == ParserJobSourceRun.source_id)
             .filter(ParserJobSourceRun.job_id == job.id)
             .filter(ParserJobSourceRun.status == SourceRunStatus.IN_PROGRESS)
@@ -108,6 +109,7 @@ class SyncJobService:
             .first()
         )
         current_source_name = in_progress_row[1] if in_progress_row else None
+        current_source_parser_type = in_progress_row[2] if in_progress_row else None
         current_source_processed_products = 0
         current_source_total_products = 0
 
@@ -135,6 +137,17 @@ class SyncJobService:
                 tracker_state.current_source_total_products,
             )
             current_product_title = tracker_state.current_product_title
+            if (
+                total_sources > 0
+                and job.status in [JobStatus.PENDING, JobStatus.IN_PROGRESS]
+                and processed_sources < total_sources
+                and tracker_state.current_stage == "discovering_urls"
+            ):
+                # Reflect visible movement within discovery stage to avoid "stuck at N%".
+                # Cap intra-source contribution so each source cannot advance full slot
+                # before it is actually completed.
+                partial_source = min(0.9, tracker_state.discovery_ticks / 30.0)
+                progress_percent = int(((processed_sources + partial_source) * 100) / total_sources)
 
         if db_expected_products > 0:
             products_progress_percent = int((db_processed_products * 100) / db_expected_products)
@@ -175,6 +188,7 @@ class SyncJobService:
             failed_products=failed_products,
             products_progress_percent=products_progress_percent,
             current_source_name=current_source_name,
+            current_source_parser_type=current_source_parser_type,
             current_source_index=current_source_index,
             current_stage=current_stage,
             current_source_processed_products=current_source_processed_products,

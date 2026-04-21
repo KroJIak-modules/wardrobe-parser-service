@@ -123,8 +123,13 @@ class ShopifySourceAdminResponse(BaseModel):
     base_url: str
     parser_type: str
     enabled: bool
+    sync_enabled: bool = True
+    hide_auto_added_products: bool = False
     products_count: int = 0
     categories_count: int = 0
+    last_sync_at: str | None = None
+    last_sync_duration_sec: int | None = None
+    last_sync_status: str | None = None
     supplier_id: int | None = None
     supplier_key: str | None = None
     supplier_name: str | None = None
@@ -138,6 +143,18 @@ class ShopifySourceToggleRequest(BaseModel):
     """Toggle source state for admin UI."""
 
     enabled: bool
+
+
+class ShopifySourceSyncToggleRequest(BaseModel):
+    """Toggle source sync participation for admin UI."""
+
+    sync_enabled: bool
+
+
+class ShopifySourceAutoHideToggleRequest(BaseModel):
+    """Toggle source-level auto-hide for auto-added products."""
+
+    hide_auto_added_products: bool
 
 
 class ShopifySourceSupplierRequest(BaseModel):

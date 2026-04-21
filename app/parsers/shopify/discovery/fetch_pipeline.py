@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import time
+import logging
 from typing import Any, Callable
 
 from app.core.config import settings
 from app.parsers.shopify.preview_fetcher import FetchOutcome, fetch_many_product_previews
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -38,6 +41,12 @@ def run_preview_fetch_pipeline(
     on_progress: Callable[[], None] | None = None,
 ) -> PreviewFetchPipelineResult:
     """Fetch previews for URLs with optional second pass on failures."""
+    LOGGER.info(
+        "shopify fetch pipeline started base_url=%s targets=%s workers=%s",
+        base_url,
+        len(target_urls),
+        parallel_workers,
+    )
     if not target_urls:
         return PreviewFetchPipelineResult(
             previews=[],
@@ -62,6 +71,7 @@ def run_preview_fetch_pipeline(
         if on_progress:
             on_progress()
 
+    processed_first_pass = 0
     for outcome in fetch_many_product_previews(
         base_url=base_url,
         product_urls=target_urls,
@@ -75,6 +85,14 @@ def run_preview_fetch_pipeline(
         on_outcome=on_outcome_processed,
     ):
         by_url[outcome.product_url] = outcome
+        processed_first_pass += 1
+        if processed_first_pass % 200 == 0:
+            LOGGER.info(
+                "shopify fetch pipeline first pass base_url=%s processed=%s/%s",
+                base_url,
+                processed_first_pass,
+                len(target_urls),
+            )
 
     for product_url in target_urls:
         if deadline_monotonic is not None and time.monotonic() >= deadline_monotonic:
@@ -141,7 +159,13 @@ def run_preview_fetch_pipeline(
                 refreshed_errors.append((product_url, second.error or first_error))
 
         final_errors = refreshed_errors
-
+    LOGGER.info(
+        "shopify fetch pipeline finished base_url=%s success=%s failed=%s second_pass_recovered=%s",
+        base_url,
+        len(previews),
+        len(final_errors),
+        second_pass_recovered,
+    )
     return PreviewFetchPipelineResult(
         previews=previews,
         final_errors=final_errors,
