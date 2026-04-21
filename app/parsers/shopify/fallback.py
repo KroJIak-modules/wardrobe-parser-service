@@ -92,7 +92,10 @@ def discover_with_browser_fallback(
     try:
         fallback_result = fallback_engine.discover(
             base_url,
-            deadline_monotonic=deadline_monotonic,
+            # Do not reuse primary source deadline here: primary Shopify pass may consume
+            # most/all budget and starve fallback before it even starts.
+            # Browser parser has its own hard process timeout.
+            deadline_monotonic=None,
             on_progress=on_progress,
             export_concurrency=max(
                 1,
