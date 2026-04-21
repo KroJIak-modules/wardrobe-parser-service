@@ -136,6 +136,12 @@ class Settings(BaseSettings):
         le=64,
         env="PARSER_BROWSER_EXPORT_CONCURRENCY",
     )
+    parser_browser_fallback_export_concurrency: int = Field(
+        default=16,
+        ge=1,
+        le=64,
+        env="PARSER_BROWSER_FALLBACK_EXPORT_CONCURRENCY",
+    )
     parser_browser_force_live_fallback: bool = Field(
         default=False,
         env="PARSER_BROWSER_FORCE_LIVE_FALLBACK",

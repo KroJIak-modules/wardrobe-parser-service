@@ -94,6 +94,10 @@ def discover_with_browser_fallback(
             base_url,
             deadline_monotonic=deadline_monotonic,
             on_progress=on_progress,
+            export_concurrency=max(
+                1,
+                int(settings.parser_browser_fallback_export_concurrency),
+            ),
         )
     except Exception as exc:
         LOGGER.exception("Browser fallback failed for %s", base_url)

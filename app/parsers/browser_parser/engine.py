@@ -21,14 +21,15 @@ class BrowserParserEngine:
         *,
         deadline_monotonic: float | None = None,
         on_progress: Callable[[], None] | None = None,
+        export_concurrency: int | None = None,
     ):
         if on_progress:
             on_progress()
         payload = BrowserParserRunnerClient.run(
             base_url=base_url,
             deadline_monotonic=deadline_monotonic,
+            export_concurrency=export_concurrency,
         )
         if on_progress:
             on_progress()
         return to_shopify_discovery_result(payload)
-

@@ -40,8 +40,13 @@ class BrowserParserRunnerClient:
         return (_service_root / path).resolve()
 
     @classmethod
-    def _build_command(cls, *, base_url: str) -> list[str]:
+    def _build_command(cls, *, base_url: str, export_concurrency: int | None = None) -> list[str]:
         script_path = cls._resolve_script_path()
+        resolved_export_concurrency = (
+            int(export_concurrency)
+            if export_concurrency is not None
+            else int(settings.parser_browser_export_concurrency)
+        )
         return [
             settings.parser_browser_node_bin,
             str(script_path),
@@ -58,7 +63,7 @@ class BrowserParserRunnerClient:
             "--export-products",
             "true",
             "--export-concurrency",
-            str(settings.parser_browser_export_concurrency),
+            str(max(1, resolved_export_concurrency)),
             "--force-live-fallback",
             str(settings.parser_browser_force_live_fallback).lower(),
             "--wait-extension-timeout-ms",
@@ -81,6 +86,7 @@ class BrowserParserRunnerClient:
         *,
         base_url: str,
         deadline_monotonic: float | None = None,
+        export_concurrency: int | None = None,
     ) -> BrowserParserDiscoveryPayload:
         acquired = False
         wait_started = time.monotonic()
@@ -96,7 +102,7 @@ class BrowserParserRunnerClient:
         if wait_elapsed >= 0.5:
             LOGGER.info("browser-parser lock acquired after %.2fs for %s", wait_elapsed, base_url)
 
-        command = cls._build_command(base_url=base_url)
+        command = cls._build_command(base_url=base_url, export_concurrency=export_concurrency)
         timeout_sec = cls._resolve_timeout(deadline_monotonic)
 
         try:
