@@ -56,6 +56,7 @@ class ShopifyParser:
             max_retries=max_retries,
             retry_backoff_sec=retry_backoff_sec,
             build_preview=build_preview_from_payload,
+            target_currency=settings.parser_shopify_target_currency,
         )
         if not outcome.preview:
             raise ValidationError(outcome.error or "Не удалось получить preview товара")

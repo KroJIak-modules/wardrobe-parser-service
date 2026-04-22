@@ -25,6 +25,7 @@ class ParserEngine(Protocol):
         *,
         deadline_monotonic: float | None = None,
         on_progress: Callable[[], None] | None = None,
+        on_detail_progress: Callable[[dict], None] | None = None,
     ):
         """Run source discovery and return result with previews/counters."""
 
@@ -41,6 +42,7 @@ class ShopifyParserEngine:
         *,
         deadline_monotonic: float | None = None,
         on_progress: Callable[[], None] | None = None,
+        on_detail_progress: Callable[[dict], None] | None = None,
     ):
         primary_result = ShopifyParser.discover(
             base_url,
@@ -57,12 +59,14 @@ class ShopifyParserEngine:
             second_pass_timeout_sec=settings.parser_default_second_pass_timeout_sec,
             deadline_monotonic=deadline_monotonic,
             on_progress=on_progress,
+            on_detail_progress=on_detail_progress,
         )
         return discover_with_browser_fallback(
             primary_result=primary_result,
             base_url=base_url,
             deadline_monotonic=deadline_monotonic,
             on_progress=on_progress,
+            on_detail_progress=on_detail_progress,
         )
 
 

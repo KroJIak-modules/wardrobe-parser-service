@@ -180,6 +180,10 @@ class Settings(BaseSettings):
         le=250,
         env="PARSER_SHOPIFY_PAGE_SIZE",
     )
+    parser_shopify_target_currency: str = Field(
+        default="",
+        env="PARSER_SHOPIFY_TARGET_CURRENCY",
+    )
     parser_discovery_warning_items_limit: int = Field(
         default=20,
         ge=1,
@@ -331,6 +335,17 @@ class Settings(BaseSettings):
                 f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
             )
             object.__setattr__(self, "database_url", url)
+        return self
+
+    @model_validator(mode="after")
+    def normalize_shopify_target_currency(self) -> "Settings":
+        raw = (self.parser_shopify_target_currency or "").strip().upper()
+        if not raw:
+            object.__setattr__(self, "parser_shopify_target_currency", "")
+            return self
+        if raw not in {"USD", "EUR", "GBP"}:
+            raise ValueError("PARSER_SHOPIFY_TARGET_CURRENCY must be one of: USD, EUR, GBP, or empty")
+        object.__setattr__(self, "parser_shopify_target_currency", raw)
         return self
 
     class Config:

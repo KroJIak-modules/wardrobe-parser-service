@@ -76,6 +76,51 @@ class ParserJobProgressTracker:
             state.current_stage = "syncing_products"
             state.updated_at = datetime.now(timezone.utc)
 
+    def set_current_source_expected_products_absolute(self, *, job_id: str, total_products: int) -> None:
+        with self._lock:
+            state = self._states.get(job_id)
+            if not state:
+                return
+            safe_total = max(int(total_products), 0)
+            previous_total = max(int(state.current_source_total_products), 0)
+            state.current_source_total_products = safe_total
+            state.expected_products_total = max(
+                int(state.expected_products_total) + (safe_total - previous_total),
+                0,
+            )
+            state.updated_at = datetime.now(timezone.utc)
+
+    def set_current_source_processed_products_absolute(
+        self,
+        *,
+        job_id: str,
+        processed_products: int,
+        product_title: Optional[str] = None,
+    ) -> None:
+        with self._lock:
+            state = self._states.get(job_id)
+            if not state:
+                return
+            safe_processed = max(int(processed_products), 0)
+            previous_processed = max(int(state.current_source_processed_products), 0)
+            state.current_source_processed_products = safe_processed
+            state.processed_products_total = max(
+                int(state.processed_products_total) + (safe_processed - previous_processed),
+                0,
+            )
+            state.current_product_title = (product_title or "").strip() or state.current_product_title
+            state.updated_at = datetime.now(timezone.utc)
+
+    def set_current_stage(self, *, job_id: str, stage: str) -> None:
+        with self._lock:
+            state = self._states.get(job_id)
+            if not state:
+                return
+            normalized_stage = str(stage or "").strip()
+            if normalized_stage:
+                state.current_stage = normalized_stage
+                state.updated_at = datetime.now(timezone.utc)
+
     def mark_product_processed(
         self,
         *,

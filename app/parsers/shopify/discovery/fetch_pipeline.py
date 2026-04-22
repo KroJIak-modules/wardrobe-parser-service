@@ -81,6 +81,7 @@ def run_preview_fetch_pipeline(
         max_retries=max_retries,
         retry_backoff_sec=retry_backoff_sec,
         build_preview=build_preview,
+        target_currency=settings.parser_shopify_target_currency,
         deadline_monotonic=deadline_monotonic,
         on_outcome=on_outcome_processed,
     ):
@@ -137,6 +138,7 @@ def run_preview_fetch_pipeline(
             max_retries=max_retries + 1,
             retry_backoff_sec=max(retry_backoff_sec, settings.parser_second_pass_min_backoff_sec),
             build_preview=build_preview,
+            target_currency=settings.parser_shopify_target_currency,
             deadline_monotonic=deadline_monotonic,
             on_outcome=on_outcome_processed,
         )

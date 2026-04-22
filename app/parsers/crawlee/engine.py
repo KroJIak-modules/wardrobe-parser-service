@@ -21,7 +21,9 @@ class CrawleeParserEngine:
         *,
         deadline_monotonic: float | None = None,
         on_progress: Callable[[], None] | None = None,
+        on_detail_progress: Callable[[dict], None] | None = None,
     ):
+        _ = on_detail_progress
         if on_progress:
             on_progress()
         payload = CrawleeRunnerClient.run(
@@ -31,4 +33,3 @@ class CrawleeParserEngine:
         if on_progress:
             on_progress()
         return to_shopify_discovery_result(payload)
-

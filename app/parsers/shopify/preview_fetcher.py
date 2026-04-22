@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import logging
 from threading import local
 from typing import Any, Callable
+from urllib.parse import urlencode
 
 import requests
 
@@ -14,6 +15,14 @@ from app.parsers.shopify.http_client import ShopifyHTTPClient
 from app.parsers.shopify_url_utils import extract_handle
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _build_product_endpoint_url(base_url: str, handle: str, extension: str, target_currency: str | None) -> str:
+    endpoint = f"{base_url}/products/{handle}.{extension}"
+    normalized_currency = (target_currency or "").strip().upper()
+    if normalized_currency in {"USD", "EUR", "GBP"}:
+        return f"{endpoint}?{urlencode({'currency': normalized_currency})}"
+    return endpoint
 
 
 @dataclass(slots=True)
@@ -37,6 +46,7 @@ def fetch_one_product_preview(
     retry_backoff_sec: float,
     build_preview: Callable[..., Any],
     store_currency: str | None = None,
+    target_currency: str | None = None,
     session: requests.Session | None = None,
     deadline_monotonic: float | None = None,
 ) -> FetchOutcome:
@@ -74,8 +84,8 @@ def fetch_one_product_preview(
     http_5xx_count = 0
     last_error = "нет данных"
 
-    json_url = f"{base_url}/products/{handle}.json"
-    js_url = f"{base_url}/products/{handle}.js"
+    json_url = _build_product_endpoint_url(base_url, handle, "json", target_currency)
+    js_url = _build_product_endpoint_url(base_url, handle, "js", target_currency)
 
     for endpoint_url, payload_source in ((json_url, "json"), (js_url, "js")):
         payload, _, http_429, http_5xx, error = http_client.request_with_retries(
@@ -173,6 +183,7 @@ def fetch_many_product_previews(
     max_retries: int,
     retry_backoff_sec: float,
     build_preview: Callable[..., Any],
+    target_currency: str | None = None,
     deadline_monotonic: float | None = None,
     on_outcome: Callable[[FetchOutcome], None] | None = None,
 ) -> list[FetchOutcome]:
@@ -201,6 +212,7 @@ def fetch_many_product_previews(
                 retry_backoff_sec=retry_backoff_sec,
                 build_preview=build_preview,
                 store_currency=store_currency,
+                target_currency=target_currency,
                 session=session,
                 deadline_monotonic=deadline_monotonic,
             )
@@ -237,6 +249,7 @@ def fetch_many_product_previews(
             retry_backoff_sec=retry_backoff_sec,
             build_preview=build_preview,
             store_currency=store_currency,
+            target_currency=target_currency,
             session=session,
             deadline_monotonic=deadline_monotonic,
         )

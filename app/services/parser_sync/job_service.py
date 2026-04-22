@@ -100,6 +100,9 @@ class ParserJobService:
             current = service.job_repo.get_by_id(job_id)
             if not current or current.status == JobStatus.CANCELLED:
                 return SourceSyncStats()
+            # End short read transaction before long network-bound source sync
+            # to avoid "idle in transaction" sessions during sync.
+            db.rollback()
 
             job_progress_tracker.start_source(
                 job_id=job_id,

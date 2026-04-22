@@ -1,6 +1,6 @@
 """Add product overrides and per-field sync locks
 
-Revision ID: 0035_product_overrides_and_sync_locks
+Revision ID: 0035_prod_overrides_lock
 Revises: 0034_auto_hide_auto_products
 Create Date: 2026-04-22 12:24:00.000000
 """
@@ -8,7 +8,7 @@ Create Date: 2026-04-22 12:24:00.000000
 from alembic import op
 
 
-revision = "0035_product_overrides_and_sync_locks"
+revision = "0035_prod_overrides_lock"
 down_revision = "0034_auto_hide_auto_products"
 branch_labels = None
 depends_on = None
