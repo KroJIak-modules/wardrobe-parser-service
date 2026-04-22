@@ -94,6 +94,7 @@ def collect_discovery_urls(
     retry_backoff_sec: float,
     deadline_monotonic: float | None = None,
     on_progress: Callable[[], None] | None = None,
+    on_detail_progress: Callable[[dict], None] | None = None,
 ) -> DiscoveryCollectionResult:
     """Collect product URLs from sitemap.xml and API fallbacks."""
     LOGGER.info("shopify discovery started base_url=%s max_products=%s", base_url, max_products)
@@ -107,6 +108,8 @@ def collect_discovery_urls(
     def ping_progress() -> None:
         if on_progress:
             on_progress()
+        if on_detail_progress:
+            on_detail_progress({"stage": "discovering_urls"})
 
     def append_and_ping(url: str) -> None:
         nonlocal appended_since_ping

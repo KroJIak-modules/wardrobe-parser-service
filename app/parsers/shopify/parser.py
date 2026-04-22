@@ -80,6 +80,7 @@ class ShopifyParser:
         second_pass_timeout_sec: float,
         deadline_monotonic: float | None = None,
         on_progress: Callable[[], None] | None = None,
+        on_detail_progress: Callable[[dict], None] | None = None,
     ) -> ShopifyDiscoveryResult:
         """Run discovery and optionally fetch product previews."""
         resolved_base_url = normalize_base_url(base_url)
@@ -92,6 +93,7 @@ class ShopifyParser:
             retry_backoff_sec=retry_backoff_sec,
             deadline_monotonic=deadline_monotonic,
             on_progress=on_progress,
+            on_detail_progress=on_detail_progress,
         )
 
         discovery_mode = resolve_discovery_mode(

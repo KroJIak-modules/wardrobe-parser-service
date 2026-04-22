@@ -21,6 +21,7 @@ class BrowserParserEngine:
         *,
         deadline_monotonic: float | None = None,
         on_progress: Callable[[], None] | None = None,
+        on_detail_progress: Callable[[dict], None] | None = None,
         export_concurrency: int | None = None,
     ):
         if on_progress:
@@ -29,6 +30,7 @@ class BrowserParserEngine:
             base_url=base_url,
             deadline_monotonic=deadline_monotonic,
             export_concurrency=export_concurrency,
+            on_progress_event=on_detail_progress,
         )
         if on_progress:
             on_progress()

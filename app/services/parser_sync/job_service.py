@@ -83,12 +83,14 @@ class ParserJobService:
         *,
         deadline_monotonic: float | None = None,
         on_progress: Callable[[], None] | None = None,
+        on_detail_progress: Callable[[dict], None] | None = None,
     ):
         engine = get_parser_engine(parser_type)
         return engine.discover(
             base_url,
             deadline_monotonic=deadline_monotonic,
             on_progress=on_progress,
+            on_detail_progress=on_detail_progress,
         )
 
     @staticmethod
@@ -130,6 +132,31 @@ class ParserJobService:
             def on_discovery_progress() -> None:
                 job_progress_tracker.mark_discovery_progress(job_id=job_id)
 
+            def on_discovery_detail_progress(event: dict) -> None:
+                stage = str(event.get("stage") or "").strip()
+                if stage:
+                    job_progress_tracker.set_current_stage(job_id=job_id, stage=stage)
+
+                products_total_raw = event.get("products_total")
+                if products_total_raw is not None:
+                    try:
+                        job_progress_tracker.set_current_source_expected_products_absolute(
+                            job_id=job_id,
+                            total_products=int(products_total_raw),
+                        )
+                    except (TypeError, ValueError):
+                        pass
+
+                products_processed_raw = event.get("products_processed")
+                if products_processed_raw is not None:
+                    try:
+                        job_progress_tracker.set_current_source_processed_products_absolute(
+                            job_id=job_id,
+                            processed_products=int(products_processed_raw),
+                        )
+                    except (TypeError, ValueError):
+                        pass
+
             return service.source_sync_executor.sync_source(
                 job_id=job_id,
                 source_id=source_input.source_id,
@@ -138,6 +165,7 @@ class ParserJobService:
                 on_source_discovered=on_source_discovered,
                 on_product_processed=on_product_processed,
                 on_discovery_progress=on_discovery_progress,
+                on_discovery_detail_progress=on_discovery_detail_progress,
             )
         except Exception:
             db.rollback()

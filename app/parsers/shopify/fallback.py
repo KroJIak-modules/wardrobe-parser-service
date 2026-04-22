@@ -81,6 +81,7 @@ def discover_with_browser_fallback(
     base_url: str,
     deadline_monotonic: float | None = None,
     on_progress: Callable[[], None] | None = None,
+    on_detail_progress: Callable[[dict], None] | None = None,
 ) -> ShopifyDiscoveryResult:
     """Run browser fallback and merge with primary Shopify result."""
     if not settings.parser_browser_fallback_enabled:
@@ -97,6 +98,7 @@ def discover_with_browser_fallback(
             # Browser parser has its own hard process timeout.
             deadline_monotonic=None,
             on_progress=on_progress,
+            on_detail_progress=on_detail_progress,
             export_concurrency=max(
                 1,
                 int(settings.parser_browser_fallback_export_concurrency),

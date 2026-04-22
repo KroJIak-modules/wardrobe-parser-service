@@ -7,7 +7,9 @@ import subprocess
 import time
 import logging
 import threading
+import re
 from pathlib import Path
+from typing import Callable, Any
 
 from app.core.config import settings
 from app.core.exceptions import ValidationError
@@ -17,6 +19,11 @@ from app.parsers.browser_parser.models import BrowserParserDiscoveryPayload
 _service_root = Path(__file__).resolve().parents[3]
 LOGGER = logging.getLogger(__name__)
 _RUN_LOCK = threading.Lock()
+_RE_EXPORT_ENABLED = re.compile(r"export products enabled, total=(\d+), concurrency=(\d+)", re.IGNORECASE)
+_RE_EXPORT_PROGRESS = re.compile(r"export progress (\d+)/(\d+)", re.IGNORECASE)
+_RE_SITEMAP_PROGRESS = re.compile(r"sitemap (\d+)/(\d+)", re.IGNORECASE)
+_RE_UNIQUE_URLS = re.compile(r"unique product urls=(\d+)", re.IGNORECASE)
+_RE_JS_PROGRESS = re.compile(r"products\.js progress (\d+)/(\d+)", re.IGNORECASE)
 
 
 class BrowserParserRunnerClient:
@@ -87,6 +94,7 @@ class BrowserParserRunnerClient:
         base_url: str,
         deadline_monotonic: float | None = None,
         export_concurrency: int | None = None,
+        on_progress_event: Callable[[dict[str, Any]], None] | None = None,
     ) -> BrowserParserDiscoveryPayload:
         acquired = False
         wait_started = time.monotonic()
@@ -127,7 +135,7 @@ class BrowserParserRunnerClient:
         stdout_thread = threading.Thread(
             target=cls._read_pipe_lines,
             args=(process.stdout, stdout_lines),
-            kwargs={"log_prefix": "[browser-parser] "},
+            kwargs={"log_prefix": "[browser-parser] ", "on_progress_event": on_progress_event},
             daemon=True,
         )
         stderr_thread = threading.Thread(
@@ -184,13 +192,74 @@ class BrowserParserRunnerClient:
             result.warnings = warnings
         return result
     @staticmethod
-    def _read_pipe_lines(pipe, sink: list[str], *, log_prefix: str | None = None) -> None:
+    def _emit_progress_from_line(line: str, on_progress_event: Callable[[dict[str, Any]], None] | None) -> None:
+        if on_progress_event is None:
+            return
+        lower = line.lower()
+        event: dict | None = None
+        if "[scenario:shopify]" in lower and "sitemap " in lower:
+            match = _RE_SITEMAP_PROGRESS.search(line)
+            if match:
+                event = {
+                    "stage": "fallback_discovering_urls",
+                    "sitemaps_processed": int(match.group(1)),
+                    "sitemaps_total": int(match.group(2)),
+                }
+        if event is None:
+            match = _RE_UNIQUE_URLS.search(line)
+            if match:
+                event = {
+                    "stage": "fallback_exporting_previews",
+                    "products_total": int(match.group(1)),
+                    "products_discovered": int(match.group(1)),
+                }
+        if event is None:
+            match = _RE_JS_PROGRESS.search(line)
+            if match:
+                event = {
+                    "stage": "fallback_sampling_products_js",
+                    "js_sample_processed": int(match.group(1)),
+                    "js_sample_total": int(match.group(2)),
+                }
+        if event is None:
+            match = _RE_EXPORT_ENABLED.search(line)
+            if match:
+                event = {
+                    "stage": "fallback_exporting_previews",
+                    "products_total": int(match.group(1)),
+                    "export_concurrency": int(match.group(2)),
+                }
+        if event is None:
+            match = _RE_EXPORT_PROGRESS.search(line)
+            if match:
+                event = {
+                    "stage": "fallback_exporting_previews",
+                    "products_processed": int(match.group(1)),
+                    "products_total": int(match.group(2)),
+                }
+        if event:
+            try:
+                on_progress_event(event)
+            except Exception:
+                LOGGER.debug("failed to emit browser-parser progress event", exc_info=True)
+
+    @classmethod
+    def _read_pipe_lines(
+        cls,
+        pipe,
+        sink: list[str],
+        *,
+        log_prefix: str | None = None,
+        on_progress_event: Callable[[dict[str, Any]], None] | None = None,
+    ) -> None:
         if pipe is None:
             return
         try:
             for raw in pipe:
                 line = (raw or "").rstrip()
                 sink.append(line)
+                if line:
+                    cls._emit_progress_from_line(line, on_progress_event)
                 if log_prefix and line:
                     LOGGER.info("%s%s", log_prefix, line)
         finally:

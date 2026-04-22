@@ -82,6 +82,7 @@ class ParserSourceSyncExecutor:
         on_source_discovered: Optional[Callable[[int], None]] = None,
         on_product_processed: Optional[Callable[[str | None, int, int], None]] = None,
         on_discovery_progress: Optional[Callable[[], None]] = None,
+        on_discovery_detail_progress: Optional[Callable[[dict], None]] = None,
     ) -> SourceSyncStats:
         source_run = self.source_run_service.create_source_run(job_id=job_id, source_id=source_id)
         if not source_run:
@@ -104,6 +105,7 @@ class ParserSourceSyncExecutor:
                 base_url,
                 deadline_monotonic=source_deadline_monotonic,
                 on_progress=on_discovery_progress,
+                on_detail_progress=on_discovery_detail_progress,
             )
             LOGGER.info(
                 "Source discovery completed source_id=%s discovered=%s fetched=%s failed=%s mode=%s",
@@ -125,11 +127,15 @@ class ParserSourceSyncExecutor:
                 if on_product_processed:
                     on_product_processed(product_title, processed_in_source, total_in_source)
 
+            # Browser fallback already reports source-level progress from runner logs.
+            should_emit_row_progress = "browser_parser" not in str(result.discovery_mode or "").lower()
             created, updated = self.product_sync_service.sync_source_products(
                 source_id,
                 result.previews,
                 on_product_processed=(
-                    on_product_processed_with_heartbeat if on_product_processed else None
+                    on_product_processed_with_heartbeat
+                    if (on_product_processed and should_emit_row_progress)
+                    else None
                 ),
             )
             stats = SourceSyncStats(
