@@ -1,6 +1,6 @@
 """Pricing and supplier models for final customer price formula."""
 
-from sqlalchemy import JSON, Column, DateTime, Float, ForeignKey, Index, Integer, String
+from sqlalchemy import Boolean, JSON, Column, DateTime, Float, ForeignKey, Index, Integer, String
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -169,6 +169,7 @@ class ParserPricingSettings(Base):
     customs_fixed_rub = Column(Float, nullable=False, default=540.0)
     shipping_alt_threshold_eur = Column(Float, nullable=False, default=300.0)
     tax_rate = Column(Float, nullable=False, default=0.06)
+    show_product_description = Column(Boolean, nullable=False, default=True, server_default="true")
     svc_rules = Column(JSON, nullable=False, default=list)
     insurance_rules = Column(JSON, nullable=False, default=_default_insurance_rules)
     service_fee_rules = Column(JSON, nullable=False, default=_default_service_fee_rules)

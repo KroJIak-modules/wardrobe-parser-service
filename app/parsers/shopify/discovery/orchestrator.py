@@ -109,7 +109,12 @@ def collect_discovery_urls(
         if on_progress:
             on_progress()
         if on_detail_progress:
-            on_detail_progress({"stage": "discovering_urls"})
+            on_detail_progress(
+                {
+                    "stage": "discovering_urls",
+                    "products_processed": len(discovered_urls),
+                }
+            )
 
     def append_and_ping(url: str) -> None:
         nonlocal appended_since_ping
@@ -182,6 +187,7 @@ def collect_discovery_urls(
                 no_new_sitemaps_limit = 20
                 all_rate_limited = True
                 for index, product_sitemap_url in enumerate(product_sitemaps):
+                    ping_progress()
                     if deadline_monotonic is not None and time.monotonic() >= deadline_monotonic:
                         warnings.append("product-sitemap остановлен: SOURCE_TIMEOUT")
                         break
@@ -285,6 +291,7 @@ def collect_discovery_urls(
             warnings.append("В sitemap не найден product-sitemap, используем fallback /products.json")
 
     if max_products > 0:
+        ping_progress()
         products_api_result = discover_products_json(
             base_url=base_url,
             max_products=max_products,
@@ -326,6 +333,7 @@ def collect_discovery_urls(
             )
 
     if len(discovered_urls) < max_products:
+        ping_progress()
         collections_result = discover_collections_all_products(
             base_url=base_url,
             max_products=max_products - len(discovered_urls),
@@ -347,6 +355,7 @@ def collect_discovery_urls(
                 payload_cache[url] = payload
 
     if len(discovered_urls) < max_products:
+        ping_progress()
         html_collections_result = discover_collections_all_html_products(
             base_url=base_url,
             max_products=max_products - len(discovered_urls),

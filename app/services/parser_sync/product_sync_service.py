@@ -316,7 +316,9 @@ class ParserProductSyncService:
         for product in existing_products:
             if int(product.id) in touched_product_ids:
                 continue
-            if str(product.status or "").strip().lower() == "unavailable":
+            current_status = str(product.status or "").strip().lower()
+            # Never override explicit manual hidden status during sync.
+            if current_status in {"hidden", "unavailable"}:
                 continue
             self.product_repo.update(product, status="unavailable")
             updated_for_source += 1

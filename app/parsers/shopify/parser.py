@@ -127,6 +127,7 @@ class ShopifyParser:
             second_pass_timeout_sec=second_pass_timeout_sec,
             deadline_monotonic=deadline_monotonic,
             on_progress=on_progress,
+            on_detail_progress=on_detail_progress,
         )
 
     @classmethod
@@ -152,6 +153,7 @@ class ShopifyParser:
         second_pass_timeout_sec: float,
         deadline_monotonic: float | None = None,
         on_progress: Callable[[], None] | None = None,
+        on_detail_progress: Callable[[dict], None] | None = None,
     ) -> ShopifyDiscoveryResult:
         """Build final discovery result from a prepared URL list."""
         fetch_attempted = len(target_urls)
@@ -168,6 +170,7 @@ class ShopifyParser:
             build_preview=build_preview_from_payload,
             deadline_monotonic=deadline_monotonic,
             on_progress=on_progress,
+            on_detail_progress=on_detail_progress,
         )
         previews = pipeline.previews
         final_errors = pipeline.final_errors

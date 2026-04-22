@@ -39,6 +39,7 @@ def run_preview_fetch_pipeline(
     build_preview: Callable[..., Any],
     deadline_monotonic: float | None = None,
     on_progress: Callable[[], None] | None = None,
+    on_detail_progress: Callable[[dict], None] | None = None,
 ) -> PreviewFetchPipelineResult:
     """Fetch previews for URLs with optional second pass on failures."""
     LOGGER.info(
@@ -66,10 +67,34 @@ def run_preview_fetch_pipeline(
 
     by_url: dict[str, FetchOutcome] = {}
     first_pass_failures: list[str] = []
+    first_pass_processed = 0
+
+    if on_detail_progress:
+        on_detail_progress(
+            {
+                "stage": "syncing_products",
+                "products_total": len(target_urls),
+                "products_processed": 0,
+            }
+        )
 
     def on_outcome_processed(_outcome: FetchOutcome) -> None:
+        nonlocal first_pass_processed
+        first_pass_processed += 1
         if on_progress:
             on_progress()
+        if on_detail_progress and (
+            first_pass_processed == len(target_urls)
+            or first_pass_processed == 1
+            or first_pass_processed % 25 == 0
+        ):
+            on_detail_progress(
+                {
+                    "stage": "syncing_products",
+                    "products_total": len(target_urls),
+                    "products_processed": first_pass_processed,
+                }
+            )
 
     processed_first_pass = 0
     for outcome in fetch_many_product_previews(
