@@ -194,19 +194,29 @@ class ParserProductSyncService:
             existing_by_url[created.url] = created
             return 1, 0, int(created.id)
 
+        is_title_locked = bool(getattr(existing, "title_sync_locked", False))
+        is_description_locked = bool(getattr(existing, "description_sync_locked", False))
+        is_images_locked = bool(getattr(existing, "images_sync_locked", False))
+
+        next_title = existing.title if is_title_locked else (preview.title or preview.handle)
+        next_description = existing.description if is_description_locked else preview.description
+        next_image_urls = list(existing.image_urls or []) if is_images_locked else preview_image_urls
+        next_image_asset_ids = list(existing.image_asset_ids or []) if is_images_locked else preview_image_asset_ids
+        next_image_count = int(existing.image_count or 0) if is_images_locked else len(preview_image_urls)
+
         changed = (
             existing.source_id != source_id
             or existing.handle != preview.handle
-            or existing.title != (preview.title or preview.handle)
-            or existing.description != preview.description
+            or existing.title != next_title
+            or existing.description != next_description
             or existing.url != preview.product_url
             or existing.vendor != preview.vendor
             or existing.product_type != preview.product_type
             or existing.price != parsed_price
             or existing.currency != resolved_currency
-            or (existing.image_urls or []) != preview_image_urls
-            or (existing.image_asset_ids or []) != preview_image_asset_ids
-            or existing.image_count != len(preview_image_urls)
+            or (existing.image_urls or []) != next_image_urls
+            or (existing.image_asset_ids or []) != next_image_asset_ids
+            or existing.image_count != next_image_count
             or (existing.variants or []) != preview_variants
             or existing.weight_grams != weight_grams
             or existing.weight_source != weight_source
@@ -224,16 +234,16 @@ class ParserProductSyncService:
             existing,
             source_id=source_id,
             handle=preview.handle,
-            title=preview.title or preview.handle,
+            title=next_title,
             url=preview.product_url,
-            description=preview.description,
+            description=next_description,
             vendor=preview.vendor,
             product_type=preview.product_type,
             price=parsed_price,
             currency=resolved_currency,
-            image_count=len(preview_image_urls),
-            image_urls=preview_image_urls,
-            image_asset_ids=preview_image_asset_ids,
+            image_count=next_image_count,
+            image_urls=next_image_urls,
+            image_asset_ids=next_image_asset_ids,
             variants=preview_variants,
             weight_grams=weight_grams,
             weight_source=weight_source,
