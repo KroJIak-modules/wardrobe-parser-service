@@ -61,7 +61,18 @@ def fetch_one_product_preview(
             http_5xx_count=0,
         )
 
-    if isinstance(cached_payload, dict):
+    normalized_target_currency = (target_currency or "").strip().upper()
+    normalized_store_currency = (store_currency or "").strip().upper()
+    can_use_cached_payload = (
+        isinstance(cached_payload, dict)
+        and (
+            normalized_target_currency == ""
+            or normalized_store_currency == ""
+            or normalized_target_currency == normalized_store_currency
+        )
+    )
+
+    if can_use_cached_payload:
         payload = dict(cached_payload)
         if store_currency and not payload.get("currency") and not payload.get("currency_code"):
             payload["currency"] = store_currency
