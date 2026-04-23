@@ -7,13 +7,13 @@ import time
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlparse
-from email.utils import parsedate_to_datetime
 from threading import Lock
 
 import requests
 
 from app.core.config import settings
 from app.core.exceptions import ValidationError
+from app.parsers.shopify import http_policy
 
 LOGGER = logging.getLogger(__name__)
 
@@ -163,32 +163,17 @@ class ShopifyHTTPClient:
             cls._domain_last_request_at[host] = time.time()
 
     @staticmethod
-    def _retry_after_seconds(response: requests.Response) -> float | None:
-        raw = (response.headers.get("Retry-After") or "").strip()
-        if not raw:
-            return None
-        if raw.isdigit():
-            return float(raw)
-        try:
-            dt = parsedate_to_datetime(raw)
-            return max(0.0, dt.timestamp() - time.time())
-        except Exception:
-            return None
-
-    @staticmethod
-    def _is_bot_protection_429(response: requests.Response) -> bool:
-        """Detect challenge pages where retries are typically useless."""
-        try:
-            body = (response.text or "")[:4096].lower()
-        except Exception:
-            body = ""
-        markers = (
-            "verifying your connection",
-            "challenge-platform",
-            "cf-chl",
-            "security challenge",
-        )
-        return any(marker in body for marker in markers)
+    def _sleep_with_deadline(
+        sleep_sec: float,
+        *,
+        deadline_monotonic: float | None,
+    ) -> bool:
+        bounded_sleep, can_sleep = http_policy.cap_sleep_by_deadline(sleep_sec, deadline_monotonic)
+        if not can_sleep:
+            return False
+        if bounded_sleep > 0:
+            time.sleep(bounded_sleep)
+        return True
 
     @staticmethod
     def validate_url(url: str) -> None:
@@ -268,9 +253,7 @@ class ShopifyHTTPClient:
                 ):
                     error = "SOURCE_TIMEOUT"
                     break
-                request_timeout = timeout_sec
-                if deadline_monotonic is not None:
-                    request_timeout = max(0.2, min(timeout_sec, deadline_monotonic - time.monotonic()))
+                request_timeout = http_policy.request_timeout(timeout_sec, deadline_monotonic)
                 response = active_session.get(url, timeout=request_timeout, allow_redirects=True)
                 ShopifyHTTPClient._record_attempt(url)
                 status_code = response.status_code
@@ -282,7 +265,7 @@ class ShopifyHTTPClient:
 
                 if status_code == 429:
                     http_429_count += 1
-                    is_bot_429 = ShopifyHTTPClient._is_bot_protection_429(response)
+                    is_bot_429 = http_policy.is_bot_protection_429(response)
                     if is_bot_429:
                         last_error = "BOT_PROTECTION_429"
                     else:
@@ -293,30 +276,23 @@ class ShopifyHTTPClient:
                         # Fail fast to avoid hanging discovery for many minutes.
                         ShopifyHTTPClient._set_domain_cooldown(
                             url,
-                            max(
-                                settings.parser_rate_limit_min_cooldown_sec,
-                                retry_backoff_sec,
-                            ),
+                            http_policy.min_bot_protection_cooldown(retry_backoff_sec),
                         )
                         error = last_error
                         break
-                    retry_after_sec = ShopifyHTTPClient._retry_after_seconds(response)
-                    backoff_base = retry_backoff_sec * (2 ** attempt)
-                    cooldown_sec = max(
-                        settings.parser_rate_limit_min_cooldown_sec,
-                        retry_after_sec or 0.0,
-                        backoff_base,
+                    cooldown_sec = http_policy.rate_limit_cooldown(
+                        attempt=attempt,
+                        retry_backoff_sec=retry_backoff_sec,
+                        retry_after_sec=http_policy.retry_after_seconds(response),
                     )
-                    cooldown_sec = min(cooldown_sec, ShopifyHTTPClient._MAX_RETRY_AFTER_COOLDOWN_SEC)
                     ShopifyHTTPClient._set_domain_cooldown(url, cooldown_sec)
                     if attempt < max_retries:
-                        if deadline_monotonic is not None:
-                            sleep_cap = deadline_monotonic - time.monotonic()
-                            if sleep_cap <= 0:
-                                error = "SOURCE_TIMEOUT"
-                                break
-                            cooldown_sec = min(cooldown_sec, sleep_cap)
-                        time.sleep(cooldown_sec)
+                        if not ShopifyHTTPClient._sleep_with_deadline(
+                            cooldown_sec,
+                            deadline_monotonic=deadline_monotonic,
+                        ):
+                            error = "SOURCE_TIMEOUT"
+                            break
                         continue
                     error = last_error
                     break
@@ -325,8 +301,12 @@ class ShopifyHTTPClient:
                     http_5xx_count += 1
                     last_error = f"HTTP {status_code}"
                     if attempt < max_retries:
-                        backoff = retry_backoff_sec * (2 ** attempt)
-                        time.sleep(backoff)
+                        if not ShopifyHTTPClient._sleep_with_deadline(
+                            http_policy.retry_backoff(attempt, retry_backoff_sec),
+                            deadline_monotonic=deadline_monotonic,
+                        ):
+                            error = "SOURCE_TIMEOUT"
+                            break
                         continue
                     error = last_error
                     break
@@ -345,31 +325,27 @@ class ShopifyHTTPClient:
 
             except requests.exceptions.Timeout:
                 last_error = "Request timeout"
-                ShopifyHTTPClient._set_domain_cooldown(url, settings.parser_timeout_cooldown_sec)
+                ShopifyHTTPClient._set_domain_cooldown(url, http_policy.timeout_cooldown())
                 if attempt < max_retries:
-                    backoff = retry_backoff_sec * (2 ** attempt)
-                    if deadline_monotonic is not None:
-                        sleep_cap = deadline_monotonic - time.monotonic()
-                        if sleep_cap <= 0:
-                            error = "SOURCE_TIMEOUT"
-                            break
-                        backoff = min(backoff, sleep_cap)
-                    time.sleep(backoff)
+                    if not ShopifyHTTPClient._sleep_with_deadline(
+                        http_policy.retry_backoff(attempt, retry_backoff_sec),
+                        deadline_monotonic=deadline_monotonic,
+                    ):
+                        error = "SOURCE_TIMEOUT"
+                        break
                     continue
                 error = last_error
 
             except requests.exceptions.ConnectionError:
                 last_error = "Connection error"
-                ShopifyHTTPClient._set_domain_cooldown(url, settings.parser_timeout_cooldown_sec)
+                ShopifyHTTPClient._set_domain_cooldown(url, http_policy.timeout_cooldown())
                 if attempt < max_retries:
-                    backoff = retry_backoff_sec * (2 ** attempt)
-                    if deadline_monotonic is not None:
-                        sleep_cap = deadline_monotonic - time.monotonic()
-                        if sleep_cap <= 0:
-                            error = "SOURCE_TIMEOUT"
-                            break
-                        backoff = min(backoff, sleep_cap)
-                    time.sleep(backoff)
+                    if not ShopifyHTTPClient._sleep_with_deadline(
+                        http_policy.retry_backoff(attempt, retry_backoff_sec),
+                        deadline_monotonic=deadline_monotonic,
+                    ):
+                        error = "SOURCE_TIMEOUT"
+                        break
                     continue
                 error = last_error
 
@@ -397,4 +373,3 @@ class ShopifyHTTPClient:
         session.headers.update(_DEFAULT_HEADERS)
         return session
     _MAX_COOLDOWN_SLEEP_SEC = 8.0
-    _MAX_RETRY_AFTER_COOLDOWN_SEC = 45.0

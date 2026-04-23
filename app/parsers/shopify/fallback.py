@@ -79,7 +79,6 @@ def discover_with_browser_fallback(
     *,
     primary_result: ShopifyDiscoveryResult,
     base_url: str,
-    deadline_monotonic: float | None = None,
     on_progress: Callable[[], None] | None = None,
     on_detail_progress: Callable[[dict], None] | None = None,
 ) -> ShopifyDiscoveryResult:
@@ -93,10 +92,7 @@ def discover_with_browser_fallback(
     try:
         fallback_result = fallback_engine.discover(
             base_url,
-            # Do not reuse primary source deadline here: primary Shopify pass may consume
-            # most/all budget and starve fallback before it even starts.
             # Browser parser has its own hard process timeout.
-            deadline_monotonic=None,
             on_progress=on_progress,
             on_detail_progress=on_detail_progress,
             export_concurrency=max(

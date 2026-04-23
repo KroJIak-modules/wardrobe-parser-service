@@ -7,13 +7,14 @@ from typing import Callable
 
 from app.parsers.crawlee.client import CrawleeRunnerClient
 from app.parsers.crawlee.mapper import to_shopify_discovery_result
+from app.parsers.engines.contracts import ParserType
 
 
 @dataclass(slots=True)
 class CrawleeParserEngine:
     """Parser engine implementation backed by Node.js Crawlee runner."""
 
-    parser_type: str = "crawlee"
+    parser_type: ParserType = "crawlee"
 
     def discover(
         self,

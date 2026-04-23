@@ -13,6 +13,11 @@ from app.core.config import settings
 from app.models import SourceRunStatus
 from app.services.parser_sync.product_sync_service import ParserProductSyncService
 from app.services.parser_sync.source_run_service import ParserSourceRunService
+from app.services.parser_sync.source_sync_result_mapper import (
+    build_run_error_message,
+    extract_result_counters,
+    resolve_source_run_status,
+)
 
 
 LOGGER = logging.getLogger(__name__)
@@ -44,33 +49,6 @@ class ParserSourceSyncExecutor:
         self.source_run_service = source_run_service
         self.product_sync_service = product_sync_service
         self.discover_source = discover_source
-
-    @staticmethod
-    def _is_non_fatal_warning(message: str) -> bool:
-        text = message.lower()
-        return (
-            "bot_protection_429" in text
-            or "fallback used" in text
-            or "список previews обрезан" in text
-            or "второй проход:" in text
-        )
-
-    @staticmethod
-    def _build_run_error_message(result, *, error_details_limit: int) -> str | None:
-        details = [str(item).strip() for item in (result.error_details or []) if str(item).strip()]
-        if details:
-            return "; ".join(details[:error_details_limit])
-        warnings = [str(item).strip() for item in (result.warnings or []) if str(item).strip()]
-        if (
-            warnings
-            and int(getattr(result, "products_fetch_failed", 0) or 0) == 0
-            and int(getattr(result, "product_urls_found", 0) or 0) > 0
-            and all(ParserSourceSyncExecutor._is_non_fatal_warning(item) for item in warnings)
-        ):
-            return None
-        if warnings:
-            return "; ".join(warnings[:2])
-        return None
 
     def sync_source(
         self,
@@ -119,39 +97,30 @@ class ParserSourceSyncExecutor:
             if on_source_discovered:
                 on_source_discovered(len(result.previews))
 
-            def on_product_processed_with_heartbeat(
-                product_title: str | None,
-                processed_in_source: int,
-                total_in_source: int,
-            ) -> None:
-                if on_product_processed:
-                    on_product_processed(product_title, processed_in_source, total_in_source)
-
             # Browser fallback already reports source-level progress from runner logs.
             should_emit_row_progress = "browser_parser" not in str(result.discovery_mode or "").lower()
             created, updated = self.product_sync_service.sync_source_products(
                 source_id,
                 result.previews,
                 on_product_processed=(
-                    on_product_processed_with_heartbeat
+                    on_product_processed
                     if (on_product_processed and should_emit_row_progress)
                     else None
                 ),
             )
+            fetched, errors, http_429, http_5xx = extract_result_counters(result)
             stats = SourceSyncStats(
                 created=created,
                 updated=updated,
-                fetched=result.products_fetch_succeeded,
-                errors=result.products_fetch_failed,
-                http_429=result.http_429_count,
-                http_5xx=result.http_5xx_count,
+                fetched=fetched,
+                errors=errors,
+                http_429=http_429,
+                http_5xx=http_5xx,
             )
 
-            run_status = SourceRunStatus.SUCCESS
-            if result.products_fetch_failed > 0 or result.product_urls_found == 0:
-                run_status = SourceRunStatus.PARTIAL
+            run_status = resolve_source_run_status(result)
 
-            run_error_message = self._build_run_error_message(
+            run_error_message = build_run_error_message(
                 result,
                 error_details_limit=settings.parser_default_error_details_limit,
             )

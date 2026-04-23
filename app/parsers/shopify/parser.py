@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 from app.core.config import settings
 from app.core.exceptions import ValidationError
 from app.parsers.shopify.discovery.fetch_pipeline import run_preview_fetch_pipeline
-from app.parsers.shopify.discovery.orchestrator import collect_discovery_urls
+from app.parsers.shopify.discovery.url_discovery import collect_discovery_urls
 from app.parsers.shopify.discovery.result_builder import (
     build_discovery_summary,
     resolve_discovery_mode,

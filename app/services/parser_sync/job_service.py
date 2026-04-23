@@ -16,7 +16,7 @@ from app.models import (
     ParserJob,
     JobStatus,
 )
-from app.parsers.engines.registry import get_parser_engine
+from app.parsers.engines.resolver import get_parser_engine
 from app.repositories import (
     ParserJobRepository,
     ParserSourceRepository,
@@ -36,6 +36,7 @@ from app.services.parser_sync.job_execution import (
 from app.services.parser_sync.source_sync_executor import ParserSourceSyncExecutor
 from app.services.parser_sync.source_sync_executor import SourceSyncStats
 from app.services.parser_sync.progress_tracker import job_progress_tracker
+from app.services.parser_sync.progress_callbacks import build_source_sync_progress_callbacks
 
 
 LOGGER = logging.getLogger(__name__)
@@ -111,61 +112,17 @@ class ParserJobService:
                 source_name=source_input.source_name,
                 source_index=source_input.source_index,
             )
-
-            def on_source_discovered(total_products_in_source: int) -> None:
-                job_progress_tracker.set_current_source_expected_products(
-                    job_id=job_id,
-                    total_products=total_products_in_source,
-                )
-
-            def on_product_processed(
-                product_title: str | None,
-                processed_in_source: int,
-                _total_in_source: int,
-            ) -> None:
-                job_progress_tracker.mark_product_processed(
-                    job_id=job_id,
-                    product_title=product_title,
-                    processed_in_current_source=processed_in_source,
-                )
-
-            def on_discovery_progress() -> None:
-                job_progress_tracker.mark_discovery_progress(job_id=job_id)
-
-            def on_discovery_detail_progress(event: dict) -> None:
-                stage = str(event.get("stage") or "").strip()
-                if stage:
-                    job_progress_tracker.set_current_stage(job_id=job_id, stage=stage)
-
-                products_total_raw = event.get("products_total")
-                if products_total_raw is not None:
-                    try:
-                        job_progress_tracker.set_current_source_expected_products_absolute(
-                            job_id=job_id,
-                            total_products=int(products_total_raw),
-                        )
-                    except (TypeError, ValueError):
-                        pass
-
-                products_processed_raw = event.get("products_processed")
-                if products_processed_raw is not None:
-                    try:
-                        job_progress_tracker.set_current_source_processed_products_absolute(
-                            job_id=job_id,
-                            processed_products=int(products_processed_raw),
-                        )
-                    except (TypeError, ValueError):
-                        pass
+            progress_callbacks = build_source_sync_progress_callbacks(job_id)
 
             return service.source_sync_executor.sync_source(
                 job_id=job_id,
                 source_id=source_input.source_id,
                 base_url=source_input.base_url,
                 parser_type=source_input.parser_type,
-                on_source_discovered=on_source_discovered,
-                on_product_processed=on_product_processed,
-                on_discovery_progress=on_discovery_progress,
-                on_discovery_detail_progress=on_discovery_detail_progress,
+                on_source_discovered=progress_callbacks["on_source_discovered"],
+                on_product_processed=progress_callbacks["on_product_processed"],
+                on_discovery_progress=progress_callbacks["on_discovery_progress"],
+                on_discovery_detail_progress=progress_callbacks["on_discovery_detail_progress"],
             )
         except Exception:
             db.rollback()
@@ -215,42 +172,12 @@ class ParserJobService:
             job_progress_tracker.finish_job(job_id=job_id)
             return job
 
-        source_inputs: list[SourceExecutionInput] = []
-
-        for source_index, source_item in enumerate(sources, start=1):
+        source_inputs = self._build_source_inputs(job_id=job_id, sources=sources, totals=totals)
+        if source_inputs is None:
             current = self.job_repo.get_by_id(job_id)
-            if current and current.status == JobStatus.CANCELLED:
-                self.session.commit()
-                job_progress_tracker.finish_job(job_id=job_id)
-                return current
-
-            source = get_or_create_source(
-                source_repo=self.source_repo,
-                name=source_item.name,
-                url=source_item.base_url,
-                parser_type=source_item.parser_type,
-                enabled=source_item.enabled,
-            )
-            try:
-                self.session.flush()
-            except Exception:
-                self.session.rollback()
-                LOGGER.exception("Failed to upsert parser source for base_url=%s", source_item.base_url)
-                totals.errors += 1
-                continue
-
-            if not source.enabled:
-                continue
-
-            source_inputs.append(
-                SourceExecutionInput(
-                    source_id=source.id,
-                    source_name=source_item.name,
-                    source_index=source_index,
-                    base_url=source_item.base_url,
-                    parser_type=source_item.parser_type,
-                )
-            )
+            self.session.commit()
+            job_progress_tracker.finish_job(job_id=job_id)
+            return current
 
         self.session.commit()
 
@@ -316,6 +243,48 @@ class ParserJobService:
         job_progress_tracker.finish_job(job_id=job_id)
 
         return job
+
+    def _build_source_inputs(
+        self,
+        *,
+        job_id: str,
+        sources,
+        totals: JobExecutionTotals,
+    ) -> list[SourceExecutionInput] | None:
+        source_inputs: list[SourceExecutionInput] = []
+        for source_index, source_item in enumerate(sources, start=1):
+            current = self.job_repo.get_by_id(job_id)
+            if current and current.status == JobStatus.CANCELLED:
+                return None
+
+            source = get_or_create_source(
+                source_repo=self.source_repo,
+                name=source_item.name,
+                url=source_item.base_url,
+                parser_type=source_item.parser_type,
+                enabled=source_item.enabled,
+            )
+            try:
+                self.session.flush()
+            except Exception:
+                self.session.rollback()
+                LOGGER.exception("Failed to upsert parser source for base_url=%s", source_item.base_url)
+                totals.errors += 1
+                continue
+
+            if not source.enabled:
+                continue
+
+            source_inputs.append(
+                SourceExecutionInput(
+                    source_id=source.id,
+                    source_name=source_item.name,
+                    source_index=source_index,
+                    base_url=source_item.base_url,
+                    parser_type=source_item.parser_type,
+                )
+            )
+        return source_inputs
 
     def get_job(self, job_id: str) -> Optional[ParserJob]:
         """Get job by ID."""

@@ -1,38 +1,19 @@
-"""Parser engine registry for parser_type-based dispatch."""
+"""Shopify parser engine adapter."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Literal, Protocol
+from typing import Callable
 
 from app.core.config import settings
-from app.core.exceptions import ValidationError
-from app.parsers.crawlee.engine import CrawleeParserEngine
-from app.parsers.shopify.parser import ShopifyParser
+from app.parsers.engines.contracts import ParserType
 from app.parsers.shopify.fallback import discover_with_browser_fallback
-
-ParserType = Literal["shopify", "crawlee"]
-
-
-class ParserEngine(Protocol):
-    """Minimal parser engine contract used by sync services."""
-
-    parser_type: ParserType
-
-    def discover(
-        self,
-        base_url: str,
-        *,
-        deadline_monotonic: float | None = None,
-        on_progress: Callable[[], None] | None = None,
-        on_detail_progress: Callable[[dict], None] | None = None,
-    ):
-        """Run source discovery and return result with previews/counters."""
+from app.parsers.shopify.parser import ShopifyParser
 
 
 @dataclass(slots=True)
 class ShopifyParserEngine:
-    """Shopify parser engine adapter."""
+    """Shopify engine with internal browser-fallback policy."""
 
     parser_type: ParserType = "shopify"
 
@@ -64,21 +45,6 @@ class ShopifyParserEngine:
         return discover_with_browser_fallback(
             primary_result=primary_result,
             base_url=base_url,
-            deadline_monotonic=deadline_monotonic,
             on_progress=on_progress,
             on_detail_progress=on_detail_progress,
         )
-
-
-_ENGINES: dict[ParserType, ParserEngine] = {
-    "shopify": ShopifyParserEngine(),
-    "crawlee": CrawleeParserEngine(),
-}
-
-
-def get_parser_engine(parser_type: str) -> ParserEngine:
-    """Resolve parser engine by parser_type or raise ValidationError."""
-    engine = _ENGINES.get(parser_type)  # type: ignore[arg-type]
-    if not engine:
-        raise ValidationError(f"Неподдерживаемый parser_type: {parser_type}")
-    return engine
