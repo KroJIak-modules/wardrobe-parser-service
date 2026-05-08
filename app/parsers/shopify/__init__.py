@@ -1,1 +1,0 @@
-"""Shopify parser package."""

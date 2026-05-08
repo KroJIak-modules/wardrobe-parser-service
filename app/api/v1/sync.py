@@ -1,92 +1,33 @@
-"""
-API endpoints for sync job management.
-"""
+from fastapi import APIRouter, HTTPException, Query
 
-from typing import Optional
-from fastapi import APIRouter, Depends, status, BackgroundTasks
-from sqlalchemy.orm import Session
+from app.adapters.jadedldn_v1 import JadedldnV1Adapter
+from app.adapters.registry import AdapterRegistry
+from app.core.exceptions import ConfigError
+from app.repositories.source_repository import SourceRepository
+from app.schemas.run_report import SourceRunReport
+from app.services.source_run_service import SourceRunService
+from app.strategies.noop import NoopStrategy
+from app.strategies.registry import StrategyRegistry
 
-from app.core.config import settings
-from app.core.database import get_db
-from app.schemas.parser import (
-    JobResponse,
-    JobLatestResponse,
-    JobCreateRequest,
-    JobCreateResponse,
-    JobCancelResponse,
-)
-from app.services.sync_job_service import SyncJobService
-
-router = APIRouter(tags=["sync"])
+router = APIRouter(prefix='/sync', tags=['sync'])
 
 
-@router.post("/jobs", response_model=JobCreateResponse, status_code=status.HTTP_201_CREATED)
-def create_sync_job(
-    request: JobCreateRequest,
-    background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db)
-):
-    """
-    Create manual sync job.
-    
-    Returns job ID (UUID). Job will start immediately if no other job is running.
-    Frontend should poll GET /api/v1/jobs/latest or GET /api/v1/jobs/{job_id} for status.
-    
-    If sync already in progress, returns 409 Conflict.
-    """
-    service = SyncJobService(db)
-    job = service.create_sync_job(request)
-    background_tasks.add_task(SyncJobService.execute_sync_job_async, job.id)
-    return job
+def _build_service() -> SourceRunService:
+    source_repo = SourceRepository()
+
+    adapter_registry = AdapterRegistry()
+    adapter_registry.register(JadedldnV1Adapter())
+
+    strategy_registry = StrategyRegistry()
+    strategy_registry.register(NoopStrategy())
+
+    return SourceRunService(source_repo, adapter_registry, strategy_registry)
 
 
-@router.get("/jobs/latest", response_model=Optional[JobLatestResponse])
-def get_latest_job(db: Session = Depends(get_db)):
-    """
-    Get latest job status (most recent completed or in-progress).
-    
-    Used by frontend to:
-    - Show "Last sync: 12:34"
-    - Show "Next sync: 17:34"
-    - Determine if "Sync Now" button should be enabled
-    - Show NEW/UPDATED/DELETED product counts
-    """
-    service = SyncJobService(db)
-    return service.get_latest_job()
-
-
-@router.get("/jobs/{job_id}", response_model=JobResponse)
-def get_job(job_id: str, db: Session = Depends(get_db)):
-    """
-    Get detailed job status including per-source execution.
-    
-    Useful for debugging or detailed monitoring.
-    """
-    service = SyncJobService(db)
-    return service.get_job(job_id)
-
-
-@router.post("/jobs/{job_id}/cancel", response_model=JobCancelResponse)
-def cancel_job(job_id: str, db: Session = Depends(get_db)):
-    """Cancel pending or running sync job."""
-    service = SyncJobService(db)
-    return service.cancel_job(job_id)
-
-
-@router.get("/jobs", response_model=list[JobResponse])
-def get_jobs_history(
-    limit: int = settings.api_pagination_default_limit,
-    offset: int = 0,
-    db: Session = Depends(get_db)
-):
-    """
-    Get job history (recent sync jobs).
-    
-    Useful for monitoring/debugging.
-    
-    Query params:
-    - limit: Number of jobs (bounded by SYNC_JOBS_HISTORY_MAX_LIMIT)
-    - offset: Pagination offset (default 0)
-    """
-    service = SyncJobService(db)
-    return service.get_jobs_history(limit=limit, offset=offset)
+@router.post('/sources/{source_key}/run', response_model=SourceRunReport)
+def run_source(source_key: str, dry_run: bool = Query(default=False)) -> SourceRunReport:
+    svc = _build_service()
+    try:
+        return svc.run(source_key=source_key, dry_run=dry_run)
+    except ConfigError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

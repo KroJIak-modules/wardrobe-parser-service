@@ -7,3 +7,4 @@ venv/
 htmlcov/
 crawlee/node_modules/
 browser-parser/node_modules/
+old/
