@@ -6,8 +6,10 @@ from app.core.exceptions import ConfigError
 from app.repositories.source_repository import SourceRepository
 from app.schemas.run_report import SourceRunReport
 from app.services.source_run_service import SourceRunService
-from app.strategies.noop import NoopStrategy
+from app.strategies.browser_export import BrowserExportStrategy
 from app.strategies.registry import StrategyRegistry
+from app.strategies.shopify_js import ShopifyJsStrategy
+from app.strategies.shopify_json import ShopifyJsonStrategy
 
 router = APIRouter(prefix='/sync', tags=['sync'])
 
@@ -19,7 +21,9 @@ def _build_service() -> SourceRunService:
     adapter_registry.register(JadedldnV1Adapter())
 
     strategy_registry = StrategyRegistry()
-    strategy_registry.register(NoopStrategy())
+    strategy_registry.register(ShopifyJsonStrategy())
+    strategy_registry.register(ShopifyJsStrategy())
+    strategy_registry.register(BrowserExportStrategy())
 
     return SourceRunService(source_repo, adapter_registry, strategy_registry)
 
@@ -31,3 +35,5 @@ def run_source(source_key: str, dry_run: bool = Query(default=False)) -> SourceR
         return svc.run(source_key=source_key, dry_run=dry_run)
     except ConfigError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
