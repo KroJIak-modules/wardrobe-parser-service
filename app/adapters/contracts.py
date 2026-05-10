@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol, Sequence
 
 
@@ -17,6 +17,8 @@ class SourceContext:
 class StrategyContext:
     source: SourceContext
     dry_run: bool = False
+    run_id: str = ''
+    diagnostics: dict[str, int | float | str] = field(default_factory=dict)
 
 
 class Strategy(Protocol):

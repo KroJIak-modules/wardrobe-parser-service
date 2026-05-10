@@ -5,6 +5,7 @@ from app.adapters.registry import AdapterRegistry
 from app.core.exceptions import ConfigError
 from app.repositories.source_repository import SourceRecord
 from app.schemas.run_report import SourceRunReport
+from app.services.config_validation_service import ConfigValidationService
 from app.services.source_run_service import SourceRunService
 from app.services.weight_rules_client import WeightRule, WeightRulesPayload
 from app.strategies.registry import StrategyRegistry
@@ -255,6 +256,51 @@ def test_config_validation_fails_without_strategy_sequence() -> None:
         assert True
 
 
+def test_config_validation_requires_shopify_js_workers() -> None:
+    cfg = _base_config()
+    cfg['strategy_sequence'] = ['shopify_js']
+    try:
+        ConfigValidationService.require_strategy_settings(cfg, ['shopify_js'])
+        assert False, 'expected ConfigError'
+    except ConfigError:
+        assert True
+
+
+def test_config_validation_rejects_too_large_sitemap_max_products() -> None:
+    cfg = _base_config()
+    cfg['shopify_sitemap'] = {
+        'max_products': 50001,
+        'include_locale_sitemaps': False,
+        'request_retries': 1,
+    }
+    try:
+        ConfigValidationService.require_strategy_settings(cfg, ['shopify_json'])
+        assert False, 'expected ConfigError'
+    except ConfigError:
+        assert True
+
+
+def test_config_validation_rejects_invalid_json_js_enrichment_field() -> None:
+    cfg = _base_config()
+    cfg['shopify_sitemap'] = {
+        'max_products': 50000,
+        'include_locale_sitemaps': False,
+        'request_retries': 1,
+    }
+    cfg['shopify_json_quality'] = {
+        'max_pages': 50,
+        'collection_limit': 0,
+        'antibot_pause_sec': 3,
+        'retry_backoff_sec': [1, 3],
+        'enrich_from_js_fields': ['price', 'inventory'],
+    }
+    try:
+        ConfigValidationService.require_strategy_settings(cfg, ['shopify_json'])
+        assert False, 'expected ConfigError'
+    except ConfigError:
+        assert True
+
+
 def test_duplicate_policy_marks_error() -> None:
     cfg = _base_config()
     cfg['strategy_payloads']['s1'] = [
@@ -315,3 +361,20 @@ def test_backend_contract_rules_are_applied_in_service_pipeline() -> None:
     report = svc.run('jadedldn.com')
     assert report.total_valid_products == 1
     assert report.weight_source_stats.get('keyword_rule', 0) >= 1
+
+
+def test_visible_coverage_uses_handle_when_hosts_differ() -> None:
+    cfg = _base_config()
+    cfg['visible_catalog_set'] = [
+        'https://www.jadedldn.com/products/u1',
+        'https://www.jadedldn.com/products/u2',
+    ]
+    cfg['strategy_payloads']['s1'] = [
+        {'url': 'https://jadedldn.com/products/u1', 'handle': 'u1', 'price': 10, 'currency': 'USD', 'weight_grams': 500},
+        {'url': 'https://jadedldn.com/products/u2', 'handle': 'u2', 'price': 20, 'currency': 'USD', 'weight_grams': 600},
+    ]
+    svc = _build_service(cfg)
+    report = svc.run('jadedldn.com')
+    assert report.visible_coverage == 1.0
+    assert report.parsed_visible_products == 2
+    assert report.status.value == 'success'

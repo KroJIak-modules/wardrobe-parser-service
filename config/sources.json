@@ -10,35 +10,42 @@
       "config": {
         "adapter_ready": true,
         "adapter_revision": "jadedldn__v1-r2",
-        "use_fixture_payloads": false,
-        "strategy_sequence": ["shopify_json", "shopify_js", "browser_export"],
-        "retry_limits": {
-          "shopify_json": 1,
-          "shopify_js": 1,
-          "browser_export": 0
+        "strategy_sequence": [
+          "shopify_json",
+          "shopify_js"
+        ],
+        "shopify_sitemap": {
+          "max_products": 50000,
+          "include_locale_sitemaps": false,
+          "request_retries": 1
         },
-        "timeouts": {
-          "product_sec": 10,
-          "source_run_sec": 300
-        }
-      }
-    },
-    {
-      "id": 2,
-      "key": "racerworldwide.net",
-      "url": "https://www.racerworldwide.net/",
-      "adapter_key": "racerworldwide__v1",
-      "enabled": true,
-      "sync_enabled": true,
-      "config": {
-        "adapter_ready": true,
-        "adapter_revision": "racerworldwide__v1-r1",
-        "use_fixture_payloads": false,
-        "strategy_sequence": ["shopify_json", "shopify_js", "browser_export"],
+        "shopify_json_quality": {
+          "max_pages": 50,
+          "collection_limit": 0,
+          "antibot_pause_sec": 3,
+          "retry_backoff_sec": [
+            1,
+            3
+          ],
+          "enrich_from_js_fields": [
+            "price",
+            "images"
+          ]
+        },
+        "shopify_js_workers": 7,
+        "shopify_js_quality": {
+          "progress_every": 100,
+          "wait_log_sec": 15,
+          "pause_poll_sec": 0.2,
+          "antibot_pause_sec": 3,
+          "retry_backoff_sec": [
+            1,
+            3
+          ]
+        },
         "retry_limits": {
           "shopify_json": 1,
-          "shopify_js": 1,
-          "browser_export": 0
+          "shopify_js": 1
         },
         "timeouts": {
           "product_sec": 10,

@@ -9,6 +9,7 @@ class StrategyAttempt(BaseModel):
     raw_count: int = 0
     parsed_count: int = 0
     error: str | None = None
+    diagnostics: dict[str, int | float | str] = Field(default_factory=dict)
 
 
 class SourceRunReport(BaseModel):
@@ -29,3 +30,24 @@ class SourceRunReport(BaseModel):
     duration_sec: float = 0.0
     top_valid_products: list[dict] = Field(default_factory=list)
     weight_source_stats: dict[str, int] = Field(default_factory=dict)
+    report_path: str | None = None
+
+
+class SourceRunJobCreated(BaseModel):
+    job_id: str
+    source_key: str
+    dry_run: bool
+    status: SourceRunStatus
+    created_at: str
+
+
+class SourceRunJobStatus(BaseModel):
+    job_id: str
+    source_key: str
+    dry_run: bool
+    status: SourceRunStatus
+    created_at: str
+    started_at: str | None = None
+    finished_at: str | None = None
+    error: str | None = None
+    report: SourceRunReport | None = None

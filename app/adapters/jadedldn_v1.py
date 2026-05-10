@@ -1,73 +1,22 @@
 from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
-import re
 from urllib.parse import urlparse
-import requests
 
 from app.adapters.contracts import SiteAdapter, SourceContext
+from app.services.shopify_policies import ShopifyPolicyFactory
+from app.services.shopify_sitemap_discovery import ShopifySitemapDiscovery
 
 
 class JadedldnV1Adapter:
     adapter_key = 'jadedldn__v1'
-    allowed_strategies = ('shopify_json', 'shopify_js', 'browser_export')
+    allowed_strategies = ('shopify_json', 'shopify_js')
 
     def discover_visible_catalog(self, context: SourceContext) -> list[str]:
         base_url = context.source_url.rstrip('/')
         timeout = int((context.source_config.get('timeouts') or {}).get('product_sec', 10))
-        headers = {'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json,text/plain,*/*'}
-        unique_urls: set[str] = set()
-
-        # Fast path: Shopify products.json pages
-        for page in range(1, 13):
-            try:
-                response = requests.get(
-                    f'{base_url}/products.json',
-                    params={'limit': 250, 'page': page},
-                    headers=headers,
-                    timeout=timeout,
-                )
-            except Exception:
-                continue
-            if response.status_code != 200:
-                continue
-            items = response.json().get('products', [])
-            if not isinstance(items, list):
-                continue
-            for item in items:
-                handle = str((item or {}).get('handle') or '').strip()
-                if handle:
-                    unique_urls.add(f'{base_url}/products/{handle}')
-
-        # Coverage path: public collection feeds
-        try:
-            home = requests.get(base_url + '/', headers={'User-Agent': 'Mozilla/5.0'}, timeout=timeout)
-            handles = sorted(set(re.findall(r'/collections/([a-zA-Z0-9\\-_%]+)', home.text)))
-        except Exception:
-            handles = []
-        for handle in handles[:30]:
-            if not handle:
-                continue
-            try:
-                response = requests.get(
-                    f'{base_url}/collections/{handle}/products.json',
-                    params={'limit': 250},
-                    headers=headers,
-                    timeout=timeout,
-                )
-            except Exception:
-                continue
-            if response.status_code != 200:
-                continue
-            items = response.json().get('products', [])
-            if not isinstance(items, list):
-                continue
-            for item in items:
-                product_handle = str((item or {}).get('handle') or '').strip()
-                if product_handle:
-                    unique_urls.add(f'{base_url}/products/{product_handle}')
-
-        return sorted(unique_urls)
+        policy = ShopifyPolicyFactory.sitemap(context.source_config)
+        return sorted(ShopifySitemapDiscovery.discover_product_urls(base_url, timeout, policy))
 
     def normalize_product(self, raw_product: dict) -> dict:
         url = str(raw_product.get('url') or '').strip()
@@ -125,14 +74,7 @@ class JadedldnV1Adapter:
 
     @staticmethod
     def _extract_handle(url: str) -> str:
-        if not url:
-            return ''
-        parsed = urlparse(url)
-        path = (parsed.path or '').strip('/')
-        if '/products/' in f'/{path}/':
-            return path.split('/products/')[-1].strip('/')
-        chunks = [chunk for chunk in path.split('/') if chunk]
-        return chunks[-1] if chunks else ''
+        return ShopifySitemapDiscovery.extract_handle(url)
 
     @staticmethod
     def _to_decimal(value: object) -> Decimal | None:

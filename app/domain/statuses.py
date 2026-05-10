@@ -20,3 +20,4 @@ class SourceRunStatus(str, Enum):
     SUCCESS = 'success'
     PARTIAL = 'partial'
     FAILED = 'failed'
+    CANCELLED = 'cancelled'

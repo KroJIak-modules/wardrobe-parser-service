@@ -1,10 +1,17 @@
 from __future__ import annotations
-import json
-import re
-from xml.etree import ElementTree
 
-import requests
+from decimal import Decimal
+from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
+from collections import Counter
+import threading
+from urllib.parse import urlparse
+import time
+
 from app.adapters.contracts import StrategyContext
+from app.services.run_logger import RunLogger
+from app.services.shopify_http_client import ShopifyHttpClient
+from app.services.shopify_policies import ShopifyJsQualityPolicy, ShopifyPolicyFactory, ShopifySitemapPolicy
+from app.services.shopify_sitemap_discovery import ShopifySitemapDiscovery
 
 
 class ShopifyJsStrategy:
@@ -12,62 +19,322 @@ class ShopifyJsStrategy:
 
     def run(self, context: StrategyContext) -> list[dict]:
         cfg = context.source.source_config
-        if cfg.get('use_fixture_payloads') is True:
-            fixtures = cfg.get('strategy_payloads', {}).get(self.name, [])
-            return fixtures if isinstance(fixtures, list) else []
+        logger = RunLogger(context.run_id)
 
         base_url = context.source.source_url.rstrip('/')
         timeout = int(cfg.get('timeouts', {}).get('product_sec', 10))
-        product_urls = self._get_product_urls(base_url, timeout)
+        sitemap_policy = ShopifyPolicyFactory.sitemap(cfg)
+        quality = ShopifyPolicyFactory.js_quality(cfg)
+        workers = max(1, int(cfg['shopify_js_workers']))
+        product_urls = self._get_product_urls(base_url, timeout, policy=sitemap_policy)
+        total = len(product_urls)
+        logger.strategy_event('start', self.name, base_url=base_url, total=total, workers=workers)
+
         out: list[dict] = []
-        for url in product_urls:
-            item = self._parse_product_page(url, timeout)
-            if item:
-                out.append(item)
+        failed_urls: list[str] = []
+        fail_types: Counter[str] = Counter()
+        processed = 0
+        pause_until_ts = 0.0
+        pause_lock = threading.Lock()
+
+        def wait_if_paused() -> None:
+            nonlocal pause_until_ts
+            while True:
+                with pause_lock:
+                    now = time.time()
+                    if now >= pause_until_ts:
+                        return
+                    sleep_for = pause_until_ts - now
+                time.sleep(min(quality.pause_poll_sec, max(0.01, sleep_for)))
+
+        def activate_pause(sec: float) -> None:
+            nonlocal pause_until_ts
+            with pause_lock:
+                until = time.time() + sec
+                if until > pause_until_ts:
+                    pause_until_ts = until
+
+        def worker(url: str) -> tuple[str, dict | None, str | None]:
+            wait_if_paused()
+            item, fail_type = self._parse_product_js_with_retry(base_url, url, timeout, activate_pause=activate_pause, quality=quality)
+            return url, item, fail_type
+
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            pending = {pool.submit(worker, u): u for u in product_urls}
+            while pending:
+                done, not_done = wait(pending.keys(), timeout=quality.wait_log_sec, return_when=FIRST_COMPLETED)
+                if not done:
+                    pct = (processed / total) * 100 if total else 100
+                    logger.strategy_event(
+                        'progress',
+                        self.name,
+                        processed=f'{processed}/{total}',
+                        pct=f'{pct:.2f}%',
+                        ok=len(out),
+                        fail=len(failed_urls),
+                        antibot=fail_types.get('antibot', 0),
+                        network=fail_types.get('network', 0),
+                        data=fail_types.get('data', 0),
+                        http_other=fail_types.get('http_other', 0),
+                    )
+                    continue
+                for fut in done:
+                    pending.pop(fut, None)
+                    url, item, fail_type = fut.result()
+                    processed += 1
+                    if item is not None:
+                        out.append(item)
+                    else:
+                        failed_urls.append(url)
+                    if fail_type:
+                        fail_types[fail_type] += 1
+                    if total > 0 and (processed % quality.progress_every == 0 or processed == total):
+                        pct = (processed / total) * 100
+                        logger.strategy_event(
+                            'progress',
+                            self.name,
+                            processed=f'{processed}/{total}',
+                            pct=f'{pct:.2f}%',
+                            ok=len(out),
+                            fail=len(failed_urls),
+                            antibot=fail_types.get('antibot', 0),
+                            network=fail_types.get('network', 0),
+                            data=fail_types.get('data', 0),
+                            http_other=fail_types.get('http_other', 0),
+                        )
+
+        if failed_urls:
+            recovered = 0
+            for url in failed_urls:
+                item = self._parse_product_js(base_url, url, timeout)
+                if item is not None:
+                    out.append(item)
+                    recovered += 1
+            logger.strategy_event('second_pass_done', self.name, recovered=recovered, still_failed=len(failed_urls) - recovered)
+            context.diagnostics.update({
+                'discovered_urls': total,
+                'processed_urls': processed,
+                'parsed_products': len(out),
+                'first_pass_failed_urls': len(failed_urls),
+                'second_pass_recovered': recovered,
+                'second_pass_failed': len(failed_urls) - recovered,
+                'fail_antibot': int(fail_types.get('antibot', 0)),
+                'fail_network': int(fail_types.get('network', 0)),
+                'fail_data': int(fail_types.get('data', 0)),
+                'fail_http_other': int(fail_types.get('http_other', 0)),
+                'workers': workers,
+                'max_products': sitemap_policy.max_products,
+            })
+        else:
+            context.diagnostics.update({
+                'discovered_urls': total,
+                'processed_urls': processed,
+                'parsed_products': len(out),
+                'first_pass_failed_urls': 0,
+                'second_pass_recovered': 0,
+                'second_pass_failed': 0,
+                'fail_antibot': int(fail_types.get('antibot', 0)),
+                'fail_network': int(fail_types.get('network', 0)),
+                'fail_data': int(fail_types.get('data', 0)),
+                'fail_http_other': int(fail_types.get('http_other', 0)),
+                'workers': workers,
+                'max_products': sitemap_policy.max_products,
+            })
+        logger.strategy_event('done', self.name, parsed=len(out), total=total)
         return out
 
     @staticmethod
-    def _get_product_urls(base_url: str, timeout: int) -> list[str]:
-        sitemap_url = f'{base_url}/sitemap_products_1.xml'
-        response = requests.get(sitemap_url, timeout=timeout)
-        response.raise_for_status()
-        root = ElementTree.fromstring(response.text)
-        urls: list[str] = []
-        for loc in root.findall('.//{*}url/{*}loc'):
-            val = (loc.text or '').strip()
-            if val and '/products/' in val:
-                urls.append(val)
-        return urls
+    def _get_product_urls(base_url: str, timeout: int, *, policy: ShopifySitemapPolicy) -> list[str]:
+        return ShopifySitemapDiscovery.discover_product_urls(base_url, timeout, policy)
 
     @staticmethod
-    def _parse_product_page(url: str, timeout: int) -> dict | None:
-        response = requests.get(url, timeout=timeout)
-        response.raise_for_status()
-        html = response.text
-        match = re.search(r'var\s+meta\s*=\s*(\{.*?\});', html, re.DOTALL)
-        title_match = re.search(r'<title>(.*?)</title>', html, re.IGNORECASE | re.DOTALL)
-        title = (title_match.group(1).strip() if title_match else '').split('|')[0].strip()
-        if not match:
-            return {'url': url, 'title': title, 'price': None, 'currency': 'USD', 'weight_grams': None, 'variants': []}
-        try:
-            meta = json.loads(match.group(1))
-        except json.JSONDecodeError:
-            return {'url': url, 'title': title, 'price': None, 'currency': 'USD', 'weight_grams': None, 'variants': []}
+    def _build_js_urls(base_url: str, product_url: str, handle: str) -> list[str]:
+        parsed = urlparse(product_url)
+        direct_path = (parsed.path or '').strip('/')
+        urls: list[str] = []
+        if direct_path:
+            urls.append(f'{base_url}/{direct_path}.js')
+        urls.append(f'{base_url}/products/{handle}.js')
+        dedup: list[str] = []
+        seen: set[str] = set()
+        for value in urls:
+            if value in seen:
+                continue
+            seen.add(value)
+            dedup.append(value)
+        return dedup
 
-        product = meta.get('product') if isinstance(meta, dict) else {}
-        variants = product.get('variants') if isinstance(product, dict) else []
-        first_variant = variants[0] if isinstance(variants, list) and variants else {}
-        image_url = ''
-        featured = product.get('featured_image') if isinstance(product, dict) else {}
-        if isinstance(featured, dict):
-            image_url = str(featured.get('src') or '').strip()
+    @staticmethod
+    def _parse_product_js(base_url: str, product_url: str, timeout: int) -> dict | None:
+        handle = ShopifyJsStrategy._extract_handle(product_url)
+        if not handle:
+            return None
+
+        payload: dict | None = None
+        for js_url in ShopifyJsStrategy._build_js_urls(base_url, product_url, handle):
+            response = ShopifyHttpClient.get_json(js_url, timeout)
+            if response.status_code != 200:
+                continue
+            payload = response.payload
+            break
+        if not isinstance(payload, dict):
+            return None
+
+        variants = payload.get('variants') if isinstance(payload.get('variants'), list) else []
+        currency = str(payload.get('currency') or '').strip().upper() or 'USD'
+        price = ShopifyJsStrategy._min_variant_price(variants, currency)
+        weight_grams = ShopifyJsStrategy._best_variant_weight(variants)
+        images = payload.get('images') if isinstance(payload.get('images'), list) else []
+        normalized_images = [ShopifyJsStrategy._normalize_image_url(str(x), base_url) for x in images if str(x).strip()]
+        normalized_images = [x for x in normalized_images if x]
+        image_url = normalized_images[0] if normalized_images else ''
+
         return {
-            'url': url,
-            'handle': str(product.get('handle') or '').strip() if isinstance(product, dict) else '',
-            'title': str(product.get('title') or title).strip() if isinstance(product, dict) else title,
-            'price': first_variant.get('price'),
-            'currency': 'USD',
-            'weight_grams': first_variant.get('grams'),
-            'variants': variants if isinstance(variants, list) else [],
+            'url': f'{base_url}/products/{handle}',
+            'handle': handle,
+            'title': str(payload.get('title') or '').strip(),
+            'price': price,
+            'currency': currency,
+            'weight_grams': weight_grams,
+            'variants': variants,
+            'images': normalized_images,
             'image_url': image_url,
         }
+
+    @staticmethod
+    def _parse_product_js_with_retry(
+        base_url: str,
+        product_url: str,
+        timeout: int,
+        *,
+        activate_pause,
+        quality: ShopifyJsQualityPolicy,
+    ) -> tuple[dict | None, str | None]:
+        backoffs = quality.retry_backoff_sec
+        result, fail_type = ShopifyJsStrategy._parse_with_classification(base_url, product_url, timeout)
+        if result is not None:
+            return result, None
+        if fail_type == 'antibot':
+            activate_pause(quality.antibot_pause_sec)
+            return None, fail_type
+        for wait_s in backoffs:
+            time.sleep(wait_s)
+            result, fail_type = ShopifyJsStrategy._parse_with_classification(base_url, product_url, timeout)
+            if result is not None:
+                return result, None
+            if fail_type == 'antibot':
+                activate_pause(quality.antibot_pause_sec)
+                return None, fail_type
+        return None, fail_type
+
+    @staticmethod
+    def _parse_with_classification(base_url: str, product_url: str, timeout: int) -> tuple[dict | None, str | None]:
+        handle = ShopifyJsStrategy._extract_handle(product_url)
+        if not handle:
+            return None, 'data'
+        payload: dict | None = None
+        last_fail: str | None = None
+        for js_url in ShopifyJsStrategy._build_js_urls(base_url, product_url, handle):
+            try:
+                response = ShopifyHttpClient.get_json(js_url, timeout)
+            except Exception:
+                last_fail = 'network'
+                continue
+            if response.status_code in {403, 429, 503}:
+                return None, 'antibot'
+            if response.status_code != 200:
+                last_fail = 'http_other'
+                continue
+            candidate = response.payload
+            if candidate is None:
+                last_fail = 'data'
+                continue
+            if isinstance(candidate, dict):
+                payload = candidate
+                break
+            last_fail = 'data'
+        if payload is None:
+            return None, last_fail or 'http_other'
+        if not isinstance(payload, dict):
+            return None, 'data'
+        variants = payload.get('variants') if isinstance(payload.get('variants'), list) else []
+        currency = str(payload.get('currency') or '').strip().upper() or 'USD'
+        price = ShopifyJsStrategy._min_variant_price(variants, currency)
+        weight_grams = ShopifyJsStrategy._best_variant_weight(variants)
+        images = payload.get('images') if isinstance(payload.get('images'), list) else []
+        normalized_images = [ShopifyJsStrategy._normalize_image_url(str(x), base_url) for x in images if str(x).strip()]
+        normalized_images = [x for x in normalized_images if x]
+        image_url = normalized_images[0] if normalized_images else ''
+        return {
+            'url': f'{base_url}/products/{handle}',
+            'handle': handle,
+            'title': str(payload.get('title') or '').strip(),
+            'price': price,
+            'currency': currency,
+            'weight_grams': weight_grams,
+            'variants': variants,
+            'images': normalized_images,
+            'image_url': image_url,
+        }, None
+
+    @staticmethod
+    def _extract_handle(product_url: str) -> str:
+        return ShopifySitemapDiscovery.extract_handle(product_url)
+
+    @staticmethod
+    def _min_variant_price(variants: list[dict], currency: str) -> float | None:
+        minor_values: list[int] = []
+        decimal_values: list[float] = []
+        for variant in variants:
+            if not isinstance(variant, dict):
+                continue
+            raw = variant.get('price')
+            if isinstance(raw, int):
+                if raw > 0:
+                    minor_values.append(raw)
+                continue
+            try:
+                val = float(raw)
+            except Exception:
+                continue
+            if val > 0:
+                decimal_values.append(val)
+        if minor_values:
+            scale = ShopifyJsStrategy._currency_scale(currency)
+            return float(Decimal(min(minor_values)) / (Decimal(10) ** scale))
+        return min(decimal_values) if decimal_values else None
+
+    @staticmethod
+    def _best_variant_weight(variants: list[dict]) -> int | None:
+        values: list[int] = []
+        for variant in variants:
+            if not isinstance(variant, dict):
+                continue
+            raw = variant.get('grams')
+            try:
+                grams = int(raw)
+            except Exception:
+                continue
+            if grams > 0:
+                values.append(grams)
+        return min(values) if values else None
+
+    @staticmethod
+    def _normalize_image_url(value: str, base_url: str) -> str:
+        raw = (value or '').strip()
+        if not raw:
+            return ''
+        if raw.startswith('//'):
+            return 'https:' + raw
+        if raw.startswith('/'):
+            return base_url.rstrip('/') + raw
+        return raw
+
+    @staticmethod
+    def _currency_scale(currency: str) -> int:
+        c = (currency or '').upper()
+        if c in {'JPY', 'KRW', 'VND'}:
+            return 0
+        if c in {'BHD', 'IQD', 'JOD', 'KWD', 'LYD', 'OMR', 'TND'}:
+            return 3
+        return 2

@@ -1,4 +1,5 @@
 from app.core.exceptions import ConfigError
+from app.services.shopify_policies import MAX_COLLECTION_LIMIT, MAX_JSON_PAGES, MAX_PRODUCTS_LIMIT, MAX_REQUEST_RETRIES
 
 
 class ConfigValidationService:
@@ -39,3 +40,79 @@ class ConfigValidationService:
                 raise ConfigError(f'Invalid timeout value for {key}')
             out[key] = value
         return out
+
+    @staticmethod
+    def require_strategy_settings(config: dict, strategy_sequence: list[str]) -> None:
+        if any(item.startswith('shopify_') for item in strategy_sequence):
+            ConfigValidationService._require_shopify_sitemap_policy(config)
+        if 'shopify_json' in strategy_sequence:
+            ConfigValidationService._require_shopify_json_quality(config)
+        if 'shopify_js' in strategy_sequence:
+            workers = config.get('shopify_js_workers')
+            if not isinstance(workers, int) or workers <= 0:
+                raise ConfigError('Missing or invalid source.config.shopify_js_workers')
+            ConfigValidationService._require_shopify_js_quality(config)
+
+    @staticmethod
+    def _require_shopify_sitemap_policy(config: dict) -> None:
+        raw = config.get('shopify_sitemap')
+        if not isinstance(raw, dict):
+            raise ConfigError('Missing source.config.shopify_sitemap')
+        max_products = raw.get('max_products')
+        if not isinstance(max_products, int) or max_products <= 0 or max_products > MAX_PRODUCTS_LIMIT:
+            raise ConfigError(f'Invalid source.config.shopify_sitemap.max_products: must be 1..{MAX_PRODUCTS_LIMIT}')
+        include_locale_sitemaps = raw.get('include_locale_sitemaps')
+        if not isinstance(include_locale_sitemaps, bool):
+            raise ConfigError('Invalid source.config.shopify_sitemap.include_locale_sitemaps')
+        request_retries = raw.get('request_retries')
+        if not isinstance(request_retries, int) or request_retries < 0 or request_retries > MAX_REQUEST_RETRIES:
+            raise ConfigError('Invalid source.config.shopify_sitemap.request_retries')
+
+    @staticmethod
+    def _require_shopify_json_quality(config: dict) -> None:
+        raw = config.get('shopify_json_quality')
+        if not isinstance(raw, dict):
+            raise ConfigError('Missing source.config.shopify_json_quality')
+        max_pages = raw.get('max_pages')
+        if not isinstance(max_pages, int) or max_pages <= 0 or max_pages > MAX_JSON_PAGES:
+            raise ConfigError('Invalid source.config.shopify_json_quality.max_pages')
+        collection_limit = raw.get('collection_limit')
+        if not isinstance(collection_limit, int) or collection_limit < 0 or collection_limit > MAX_COLLECTION_LIMIT:
+            raise ConfigError('Invalid source.config.shopify_json_quality.collection_limit')
+        enrich_from_js_fields = raw.get('enrich_from_js_fields')
+        if not isinstance(enrich_from_js_fields, list):
+            raise ConfigError('Missing source.config.shopify_json_quality.enrich_from_js_fields')
+        allowed_enrichment_fields = {'price', 'images'}
+        for field in enrich_from_js_fields:
+            if not isinstance(field, str) or field not in allowed_enrichment_fields:
+                raise ConfigError('Invalid source.config.shopify_json_quality.enrich_from_js_fields')
+        ConfigValidationService._require_number(raw, 'antibot_pause_sec')
+        ConfigValidationService._require_backoffs(raw, 'shopify_json_quality')
+
+    @staticmethod
+    def _require_shopify_js_quality(config: dict) -> None:
+        raw = config.get('shopify_js_quality')
+        if not isinstance(raw, dict):
+            raise ConfigError('Missing source.config.shopify_js_quality')
+        progress_every = raw.get('progress_every')
+        if not isinstance(progress_every, int) or progress_every <= 0:
+            raise ConfigError('Invalid source.config.shopify_js_quality.progress_every')
+        ConfigValidationService._require_number(raw, 'wait_log_sec')
+        ConfigValidationService._require_number(raw, 'pause_poll_sec')
+        ConfigValidationService._require_number(raw, 'antibot_pause_sec')
+        ConfigValidationService._require_backoffs(raw, 'shopify_js_quality')
+
+    @staticmethod
+    def _require_number(raw: dict, key: str) -> None:
+        value = raw.get(key)
+        if not isinstance(value, (int, float)) or value <= 0:
+            raise ConfigError(f'Invalid source.config.{key}')
+
+    @staticmethod
+    def _require_backoffs(raw: dict, section: str) -> None:
+        values = raw.get('retry_backoff_sec')
+        if not isinstance(values, list) or not values:
+            raise ConfigError(f'Missing source.config.{section}.retry_backoff_sec')
+        for value in values:
+            if not isinstance(value, (int, float)) or value <= 0:
+                raise ConfigError(f'Invalid source.config.{section}.retry_backoff_sec')
