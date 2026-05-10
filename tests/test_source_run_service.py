@@ -1,4 +1,6 @@
 from dataclasses import dataclass
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from app.adapters.contracts import SiteAdapter, SourceContext, Strategy, StrategyContext
 from app.adapters.registry import AdapterRegistry
@@ -87,6 +89,16 @@ class FakeBackendContractWeightRulesClient:
         return WeightRulesPayload(revision=revision, rules=out)
 
 
+class FakeReportService:
+    def __init__(self) -> None:
+        self._tmp = TemporaryDirectory()
+        self.path = Path(self._tmp.name) / 'report.md'
+
+    def write(self, report: SourceRunReport) -> Path:
+        self.path.write_text('test report\n', encoding='utf-8')
+        return self.path
+
+
 def _build_service(config: dict, *, error_strategies: set[str] | None = None) -> SourceRunService:
     record = SourceRecord(
         id=1,
@@ -110,7 +122,7 @@ def _build_service(config: dict, *, error_strategies: set[str] | None = None) ->
         else:
             strategies.register(PayloadStrategy(name))
 
-    return SourceRunService(repo, adapters, strategies)
+    return SourceRunService(repo, adapters, strategies, markdown_report_service=FakeReportService())
 
 
 def _build_service_with_rules(config: dict, rules: list[WeightRule]) -> SourceRunService:
@@ -129,7 +141,13 @@ def _build_service_with_rules(config: dict, rules: list[WeightRule]) -> SourceRu
     strategies = StrategyRegistry()
     for name in ('s1', 's2', 's3'):
         strategies.register(PayloadStrategy(name))
-    return SourceRunService(repo, adapters, strategies, weight_rules_client=FakeWeightRulesClient(rules))
+    return SourceRunService(
+        repo,
+        adapters,
+        strategies,
+        markdown_report_service=FakeReportService(),
+        weight_rules_client=FakeWeightRulesClient(rules),
+    )
 
 
 def _build_service_with_backend_contract(config: dict, payload: dict) -> SourceRunService:
@@ -148,7 +166,13 @@ def _build_service_with_backend_contract(config: dict, payload: dict) -> SourceR
     strategies = StrategyRegistry()
     for name in ('s1', 's2', 's3'):
         strategies.register(PayloadStrategy(name))
-    return SourceRunService(repo, adapters, strategies, weight_rules_client=FakeBackendContractWeightRulesClient(payload))
+    return SourceRunService(
+        repo,
+        adapters,
+        strategies,
+        markdown_report_service=FakeReportService(),
+        weight_rules_client=FakeBackendContractWeightRulesClient(payload),
+    )
 
 
 def _base_config() -> dict:

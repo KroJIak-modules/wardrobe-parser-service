@@ -4,6 +4,7 @@ from app.adapters.jadedldn_v1 import JadedldnV1Adapter
 from app.adapters.registry import AdapterRegistry
 from app.core.config import settings
 from app.repositories.source_repository import SourceRepository
+from app.services.run_report_markdown_service import RunReportMarkdownService
 from app.services.source_run_service import SourceRunService
 from app.services.weight_rules_client import WeightRulesClient
 from app.strategies.registry import StrategyRegistry
@@ -25,5 +26,6 @@ class SourceRunServiceFactory:
             SourceRepository(),
             adapter_registry,
             strategy_registry,
+            markdown_report_service=RunReportMarkdownService(reports_root=settings.reports_root),
             weight_rules_client=weight_rules_client,
         )
