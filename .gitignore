@@ -8,3 +8,8 @@ htmlcov/
 crawlee/node_modules/
 browser-parser/node_modules/
 old/
+
+# Service runtime artifacts
+reports/
+service/
+scripts/

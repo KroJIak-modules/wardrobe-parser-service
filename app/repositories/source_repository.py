@@ -1,4 +1,8 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
+import json
+from pathlib import Path
 
 
 @dataclass
@@ -13,53 +17,31 @@ class SourceRecord:
 
 
 class SourceRepository:
-    """Stage-2 pilot repository with explicit per-site config."""
+    """File-backed source registry for rework stage."""
+
+    def __init__(self, config_path: str = 'config/sources.json') -> None:
+        self.config_path = Path(config_path)
 
     def get_by_key(self, source_key: str) -> SourceRecord:
-        if source_key != 'jadedldn.com':
-            raise KeyError(f'Unknown source key for pilot stage: {source_key}')
-
-        return SourceRecord(
-            id=1,
-            key=source_key,
-            url='https://jadedldn.com/',
-            adapter_key='jadedldn__v1',
-            enabled=True,
-            sync_enabled=True,
-            config={
-                'strategy_sequence': ['shopify_json', 'shopify_js', 'browser_export'],
-                'retry_limits': {
-                    'shopify_json': 1,
-                    'shopify_js': 1,
-                    'browser_export': 0,
-                },
-                'timeouts': {'product_sec': 10, 'source_run_sec': 300},
-                'visible_catalog_set': [
-                    'https://jadedldn.com/products/alpha-jacket',
-                    'https://jadedldn.com/products/beta-hoodie',
-                ],
-                'strategy_payloads': {
-                    'shopify_json': [
-                        {
-                            'url': 'https://jadedldn.com/products/alpha-jacket',
-                            'title': 'Alpha Jacket',
-                            'price': 220,
-                            'currency': 'USD',
-                            'weight_grams': 900,
-                            'variants': [{'title': 'M', 'available': True}],
-                        }
-                    ],
-                    'shopify_js': [
-                        {
-                            'url': 'https://jadedldn.com/products/beta-hoodie',
-                            'title': 'Beta Hoodie',
-                            'price': 140,
-                            'currency': 'USD',
-                            'weight_grams': 700,
-                            'variants': [{'title': 'L', 'available': True}],
-                        }
-                    ],
-                    'browser_export': [],
-                },
-            },
-        )
+        if not self.config_path.exists():
+            raise KeyError(f'Sources config not found: {self.config_path}')
+        raw = json.loads(self.config_path.read_text(encoding='utf-8'))
+        items = raw.get('sources') if isinstance(raw, dict) else None
+        if not isinstance(items, list):
+            raise KeyError('Invalid sources config format: expected {"sources": [...]}')
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            key = str(item.get('key') or '').strip()
+            if key != source_key:
+                continue
+            return SourceRecord(
+                id=int(item.get('id') or 0),
+                key=key,
+                url=str(item.get('url') or '').strip(),
+                adapter_key=str(item.get('adapter_key') or '').strip(),
+                enabled=bool(item.get('enabled', True)),
+                sync_enabled=bool(item.get('sync_enabled', True)),
+                config=dict(item.get('config') or {}),
+            )
+        raise KeyError(f'Unknown source key: {source_key}')

@@ -1,0 +1,50 @@
+{
+  "sources": [
+    {
+      "id": 1,
+      "key": "jadedldn.com",
+      "url": "https://jadedldn.com/",
+      "adapter_key": "jadedldn__v1",
+      "enabled": true,
+      "sync_enabled": true,
+      "config": {
+        "adapter_ready": true,
+        "adapter_revision": "jadedldn__v1-r2",
+        "use_fixture_payloads": false,
+        "strategy_sequence": ["shopify_json", "shopify_js", "browser_export"],
+        "retry_limits": {
+          "shopify_json": 1,
+          "shopify_js": 1,
+          "browser_export": 0
+        },
+        "timeouts": {
+          "product_sec": 10,
+          "source_run_sec": 300
+        }
+      }
+    },
+    {
+      "id": 2,
+      "key": "racerworldwide.net",
+      "url": "https://www.racerworldwide.net/",
+      "adapter_key": "racerworldwide__v1",
+      "enabled": true,
+      "sync_enabled": true,
+      "config": {
+        "adapter_ready": true,
+        "adapter_revision": "racerworldwide__v1-r1",
+        "use_fixture_payloads": false,
+        "strategy_sequence": ["shopify_json", "shopify_js", "browser_export"],
+        "retry_limits": {
+          "shopify_json": 1,
+          "shopify_js": 1,
+          "browser_export": 0
+        },
+        "timeouts": {
+          "product_sec": 10,
+          "source_run_sec": 300
+        }
+      }
+    }
+  ]
+}

@@ -6,6 +6,7 @@ class Settings(BaseSettings):
 
     service_name: str = 'wardrobe-parser-service-v2'
     cors_allowed_origins: str = '*'
+    backend_base_url: str = 'http://backend:8000'
 
 
 settings = Settings()

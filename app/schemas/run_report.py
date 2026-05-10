@@ -24,3 +24,8 @@ class SourceRunReport(BaseModel):
     quarantined_urls: list[str] = Field(default_factory=list)
     aggregated_unavailable_reasons: dict[str, int] = Field(default_factory=dict)
     errors: list[str] = Field(default_factory=list)
+    total_found_products: int = 0
+    total_valid_products: int = 0
+    duration_sec: float = 0.0
+    top_valid_products: list[dict] = Field(default_factory=list)
+    weight_source_stats: dict[str, int] = Field(default_factory=dict)

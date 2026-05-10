@@ -8,8 +8,8 @@ import requests
 from app.adapters.contracts import SiteAdapter, SourceContext
 
 
-class JadedldnV1Adapter:
-    adapter_key = 'jadedldn__v1'
+class RacerworldwideV1Adapter:
+    adapter_key = 'racerworldwide__v1'
     allowed_strategies = ('shopify_json', 'shopify_js', 'browser_export')
 
     def discover_visible_catalog(self, context: SourceContext) -> list[str]:
@@ -18,7 +18,6 @@ class JadedldnV1Adapter:
         headers = {'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json,text/plain,*/*'}
         unique_urls: set[str] = set()
 
-        # Fast path: Shopify products.json pages
         for page in range(1, 13):
             try:
                 response = requests.get(
@@ -39,7 +38,6 @@ class JadedldnV1Adapter:
                 if handle:
                     unique_urls.add(f'{base_url}/products/{handle}')
 
-        # Coverage path: public collection feeds
         try:
             home = requests.get(base_url + '/', headers={'User-Agent': 'Mozilla/5.0'}, timeout=timeout)
             handles = sorted(set(re.findall(r'/collections/([a-zA-Z0-9\\-_%]+)', home.text)))
@@ -82,7 +80,7 @@ class JadedldnV1Adapter:
         if not isinstance(variants, list) or not variants:
             variants = [{'title': 'default', 'available': True}]
 
-        normalized = {
+        return {
             'url': url,
             'handle': handle,
             'title': title,
@@ -92,7 +90,6 @@ class JadedldnV1Adapter:
             'image_url': self._first_image(raw_product),
             'variants': variants,
         }
-        return normalized
 
     def validate_product(self, normalized_product: dict) -> tuple[bool, list[str]]:
         reasons: list[str] = []
@@ -146,15 +143,15 @@ class JadedldnV1Adapter:
     @staticmethod
     def _first_image(raw_product: dict) -> str:
         base_url = str(raw_product.get('url') or '').strip()
-        image_url = JadedldnV1Adapter._normalize_image_url(str(raw_product.get('image_url') or '').strip(), base_url)
+        image_url = RacerworldwideV1Adapter._normalize_image_url(str(raw_product.get('image_url') or '').strip(), base_url)
         if image_url:
             return image_url
         images = raw_product.get('images')
         if isinstance(images, list) and images:
             first = images[0]
             if isinstance(first, dict):
-                return JadedldnV1Adapter._normalize_image_url(str(first.get('src') or '').strip(), base_url)
-            return JadedldnV1Adapter._normalize_image_url(str(first).strip(), base_url)
+                return RacerworldwideV1Adapter._normalize_image_url(str(first.get('src') or '').strip(), base_url)
+            return RacerworldwideV1Adapter._normalize_image_url(str(first).strip(), base_url)
         return ''
 
     @staticmethod
