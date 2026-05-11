@@ -1173,6 +1173,28 @@
           "show_ui": false
         }
       }
+    },
+    {
+      "id": 22,
+      "key": "store-backlash.jp",
+      "url": "https://store-backlash.jp/",
+      "adapter_key": "store_backlash__v1",
+      "enabled": true,
+      "sync_enabled": true,
+      "config": {
+        "adapter_ready": false,
+        "adapter_revision": "store_backlash__v1-r1",
+        "strategy_sequence": [
+          "store_backlash_colorme"
+        ],
+        "retry_limits": {
+          "store_backlash_colorme": 0
+        },
+        "timeouts": {
+          "product_sec": 20,
+          "source_run_sec": 420
+        }
+      }
     }
   ]
 }

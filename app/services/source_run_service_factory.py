@@ -21,6 +21,7 @@ from app.adapters.driewgarments_v1 import DriewgarmentsV1Adapter
 from app.adapters.junalyx_v1 import JunalyxV1Adapter
 from app.adapters.archived_v1 import ArchivedV1Adapter
 from app.adapters.dolcevitahub_v1 import DolcevitahubV1Adapter
+from app.adapters.store_backlash_v1 import StoreBacklashV1Adapter
 from app.adapters.registry import AdapterRegistry
 from app.core.config import settings
 from app.repositories.source_repository import SourceRepository
@@ -31,6 +32,7 @@ from app.strategies.registry import StrategyRegistry
 from app.strategies.shopify_browser_extension import ShopifyBrowserExtensionStrategy
 from app.strategies.shopify_js import ShopifyJsStrategy
 from app.strategies.shopify_json import ShopifyJsonStrategy
+from app.strategies.store_backlash_colorme import StoreBacklashColormeStrategy
 
 
 class SourceRunServiceFactory:
@@ -57,11 +59,13 @@ class SourceRunServiceFactory:
         adapter_registry.register(JunalyxV1Adapter())
         adapter_registry.register(ArchivedV1Adapter())
         adapter_registry.register(DolcevitahubV1Adapter())
+        adapter_registry.register(StoreBacklashV1Adapter())
 
         strategy_registry = StrategyRegistry()
         strategy_registry.register(ShopifyJsonStrategy())
         strategy_registry.register(ShopifyJsStrategy())
         strategy_registry.register(ShopifyBrowserExtensionStrategy())
+        strategy_registry.register(StoreBacklashColormeStrategy())
 
         weight_rules_client = WeightRulesClient(backend_base_url=settings.backend_base_url)
         return SourceRunService(
