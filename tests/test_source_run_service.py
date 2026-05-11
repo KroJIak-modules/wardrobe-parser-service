@@ -312,7 +312,7 @@ def test_config_validation_rejects_invalid_json_js_enrichment_field() -> None:
         'request_retries': 1,
     }
     cfg['shopify_currency'] = {
-        'allowed_currencies': ['EUR', 'USD', 'GBP'],
+        'requested_currency_priority': ['USD', 'EUR', 'GBP'],
         'use_storefront_currency_fallback': True,
     }
     cfg['shopify_json_quality'] = {

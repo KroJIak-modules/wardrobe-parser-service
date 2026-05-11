@@ -1,14 +1,28 @@
 from __future__ import annotations
 
 from urllib.parse import unquote, urlparse
+import requests
+from app.core.exceptions import StorefrontBlockedError
 from app.services.shopify_http_client import ShopifyHttpClient
 from app.services.shopify_policies import ShopifySitemapPolicy
 
 
 class ShopifySitemapDiscovery:
     @staticmethod
+    def _ensure_storefront_not_blocked(base_url: str, timeout: int) -> None:
+        response = requests.get(base_url.rstrip('/') + '/', timeout=timeout, headers=ShopifyHttpClient.HEADERS, allow_redirects=True)
+        final_url = str(response.url or '').lower()
+        body = (response.text or '').lower()
+        is_password_gate = final_url.endswith('/password') or '/password' in final_url
+        if not is_password_gate:
+            is_password_gate = ('storefront password' in body) or ('enter using password' in body)
+        if is_password_gate:
+            raise StorefrontBlockedError('storefront_password_gate')
+
+    @staticmethod
     def discover_product_urls(base_url: str, timeout: int, policy: ShopifySitemapPolicy) -> list[str]:
         normalized_base_url = base_url.rstrip('/')
+        ShopifySitemapDiscovery._ensure_storefront_not_blocked(normalized_base_url, timeout)
         base_host = (urlparse(normalized_base_url).netloc or '').lower()
         index_root = ShopifyHttpClient.get_xml_root(f'{normalized_base_url}/sitemap.xml', timeout, request_retries=policy.request_retries)
 

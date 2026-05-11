@@ -25,14 +25,15 @@ class ShopifyJsonStrategy:
         currency_policy = ShopifyPolicyFactory.currency(cfg)
         storefront_currency = ''
         storefront_currency_source = 'disabled'
-        if currency_policy.requested_currency:
-            storefront_currency = currency_policy.requested_currency
-            storefront_currency_source = 'shopify_currency_requested'
+        requested_priority = list(currency_policy.requested_currency_priority)
+        if requested_priority:
+            storefront_currency = requested_priority[0]
+            storefront_currency_source = 'shopify_currency_requested_priority'
         elif currency_policy.use_storefront_currency_fallback:
             storefront_currency, storefront_currency_source = ShopifyCurrencyResolver.resolve_storefront_currency(
                 base_url,
                 timeout,
-                currency_policy.allowed_currencies,
+                ('EUR', 'USD', 'GBP'),
             )
         logger.strategy_event('start', self.name, base_url=base_url, max_products=sitemap_policy.max_products)
         unique: dict[int, dict] = {}
@@ -43,6 +44,7 @@ class ShopifyJsonStrategy:
             quality=quality,
             max_products=sitemap_policy.max_products,
             storefront_currency=storefront_currency,
+            currency_priority=tuple(requested_priority),
             logger=logger,
             fail_types=fail_types,
         )
@@ -68,7 +70,7 @@ class ShopifyJsonStrategy:
                 base_url,
                 timeout,
                 quality=quality,
-                allowed_currencies=currency_policy.allowed_currencies,
+                allowed_currencies=('EUR', 'USD', 'GBP'),
                 storefront_currency=storefront_currency,
                 fail_types=fail_types,
             )
@@ -95,6 +97,7 @@ class ShopifyJsonStrategy:
         quality: ShopifyJsonQualityPolicy,
         max_products: int,
         storefront_currency: str,
+        currency_priority: tuple[str, ...],
         logger: RunLogger,
         fail_types: Counter[str],
     ) -> tuple[list[dict], int]:
@@ -105,7 +108,12 @@ class ShopifyJsonStrategy:
         page = 1
         while len(out) < max_products:
             items, state = self._fetch_products_page_with_retry(
-                base_url, timeout, page=page, storefront_currency=storefront_currency, quality=quality
+                base_url,
+                timeout,
+                page=page,
+                storefront_currency=storefront_currency,
+                currency_priority=currency_priority,
+                quality=quality,
             )
             if items is None:
                 fail_types[state or 'http_other'] += 1
@@ -132,7 +140,9 @@ class ShopifyJsonStrategy:
             for page in failed_pages:
                 if len(out) >= max_products:
                     break
-                items, _state = self._fetch_products_page(base_url, timeout, page=page, storefront_currency=storefront_currency)
+                items, _state = self._fetch_products_page(
+                    base_url, timeout, page=page, storefront_currency=storefront_currency, currency_priority=currency_priority
+                )
                 if items:
                     remaining = max_products - len(out)
                     out.extend(items[:remaining])
@@ -149,30 +159,33 @@ class ShopifyJsonStrategy:
         return f'{len(items)}:{first_id}:{last_id}'
 
     def _fetch_products_page(
-        self, base_url: str, timeout: int, *, page: int, storefront_currency: str
+        self, base_url: str, timeout: int, *, page: int, storefront_currency: str, currency_priority: tuple[str, ...]
     ) -> tuple[list[dict] | None, str | None]:
-        try:
-            params = {'limit': self.PAGE_LIMIT, 'page': page}
-            if storefront_currency:
-                params['currency'] = storefront_currency
-            response = ShopifyHttpClient.get_json(
-                f'{base_url}/products.json',
-                params=params,
-                timeout=timeout,
-            )
-        except Exception:
-            return None, 'network'
-        if response.status_code in {403, 429, 503}:
-            return None, 'antibot'
-        if response.status_code != 200:
-            return None, 'http_other'
-        if not isinstance(response.payload, dict):
-            return None, 'data'
-        payload = response.payload
-        items = payload.get('products', [])
-        if not isinstance(items, list):
-            return None, 'data'
-        return items, None
+        currencies = [x for x in currency_priority if x] or ([storefront_currency] if storefront_currency else [''])
+        last_state: str | None = None
+        for cur in currencies:
+            try:
+                params = {'limit': self.PAGE_LIMIT, 'page': page}
+                if cur:
+                    params['currency'] = cur
+                response = ShopifyHttpClient.get_json(f'{base_url}/products.json', params=params, timeout=timeout)
+            except Exception:
+                last_state = 'network'
+                continue
+            if response.status_code in {403, 429, 503}:
+                return None, 'antibot'
+            if response.status_code != 200:
+                last_state = 'http_other'
+                continue
+            if not isinstance(response.payload, dict):
+                last_state = 'data'
+                continue
+            items = response.payload.get('products', [])
+            if not isinstance(items, list):
+                last_state = 'data'
+                continue
+            return items, None
+        return None, last_state or 'http_other'
 
     def _fetch_products_page_with_retry(
         self,
@@ -181,9 +194,12 @@ class ShopifyJsonStrategy:
         *,
         page: int,
         storefront_currency: str,
+        currency_priority: tuple[str, ...],
         quality: ShopifyJsonQualityPolicy,
     ) -> tuple[list[dict] | None, str | None]:
-        items, state = self._fetch_products_page(base_url, timeout, page=page, storefront_currency=storefront_currency)
+        items, state = self._fetch_products_page(
+            base_url, timeout, page=page, storefront_currency=storefront_currency, currency_priority=currency_priority
+        )
         if items is not None:
             return items, None
         if state == 'antibot':
@@ -191,7 +207,9 @@ class ShopifyJsonStrategy:
             return None, state
         for wait_s in quality.retry_backoff_sec:
             time.sleep(wait_s)
-            items, state = self._fetch_products_page(base_url, timeout, page=page, storefront_currency=storefront_currency)
+            items, state = self._fetch_products_page(
+                base_url, timeout, page=page, storefront_currency=storefront_currency, currency_priority=currency_priority
+            )
             if items is not None:
                 return items, None
             if state == 'antibot':

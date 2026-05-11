@@ -8,3 +8,7 @@ class NotFoundError(Exception):
 
 class ConfigError(Exception):
     pass
+
+
+class StorefrontBlockedError(Exception):
+    pass

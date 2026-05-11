@@ -23,13 +23,13 @@ def test_currency_policy_flag_is_site_configured() -> None:
 
     disabled = ShopifyPolicyFactory.currency({
         'shopify_currency': {
-            'allowed_currencies': ['EUR', 'USD', 'GBP'],
+            'requested_currency_priority': ['USD', 'EUR', 'GBP'],
             'use_storefront_currency_fallback': False,
         }
     })
     enabled = ShopifyPolicyFactory.currency({
         'shopify_currency': {
-            'allowed_currencies': ['EUR', 'USD', 'GBP'],
+            'requested_currency_priority': ['USD', 'EUR', 'GBP'],
             'use_storefront_currency_fallback': True,
         }
     })
@@ -37,17 +37,16 @@ def test_currency_policy_flag_is_site_configured() -> None:
     assert enabled.use_storefront_currency_fallback is True
 
 
-def test_currency_policy_requested_currency_is_normalized() -> None:
+def test_currency_policy_requested_currency_priority_is_normalized() -> None:
     from app.services.shopify_policies import ShopifyPolicyFactory
 
     policy = ShopifyPolicyFactory.currency({
         'shopify_currency': {
-            'allowed_currencies': ['EUR', 'USD', 'GBR'],
+            'requested_currency_priority': ['gbr', 'usd'],
             'use_storefront_currency_fallback': True,
-            'requested_currency': 'gbr',
         }
     })
-    assert policy.requested_currency == 'GBP'
+    assert policy.requested_currency_priority[0] == 'GBP'
 
 
 def test_shopify_js_weight_accepts_weight_field() -> None:

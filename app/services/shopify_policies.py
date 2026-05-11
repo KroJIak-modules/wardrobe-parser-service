@@ -17,9 +17,8 @@ class ShopifySitemapPolicy:
 
 @dataclass(frozen=True)
 class ShopifyCurrencyPolicy:
-    allowed_currencies: tuple[str, ...]
+    requested_currency_priority: tuple[str, ...]
     use_storefront_currency_fallback: bool
-    requested_currency: str
 
 
 @dataclass(frozen=True)
@@ -43,13 +42,12 @@ class ShopifyPolicyFactory:
     def currency(config: dict) -> ShopifyCurrencyPolicy:
         raw = config.get('shopify_currency') if isinstance(config.get('shopify_currency'), dict) else {}
         return ShopifyCurrencyPolicy(
-            allowed_currencies=tuple(
+            requested_currency_priority=tuple(
                 'GBP' if str(x).strip().upper() == 'GBR' else str(x).strip().upper()
-                for x in (raw.get('allowed_currencies') or [])
+                for x in (raw.get('requested_currency_priority') or [])
                 if str(x).strip()
             ),
             use_storefront_currency_fallback=bool(raw.get('use_storefront_currency_fallback')),
-            requested_currency='GBP' if str(raw.get('requested_currency') or '').strip().upper() == 'GBR' else str(raw.get('requested_currency') or '').strip().upper(),
         )
 
     @staticmethod

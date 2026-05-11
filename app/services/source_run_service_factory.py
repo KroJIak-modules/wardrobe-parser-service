@@ -9,6 +9,13 @@ from app.adapters.professore_v1 import ProfessoreV1Adapter
 from app.adapters.thelastconspiracy_v1 import ThelastconspiracyV1Adapter
 from app.adapters.racerworldwide_v1 import RacerworldwideV1Adapter
 from app.adapters.fourteenthaddiction_v1 import FourteenthaddictionV1Adapter
+from app.adapters.prayingg_v1 import PrayinggV1Adapter
+from app.adapters.fourtwofour_v1 import FourtwofourV1Adapter
+from app.adapters.remnantsvintage_v1 import RemnantsvintageV1Adapter
+from app.adapters.misssixty_v1 import MisssixtyV1Adapter
+from app.adapters.hlorenzo_v1 import HlorenzoV1Adapter
+from app.adapters.simonerocha_v1 import SimonerochaV1Adapter
+from app.adapters.orimono_v1 import OrimonoV1Adapter
 from app.adapters.registry import AdapterRegistry
 from app.core.config import settings
 from app.repositories.source_repository import SourceRepository
@@ -32,6 +39,13 @@ class SourceRunServiceFactory:
         adapter_registry.register(ThelastconspiracyV1Adapter())
         adapter_registry.register(RacerworldwideV1Adapter())
         adapter_registry.register(FourteenthaddictionV1Adapter())
+        adapter_registry.register(PrayinggV1Adapter())
+        adapter_registry.register(FourtwofourV1Adapter())
+        adapter_registry.register(RemnantsvintageV1Adapter())
+        adapter_registry.register(MisssixtyV1Adapter())
+        adapter_registry.register(HlorenzoV1Adapter())
+        adapter_registry.register(SimonerochaV1Adapter())
+        adapter_registry.register(OrimonoV1Adapter())
 
         strategy_registry = StrategyRegistry()
         strategy_registry.register(ShopifyJsonStrategy())

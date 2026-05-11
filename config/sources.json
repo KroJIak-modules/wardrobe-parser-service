@@ -50,13 +50,12 @@
           "source_run_sec": 300
         },
         "shopify_currency": {
-          "allowed_currencies": [
-            "EUR",
-            "USD",
-            "GBP"
-          ],
           "use_storefront_currency_fallback": false,
-          "requested_currency": "USD"
+          "requested_currency_priority": [
+            "USD",
+            "EUR",
+            "GBP"
+          ]
         }
       }
     },
@@ -96,13 +95,12 @@
           "source_run_sec": 300
         },
         "shopify_currency": {
-          "allowed_currencies": [
-            "EUR",
-            "USD",
-            "GBP"
-          ],
           "use_storefront_currency_fallback": false,
-          "requested_currency": "USD"
+          "requested_currency_priority": [
+            "USD",
+            "EUR",
+            "GBP"
+          ]
         },
         "shopify_js_workers": 7,
         "shopify_js_quality": {
@@ -153,13 +151,12 @@
           "source_run_sec": 300
         },
         "shopify_currency": {
-          "allowed_currencies": [
-            "EUR",
-            "USD",
-            "GBP"
-          ],
           "use_storefront_currency_fallback": false,
-          "requested_currency": "USD"
+          "requested_currency_priority": [
+            "USD",
+            "EUR",
+            "GBP"
+          ]
         },
         "shopify_js_workers": 7,
         "shopify_js_quality": {
@@ -210,13 +207,12 @@
           "source_run_sec": 300
         },
         "shopify_currency": {
-          "allowed_currencies": [
-            "EUR",
-            "USD",
-            "GBP"
-          ],
           "use_storefront_currency_fallback": false,
-          "requested_currency": "USD"
+          "requested_currency_priority": [
+            "USD",
+            "EUR",
+            "GBP"
+          ]
         },
         "shopify_js_workers": 7,
         "shopify_js_quality": {
@@ -266,13 +262,12 @@
           "source_run_sec": 300
         },
         "shopify_currency": {
-          "allowed_currencies": [
-            "EUR",
-            "USD",
-            "GBP"
-          ],
           "use_storefront_currency_fallback": false,
-          "requested_currency": "USD"
+          "requested_currency_priority": [
+            "USD",
+            "EUR",
+            "GBP"
+          ]
         },
         "shopify_js_workers": 7,
         "shopify_js_quality": {
@@ -322,13 +317,12 @@
           "source_run_sec": 300
         },
         "shopify_currency": {
-          "allowed_currencies": [
-            "EUR",
-            "USD",
-            "GBP"
-          ],
           "use_storefront_currency_fallback": false,
-          "requested_currency": "USD"
+          "requested_currency_priority": [
+            "USD",
+            "EUR",
+            "GBP"
+          ]
         },
         "shopify_js_workers": 7,
         "shopify_js_quality": {
@@ -379,13 +373,12 @@
           "source_run_sec": 300
         },
         "shopify_currency": {
-          "allowed_currencies": [
-            "EUR",
-            "USD",
-            "GBP"
-          ],
           "use_storefront_currency_fallback": false,
-          "requested_currency": "USD"
+          "requested_currency_priority": [
+            "USD",
+            "EUR",
+            "GBP"
+          ]
         },
         "shopify_js_workers": 7,
         "shopify_js_quality": {
@@ -436,13 +429,12 @@
           "source_run_sec": 300
         },
         "shopify_currency": {
-          "allowed_currencies": [
-            "EUR",
-            "USD",
-            "GBP"
-          ],
           "use_storefront_currency_fallback": false,
-          "requested_currency": "USD"
+          "requested_currency_priority": [
+            "USD",
+            "EUR",
+            "GBP"
+          ]
         },
         "shopify_js_workers": 7,
         "shopify_js_quality": {
@@ -493,13 +485,404 @@
           "source_run_sec": 300
         },
         "shopify_currency": {
-          "allowed_currencies": [
-            "EUR",
-            "USD",
-            "GBP"
-          ],
           "use_storefront_currency_fallback": false,
-          "requested_currency": "USD"
+          "requested_currency_priority": [
+            "USD",
+            "EUR",
+            "GBP"
+          ]
+        },
+        "shopify_js_workers": 7,
+        "shopify_js_quality": {
+          "progress_every": 25,
+          "wait_log_sec": 15,
+          "pause_poll_sec": 0.2,
+          "antibot_pause_sec": 3,
+          "retry_backoff_sec": [
+            1,
+            3
+          ]
+        }
+      }
+    },
+    {
+      "id": 10,
+      "key": "prayingg.com",
+      "url": "https://prayingg.com/",
+      "adapter_key": "prayingg__v1",
+      "enabled": true,
+      "sync_enabled": true,
+      "config": {
+        "adapter_ready": true,
+        "adapter_revision": "prayingg__v1-r1",
+        "strategy_sequence": [
+          "shopify_json",
+          "shopify_js"
+        ],
+        "shopify_sitemap": {
+          "max_products": 50000,
+          "include_locale_sitemaps": false,
+          "request_retries": 1
+        },
+        "shopify_json_quality": {
+          "antibot_pause_sec": 3,
+          "retry_backoff_sec": [
+            1,
+            3
+          ],
+          "enrich_from_js_fields": []
+        },
+        "retry_limits": {
+          "shopify_json": 1,
+          "shopify_js": 1
+        },
+        "timeouts": {
+          "product_sec": 10,
+          "source_run_sec": 300
+        },
+        "shopify_currency": {
+          "use_storefront_currency_fallback": false,
+          "requested_currency_priority": [
+            "USD",
+            "EUR",
+            "GBP"
+          ]
+        },
+        "shopify_js_workers": 7,
+        "shopify_js_quality": {
+          "progress_every": 25,
+          "wait_log_sec": 15,
+          "pause_poll_sec": 0.2,
+          "antibot_pause_sec": 3,
+          "retry_backoff_sec": [
+            1,
+            3
+          ]
+        }
+      }
+    },
+    {
+      "id": 11,
+      "key": "fourtwofour.com",
+      "url": "https://fourtwofour.com/",
+      "adapter_key": "fourtwofour__v1",
+      "enabled": true,
+      "sync_enabled": true,
+      "config": {
+        "adapter_ready": true,
+        "adapter_revision": "fourtwofour__v1-r1",
+        "strategy_sequence": [
+          "shopify_json",
+          "shopify_js"
+        ],
+        "shopify_sitemap": {
+          "max_products": 50000,
+          "include_locale_sitemaps": false,
+          "request_retries": 1
+        },
+        "shopify_json_quality": {
+          "antibot_pause_sec": 3,
+          "retry_backoff_sec": [
+            1,
+            3
+          ],
+          "enrich_from_js_fields": []
+        },
+        "retry_limits": {
+          "shopify_json": 1,
+          "shopify_js": 1
+        },
+        "timeouts": {
+          "product_sec": 10,
+          "source_run_sec": 300
+        },
+        "shopify_currency": {
+          "use_storefront_currency_fallback": false,
+          "requested_currency_priority": [
+            "USD",
+            "EUR",
+            "GBP"
+          ]
+        },
+        "shopify_js_workers": 7,
+        "shopify_js_quality": {
+          "progress_every": 25,
+          "wait_log_sec": 15,
+          "pause_poll_sec": 0.2,
+          "antibot_pause_sec": 3,
+          "retry_backoff_sec": [
+            1,
+            3
+          ]
+        }
+      }
+    },
+    {
+      "id": 12,
+      "key": "remnantsvintage.com",
+      "url": "https://remnantsvintage.com/",
+      "adapter_key": "remnantsvintage__v1",
+      "enabled": true,
+      "sync_enabled": true,
+      "config": {
+        "adapter_ready": true,
+        "adapter_revision": "remnantsvintage__v1-r1",
+        "strategy_sequence": [
+          "shopify_json",
+          "shopify_js"
+        ],
+        "shopify_sitemap": {
+          "max_products": 50000,
+          "include_locale_sitemaps": false,
+          "request_retries": 1
+        },
+        "shopify_json_quality": {
+          "antibot_pause_sec": 3,
+          "retry_backoff_sec": [
+            1,
+            3
+          ],
+          "enrich_from_js_fields": []
+        },
+        "retry_limits": {
+          "shopify_json": 1,
+          "shopify_js": 1
+        },
+        "timeouts": {
+          "product_sec": 10,
+          "source_run_sec": 300
+        },
+        "shopify_currency": {
+          "use_storefront_currency_fallback": false,
+          "requested_currency_priority": [
+            "USD",
+            "EUR",
+            "GBP"
+          ]
+        },
+        "shopify_js_workers": 7,
+        "shopify_js_quality": {
+          "progress_every": 25,
+          "wait_log_sec": 15,
+          "pause_poll_sec": 0.2,
+          "antibot_pause_sec": 3,
+          "retry_backoff_sec": [
+            1,
+            3
+          ]
+        }
+      }
+    },
+    {
+      "id": 13,
+      "key": "misssixty.com",
+      "url": "https://misssixty.com/",
+      "adapter_key": "misssixty__v1",
+      "enabled": true,
+      "sync_enabled": true,
+      "config": {
+        "adapter_ready": true,
+        "adapter_revision": "misssixty__v1-r1",
+        "strategy_sequence": [
+          "shopify_json",
+          "shopify_js"
+        ],
+        "shopify_sitemap": {
+          "max_products": 50000,
+          "include_locale_sitemaps": false,
+          "request_retries": 1
+        },
+        "shopify_json_quality": {
+          "antibot_pause_sec": 3,
+          "retry_backoff_sec": [
+            1,
+            3
+          ],
+          "enrich_from_js_fields": []
+        },
+        "retry_limits": {
+          "shopify_json": 1,
+          "shopify_js": 1
+        },
+        "timeouts": {
+          "product_sec": 10,
+          "source_run_sec": 300
+        },
+        "shopify_currency": {
+          "use_storefront_currency_fallback": false,
+          "requested_currency_priority": [
+            "USD",
+            "EUR",
+            "GBP"
+          ]
+        },
+        "shopify_js_workers": 7,
+        "shopify_js_quality": {
+          "progress_every": 25,
+          "wait_log_sec": 15,
+          "pause_poll_sec": 0.2,
+          "antibot_pause_sec": 3,
+          "retry_backoff_sec": [
+            1,
+            3
+          ]
+        }
+      }
+    },
+    {
+      "id": 14,
+      "key": "hlorenzo.com",
+      "url": "https://www.hlorenzo.com/",
+      "adapter_key": "hlorenzo__v1",
+      "enabled": true,
+      "sync_enabled": true,
+      "config": {
+        "adapter_ready": true,
+        "adapter_revision": "hlorenzo__v1-r1",
+        "strategy_sequence": [
+          "shopify_json",
+          "shopify_js"
+        ],
+        "shopify_sitemap": {
+          "max_products": 50000,
+          "include_locale_sitemaps": false,
+          "request_retries": 1
+        },
+        "shopify_json_quality": {
+          "antibot_pause_sec": 3,
+          "retry_backoff_sec": [
+            1,
+            3
+          ],
+          "enrich_from_js_fields": []
+        },
+        "retry_limits": {
+          "shopify_json": 1,
+          "shopify_js": 1
+        },
+        "timeouts": {
+          "product_sec": 10,
+          "source_run_sec": 300
+        },
+        "shopify_currency": {
+          "use_storefront_currency_fallback": false,
+          "requested_currency_priority": [
+            "USD",
+            "EUR",
+            "GBP"
+          ]
+        },
+        "shopify_js_workers": 7,
+        "shopify_js_quality": {
+          "progress_every": 25,
+          "wait_log_sec": 15,
+          "pause_poll_sec": 0.2,
+          "antibot_pause_sec": 3,
+          "retry_backoff_sec": [
+            1,
+            3
+          ]
+        }
+      }
+    },
+    {
+      "id": 15,
+      "key": "simonerocha.com",
+      "url": "https://simonerocha.com/",
+      "adapter_key": "simonerocha__v1",
+      "enabled": true,
+      "sync_enabled": true,
+      "config": {
+        "adapter_ready": true,
+        "adapter_revision": "simonerocha__v1-r1",
+        "strategy_sequence": [
+          "shopify_json",
+          "shopify_js"
+        ],
+        "shopify_sitemap": {
+          "max_products": 50000,
+          "include_locale_sitemaps": false,
+          "request_retries": 1
+        },
+        "shopify_json_quality": {
+          "antibot_pause_sec": 3,
+          "retry_backoff_sec": [
+            1,
+            3
+          ],
+          "enrich_from_js_fields": []
+        },
+        "retry_limits": {
+          "shopify_json": 1,
+          "shopify_js": 1
+        },
+        "timeouts": {
+          "product_sec": 10,
+          "source_run_sec": 300
+        },
+        "shopify_currency": {
+          "use_storefront_currency_fallback": false,
+          "requested_currency_priority": [
+            "USD",
+            "EUR",
+            "GBP"
+          ]
+        },
+        "shopify_js_workers": 7,
+        "shopify_js_quality": {
+          "progress_every": 25,
+          "wait_log_sec": 15,
+          "pause_poll_sec": 0.2,
+          "antibot_pause_sec": 3,
+          "retry_backoff_sec": [
+            1,
+            3
+          ]
+        }
+      }
+    },
+    {
+      "id": 16,
+      "key": "orimono.eu",
+      "url": "https://orimono.eu/",
+      "adapter_key": "orimono__v1",
+      "enabled": true,
+      "sync_enabled": true,
+      "config": {
+        "adapter_ready": true,
+        "adapter_revision": "orimono__v1-r1",
+        "strategy_sequence": [
+          "shopify_json",
+          "shopify_js"
+        ],
+        "shopify_sitemap": {
+          "max_products": 50000,
+          "include_locale_sitemaps": false,
+          "request_retries": 1
+        },
+        "shopify_json_quality": {
+          "antibot_pause_sec": 3,
+          "retry_backoff_sec": [
+            1,
+            3
+          ],
+          "enrich_from_js_fields": []
+        },
+        "retry_limits": {
+          "shopify_json": 1,
+          "shopify_js": 1
+        },
+        "timeouts": {
+          "product_sec": 10,
+          "source_run_sec": 300
+        },
+        "shopify_currency": {
+          "use_storefront_currency_fallback": false,
+          "requested_currency_priority": [
+            "USD",
+            "EUR",
+            "GBP"
+          ]
         },
         "shopify_js_workers": 7,
         "shopify_js_quality": {

@@ -75,27 +75,18 @@ class ConfigValidationService:
         raw = config.get('shopify_currency')
         if not isinstance(raw, dict):
             raise ConfigError('Missing source.config.shopify_currency')
-        allowed = raw.get('allowed_currencies')
-        if not isinstance(allowed, list) or not allowed:
-            raise ConfigError('Missing source.config.shopify_currency.allowed_currencies')
-        normalized = []
-        for value in allowed:
+        priority = raw.get('requested_currency_priority')
+        if not isinstance(priority, list) or not priority:
+            raise ConfigError('Missing source.config.shopify_currency.requested_currency_priority')
+        for value in priority:
             code = str(value or '').strip().upper()
             if code == 'GBR':
                 code = 'GBP'
             if code not in ALLOWED_CURRENCY_CODES:
-                raise ConfigError('Invalid source.config.shopify_currency.allowed_currencies')
-            normalized.append(code)
-        if not normalized:
-            raise ConfigError('Missing source.config.shopify_currency.allowed_currencies')
+                raise ConfigError('Invalid source.config.shopify_currency.requested_currency_priority')
         use_storefront = raw.get('use_storefront_currency_fallback')
         if not isinstance(use_storefront, bool):
             raise ConfigError('Invalid source.config.shopify_currency.use_storefront_currency_fallback')
-        requested = str(raw.get('requested_currency') or '').strip().upper()
-        if requested == 'GBR':
-            requested = 'GBP'
-        if requested and requested not in normalized:
-            raise ConfigError('Invalid source.config.shopify_currency.requested_currency')
 
     @staticmethod
     def _require_shopify_json_quality(config: dict) -> None:

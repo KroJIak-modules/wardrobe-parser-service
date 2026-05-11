@@ -5,7 +5,7 @@ from urllib.parse import unquote, urlparse
 
 from app.adapters.contracts import SourceContext, StrategyContext
 from app.adapters.registry import AdapterRegistry
-from app.core.exceptions import ConfigError
+from app.core.exceptions import ConfigError, StorefrontBlockedError
 from app.domain.statuses import SourceRunStatus
 from app.repositories.source_repository import SourceRepository
 from app.schemas.run_report import SourceRunReport, StrategyAttempt
@@ -98,7 +98,10 @@ class SourceRunService:
             status=SourceRunStatus.IN_PROGRESS,
         )
 
-        visible_urls = adapter.discover_visible_catalog(context)
+        try:
+            visible_urls = adapter.discover_visible_catalog(context)
+        except StorefrontBlockedError as exc:
+            raise ConfigError(f'storefront_blocked:{exc}') from exc
         visible_set = {self._canonical_product_url(x) for x in visible_urls if str(x).strip()}
         visible_handles = {self._extract_handle(x) for x in visible_urls if str(x).strip()}
         visible_handles.discard('')
@@ -113,6 +116,7 @@ class SourceRunService:
         seen_urls: set[str] = set()
         valid_products: list[dict] = []
         weight_source_stats: dict[str, int] = {'source': 0, 'keyword_rule': 0, 'missing': 0}
+        pending_candidate_urls: set[str] = set(visible_set)
 
         for strategy_name in strategy_sequence:
             strategy = self.strategy_registry.get(strategy_name)
@@ -125,7 +129,12 @@ class SourceRunService:
 
             raw_items: list[dict] = []
             last_error: str | None = None
-            strategy_context = StrategyContext(source=context, dry_run=dry_run, run_id=run_id or '')
+            strategy_context = StrategyContext(
+                source=context,
+                dry_run=dry_run,
+                run_id=run_id or '',
+                candidate_urls=tuple(sorted(pending_candidate_urls)) if pending_candidate_urls else (),
+            )
             for _ in range(max_retries + 1):
                 try:
                     strategy_context.diagnostics.clear()
@@ -145,6 +154,7 @@ class SourceRunService:
             attempt.diagnostics = dict(strategy_context.diagnostics)
             report.total_found_products += len(raw_items)
 
+            next_pending_candidate_urls: set[str] = set()
             for raw in raw_items:
                 normalized = adapter.normalize_product(raw)
                 normalized = WeightEnrichmentService.apply_keyword_weight(normalized, weight_rules)
@@ -157,6 +167,8 @@ class SourceRunService:
                 handle = str(normalized.get('handle') or '').strip()
 
                 if url and url in report.quarantined_urls:
+                    if url:
+                        next_pending_candidate_urls.add(url)
                     continue
 
                 # Duplicate policy should flag duplicates inside a single strategy pass.
@@ -164,11 +176,13 @@ class SourceRunService:
                 if url and url in strategy_seen_urls:
                     report.errors.append(f'duplicate_url:{url}')
                     report.quarantined_urls.append(url)
+                    next_pending_candidate_urls.add(url)
                     continue
                 if handle and handle in strategy_seen_handles:
                     report.errors.append(f'duplicate_handle:{handle}')
                     if url:
                         report.quarantined_urls.append(url)
+                        next_pending_candidate_urls.add(url)
                     continue
                 if url:
                     strategy_seen_urls.add(url)
@@ -197,9 +211,11 @@ class SourceRunService:
                         report.missing_weight_products.append(self._missing_weight_product_snapshot(normalized))
                     if url:
                         report.quarantined_urls.append(url)
+                        next_pending_candidate_urls.add(url)
 
             attempt.success = True
             report.attempts.append(attempt)
+            pending_candidate_urls = next_pending_candidate_urls
 
             # Fallback semantics: stop sequence as soon as we got full visible coverage.
             if report.visible_catalog_products > 0:

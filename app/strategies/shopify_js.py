@@ -28,18 +28,24 @@ class ShopifyJsStrategy:
         currency_policy = ShopifyPolicyFactory.currency(cfg)
         storefront_currency = ''
         storefront_currency_source = 'disabled'
-        if currency_policy.requested_currency:
-            storefront_currency = currency_policy.requested_currency
-            storefront_currency_source = 'shopify_currency_requested'
+        requested_priority = list(currency_policy.requested_currency_priority)
+        if requested_priority:
+            storefront_currency = requested_priority[0]
+            storefront_currency_source = 'shopify_currency_requested_priority'
         elif currency_policy.use_storefront_currency_fallback:
             storefront_currency, storefront_currency_source = ShopifyCurrencyResolver.resolve_storefront_currency(
                 base_url,
                 timeout,
-                currency_policy.allowed_currencies,
+                ('EUR', 'USD', 'GBP'),
             )
         quality = ShopifyPolicyFactory.js_quality(cfg)
         workers = max(1, int(cfg['shopify_js_workers']))
-        product_urls = self._get_product_urls(base_url, timeout, policy=sitemap_policy)
+        candidate_urls = [str(x).strip() for x in context.candidate_urls if str(x).strip()]
+        if candidate_urls:
+            product_urls = candidate_urls
+            context.diagnostics['candidate_urls'] = len(candidate_urls)
+        else:
+            product_urls = self._get_product_urls(base_url, timeout, policy=sitemap_policy)
         total = len(product_urls)
         logger.strategy_event('start', self.name, base_url=base_url, total=total, workers=workers)
 
@@ -75,7 +81,8 @@ class ShopifyJsStrategy:
                 timeout,
                 activate_pause=activate_pause,
                 quality=quality,
-                allowed_currencies=currency_policy.allowed_currencies,
+                allowed_currencies=('EUR', 'USD', 'GBP'),
+                currency_priority=tuple(requested_priority),
                 storefront_currency=storefront_currency,
             )
             return url, item, fail_type
@@ -131,7 +138,8 @@ class ShopifyJsStrategy:
                     base_url,
                     url,
                     timeout,
-                    allowed_currencies=currency_policy.allowed_currencies,
+                    allowed_currencies=('EUR', 'USD', 'GBP'),
+                    currency_priority=tuple(requested_priority),
                     storefront_currency=storefront_currency,
                 )
                 if item is not None:
@@ -202,6 +210,7 @@ class ShopifyJsStrategy:
         timeout: int,
         *,
         allowed_currencies: tuple[str, ...],
+        currency_priority: tuple[str, ...],
         storefront_currency: str,
     ) -> dict | None:
         handle = ShopifyJsStrategy._extract_handle(product_url)
@@ -209,13 +218,18 @@ class ShopifyJsStrategy:
             return None
 
         payload: dict | None = None
+        currencies = [x for x in currency_priority if x] or ([storefront_currency] if storefront_currency else [''])
         for js_url in ShopifyJsStrategy._build_js_urls(base_url, product_url, handle):
-            params = {'currency': storefront_currency} if storefront_currency else None
-            response = ShopifyHttpClient.get_json(js_url, timeout, params=params)
-            if response.status_code != 200:
-                continue
-            payload = response.payload
-            break
+            for cur in currencies:
+                params = {'currency': cur} if cur else None
+                response = ShopifyHttpClient.get_json(js_url, timeout, params=params)
+                if response.status_code != 200:
+                    continue
+                payload = response.payload
+                if isinstance(payload, dict):
+                    break
+            if isinstance(payload, dict):
+                break
         if not isinstance(payload, dict):
             return None
 
@@ -251,6 +265,7 @@ class ShopifyJsStrategy:
         activate_pause,
         quality: ShopifyJsQualityPolicy,
         allowed_currencies: tuple[str, ...],
+        currency_priority: tuple[str, ...],
         storefront_currency: str,
     ) -> tuple[dict | None, str | None]:
         backoffs = quality.retry_backoff_sec
@@ -259,6 +274,7 @@ class ShopifyJsStrategy:
             product_url,
             timeout,
             allowed_currencies=allowed_currencies,
+            currency_priority=currency_priority,
             storefront_currency=storefront_currency,
         )
         if result is not None:
@@ -273,6 +289,7 @@ class ShopifyJsStrategy:
                 product_url,
                 timeout,
                 allowed_currencies=allowed_currencies,
+                currency_priority=currency_priority,
                 storefront_currency=storefront_currency,
             )
             if result is not None:
@@ -289,6 +306,7 @@ class ShopifyJsStrategy:
         timeout: int,
         *,
         allowed_currencies: tuple[str, ...],
+        currency_priority: tuple[str, ...],
         storefront_currency: str,
     ) -> tuple[dict | None, str | None]:
         handle = ShopifyJsStrategy._extract_handle(product_url)
@@ -296,26 +314,30 @@ class ShopifyJsStrategy:
             return None, 'data'
         payload: dict | None = None
         last_fail: str | None = None
+        currencies = [x for x in currency_priority if x] or ([storefront_currency] if storefront_currency else [''])
         for js_url in ShopifyJsStrategy._build_js_urls(base_url, product_url, handle):
-            try:
-                params = {'currency': storefront_currency} if storefront_currency else None
-                response = ShopifyHttpClient.get_json(js_url, timeout, params=params)
-            except Exception:
-                last_fail = 'network'
-                continue
-            if response.status_code in {403, 429, 503}:
-                return None, 'antibot'
-            if response.status_code != 200:
-                last_fail = 'http_other'
-                continue
-            candidate = response.payload
-            if candidate is None:
+            for cur in currencies:
+                try:
+                    params = {'currency': cur} if cur else None
+                    response = ShopifyHttpClient.get_json(js_url, timeout, params=params)
+                except Exception:
+                    last_fail = 'network'
+                    continue
+                if response.status_code in {403, 429, 503}:
+                    return None, 'antibot'
+                if response.status_code != 200:
+                    last_fail = 'http_other'
+                    continue
+                candidate = response.payload
+                if candidate is None:
+                    last_fail = 'data'
+                    continue
+                if isinstance(candidate, dict):
+                    payload = candidate
+                    break
                 last_fail = 'data'
-                continue
-            if isinstance(candidate, dict):
-                payload = candidate
+            if isinstance(payload, dict):
                 break
-            last_fail = 'data'
         if payload is None:
             return None, last_fail or 'http_other'
         if not isinstance(payload, dict):
