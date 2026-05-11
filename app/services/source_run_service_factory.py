@@ -16,6 +16,11 @@ from app.adapters.misssixty_v1 import MisssixtyV1Adapter
 from app.adapters.hlorenzo_v1 import HlorenzoV1Adapter
 from app.adapters.simonerocha_v1 import SimonerochaV1Adapter
 from app.adapters.orimono_v1 import OrimonoV1Adapter
+from app.adapters.pauleasterlin_v1 import PauleasterlinV1Adapter
+from app.adapters.driewgarments_v1 import DriewgarmentsV1Adapter
+from app.adapters.junalyx_v1 import JunalyxV1Adapter
+from app.adapters.archived_v1 import ArchivedV1Adapter
+from app.adapters.dolcevitahub_v1 import DolcevitahubV1Adapter
 from app.adapters.registry import AdapterRegistry
 from app.core.config import settings
 from app.repositories.source_repository import SourceRepository
@@ -46,6 +51,11 @@ class SourceRunServiceFactory:
         adapter_registry.register(HlorenzoV1Adapter())
         adapter_registry.register(SimonerochaV1Adapter())
         adapter_registry.register(OrimonoV1Adapter())
+        adapter_registry.register(PauleasterlinV1Adapter())
+        adapter_registry.register(DriewgarmentsV1Adapter())
+        adapter_registry.register(JunalyxV1Adapter())
+        adapter_registry.register(ArchivedV1Adapter())
+        adapter_registry.register(DolcevitahubV1Adapter())
 
         strategy_registry = StrategyRegistry()
         strategy_registry.register(ShopifyJsonStrategy())
