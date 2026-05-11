@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 import time
 
 from app.adapters.contracts import StrategyContext
+from app.services.shopify_currency_resolver import ShopifyCurrencyResolver
 from app.services.run_logger import RunLogger
 from app.services.shopify_http_client import ShopifyHttpClient
 from app.services.shopify_policies import ShopifyJsQualityPolicy, ShopifyPolicyFactory, ShopifySitemapPolicy
@@ -24,6 +25,18 @@ class ShopifyJsStrategy:
         base_url = context.source.source_url.rstrip('/')
         timeout = int(cfg.get('timeouts', {}).get('product_sec', 10))
         sitemap_policy = ShopifyPolicyFactory.sitemap(cfg)
+        currency_policy = ShopifyPolicyFactory.currency(cfg)
+        storefront_currency = ''
+        storefront_currency_source = 'disabled'
+        if currency_policy.requested_currency:
+            storefront_currency = currency_policy.requested_currency
+            storefront_currency_source = 'shopify_currency_requested'
+        elif currency_policy.use_storefront_currency_fallback:
+            storefront_currency, storefront_currency_source = ShopifyCurrencyResolver.resolve_storefront_currency(
+                base_url,
+                timeout,
+                currency_policy.allowed_currencies,
+            )
         quality = ShopifyPolicyFactory.js_quality(cfg)
         workers = max(1, int(cfg['shopify_js_workers']))
         product_urls = self._get_product_urls(base_url, timeout, policy=sitemap_policy)
@@ -56,7 +69,15 @@ class ShopifyJsStrategy:
 
         def worker(url: str) -> tuple[str, dict | None, str | None]:
             wait_if_paused()
-            item, fail_type = self._parse_product_js_with_retry(base_url, url, timeout, activate_pause=activate_pause, quality=quality)
+            item, fail_type = self._parse_product_js_with_retry(
+                base_url,
+                url,
+                timeout,
+                activate_pause=activate_pause,
+                quality=quality,
+                allowed_currencies=currency_policy.allowed_currencies,
+                storefront_currency=storefront_currency,
+            )
             return url, item, fail_type
 
         with ThreadPoolExecutor(max_workers=workers) as pool:
@@ -106,7 +127,13 @@ class ShopifyJsStrategy:
         if failed_urls:
             recovered = 0
             for url in failed_urls:
-                item = self._parse_product_js(base_url, url, timeout)
+                item = self._parse_product_js(
+                    base_url,
+                    url,
+                    timeout,
+                    allowed_currencies=currency_policy.allowed_currencies,
+                    storefront_currency=storefront_currency,
+                )
                 if item is not None:
                     out.append(item)
                     recovered += 1
@@ -124,6 +151,8 @@ class ShopifyJsStrategy:
                 'fail_http_other': int(fail_types.get('http_other', 0)),
                 'workers': workers,
                 'max_products': sitemap_policy.max_products,
+                'storefront_currency': storefront_currency,
+                'storefront_currency_source': storefront_currency_source,
             })
         else:
             context.diagnostics.update({
@@ -139,6 +168,8 @@ class ShopifyJsStrategy:
                 'fail_http_other': int(fail_types.get('http_other', 0)),
                 'workers': workers,
                 'max_products': sitemap_policy.max_products,
+                'storefront_currency': storefront_currency,
+                'storefront_currency_source': storefront_currency_source,
             })
         logger.strategy_event('done', self.name, parsed=len(out), total=total)
         return out
@@ -165,14 +196,22 @@ class ShopifyJsStrategy:
         return dedup
 
     @staticmethod
-    def _parse_product_js(base_url: str, product_url: str, timeout: int) -> dict | None:
+    def _parse_product_js(
+        base_url: str,
+        product_url: str,
+        timeout: int,
+        *,
+        allowed_currencies: tuple[str, ...],
+        storefront_currency: str,
+    ) -> dict | None:
         handle = ShopifyJsStrategy._extract_handle(product_url)
         if not handle:
             return None
 
         payload: dict | None = None
         for js_url in ShopifyJsStrategy._build_js_urls(base_url, product_url, handle):
-            response = ShopifyHttpClient.get_json(js_url, timeout)
+            params = {'currency': storefront_currency} if storefront_currency else None
+            response = ShopifyHttpClient.get_json(js_url, timeout, params=params)
             if response.status_code != 200:
                 continue
             payload = response.payload
@@ -181,7 +220,7 @@ class ShopifyJsStrategy:
             return None
 
         variants = payload.get('variants') if isinstance(payload.get('variants'), list) else []
-        currency = str(payload.get('currency') or '').strip().upper() or 'USD'
+        currency = ShopifyJsStrategy._resolve_currency(payload.get('currency'), storefront_currency, allowed_currencies)
         price = ShopifyJsStrategy._min_variant_price(variants, currency)
         weight_grams = ShopifyJsStrategy._best_variant_weight(variants)
         images = payload.get('images') if isinstance(payload.get('images'), list) else []
@@ -193,6 +232,8 @@ class ShopifyJsStrategy:
             'url': f'{base_url}/products/{handle}',
             'handle': handle,
             'title': str(payload.get('title') or '').strip(),
+            'product_type': str(payload.get('type') or '').strip(),
+            'tags': payload.get('tags') if isinstance(payload.get('tags'), list) else [],
             'price': price,
             'currency': currency,
             'weight_grams': weight_grams,
@@ -209,9 +250,17 @@ class ShopifyJsStrategy:
         *,
         activate_pause,
         quality: ShopifyJsQualityPolicy,
+        allowed_currencies: tuple[str, ...],
+        storefront_currency: str,
     ) -> tuple[dict | None, str | None]:
         backoffs = quality.retry_backoff_sec
-        result, fail_type = ShopifyJsStrategy._parse_with_classification(base_url, product_url, timeout)
+        result, fail_type = ShopifyJsStrategy._parse_with_classification(
+            base_url,
+            product_url,
+            timeout,
+            allowed_currencies=allowed_currencies,
+            storefront_currency=storefront_currency,
+        )
         if result is not None:
             return result, None
         if fail_type == 'antibot':
@@ -219,7 +268,13 @@ class ShopifyJsStrategy:
             return None, fail_type
         for wait_s in backoffs:
             time.sleep(wait_s)
-            result, fail_type = ShopifyJsStrategy._parse_with_classification(base_url, product_url, timeout)
+            result, fail_type = ShopifyJsStrategy._parse_with_classification(
+                base_url,
+                product_url,
+                timeout,
+                allowed_currencies=allowed_currencies,
+                storefront_currency=storefront_currency,
+            )
             if result is not None:
                 return result, None
             if fail_type == 'antibot':
@@ -228,7 +283,14 @@ class ShopifyJsStrategy:
         return None, fail_type
 
     @staticmethod
-    def _parse_with_classification(base_url: str, product_url: str, timeout: int) -> tuple[dict | None, str | None]:
+    def _parse_with_classification(
+        base_url: str,
+        product_url: str,
+        timeout: int,
+        *,
+        allowed_currencies: tuple[str, ...],
+        storefront_currency: str,
+    ) -> tuple[dict | None, str | None]:
         handle = ShopifyJsStrategy._extract_handle(product_url)
         if not handle:
             return None, 'data'
@@ -236,7 +298,8 @@ class ShopifyJsStrategy:
         last_fail: str | None = None
         for js_url in ShopifyJsStrategy._build_js_urls(base_url, product_url, handle):
             try:
-                response = ShopifyHttpClient.get_json(js_url, timeout)
+                params = {'currency': storefront_currency} if storefront_currency else None
+                response = ShopifyHttpClient.get_json(js_url, timeout, params=params)
             except Exception:
                 last_fail = 'network'
                 continue
@@ -258,7 +321,7 @@ class ShopifyJsStrategy:
         if not isinstance(payload, dict):
             return None, 'data'
         variants = payload.get('variants') if isinstance(payload.get('variants'), list) else []
-        currency = str(payload.get('currency') or '').strip().upper() or 'USD'
+        currency = ShopifyJsStrategy._resolve_currency(payload.get('currency'), storefront_currency, allowed_currencies)
         price = ShopifyJsStrategy._min_variant_price(variants, currency)
         weight_grams = ShopifyJsStrategy._best_variant_weight(variants)
         images = payload.get('images') if isinstance(payload.get('images'), list) else []
@@ -269,6 +332,8 @@ class ShopifyJsStrategy:
             'url': f'{base_url}/products/{handle}',
             'handle': handle,
             'title': str(payload.get('title') or '').strip(),
+            'product_type': str(payload.get('type') or '').strip(),
+            'tags': payload.get('tags') if isinstance(payload.get('tags'), list) else [],
             'price': price,
             'currency': currency,
             'weight_grams': weight_grams,
@@ -276,6 +341,17 @@ class ShopifyJsStrategy:
             'images': normalized_images,
             'image_url': image_url,
         }, None
+
+    @staticmethod
+    def _resolve_currency(raw_currency: object, storefront_currency: str, allowed_currencies: tuple[str, ...]) -> str:
+        allowed = {ShopifyCurrencyResolver.normalize(x) for x in allowed_currencies}
+        raw = ShopifyCurrencyResolver.normalize(raw_currency)
+        if raw and raw in allowed:
+            return raw
+        storefront = ShopifyCurrencyResolver.normalize(storefront_currency)
+        if storefront and storefront in allowed:
+            return storefront
+        return ''
 
     @staticmethod
     def _extract_handle(product_url: str) -> str:
@@ -311,6 +387,8 @@ class ShopifyJsStrategy:
             if not isinstance(variant, dict):
                 continue
             raw = variant.get('grams')
+            if raw is None:
+                raw = variant.get('weight')
             try:
                 grams = int(raw)
             except Exception:

@@ -311,9 +311,11 @@ def test_config_validation_rejects_invalid_json_js_enrichment_field() -> None:
         'include_locale_sitemaps': False,
         'request_retries': 1,
     }
+    cfg['shopify_currency'] = {
+        'allowed_currencies': ['EUR', 'USD', 'GBP'],
+        'use_storefront_currency_fallback': True,
+    }
     cfg['shopify_json_quality'] = {
-        'max_pages': 50,
-        'collection_limit': 0,
         'antibot_pause_sec': 3,
         'retry_backoff_sec': [1, 3],
         'enrich_from_js_fields': ['price', 'inventory'],
@@ -401,4 +403,25 @@ def test_visible_coverage_uses_handle_when_hosts_differ() -> None:
     report = svc.run('jadedldn.com')
     assert report.visible_coverage == 1.0
     assert report.parsed_visible_products == 2
+    assert report.status.value == 'success'
+
+
+def test_visible_coverage_decodes_percent_encoded_handles() -> None:
+    cfg = _base_config()
+    cfg['visible_catalog_set'] = [
+        'https://www.racerworldwide.net/products/vibram%C2%AE-desert-boots',
+    ]
+    cfg['strategy_payloads']['s1'] = [
+        {
+            'url': 'https://www.racerworldwide.net/products/vibram®-desert-boots',
+            'handle': 'vibram®-desert-boots',
+            'price': 10,
+            'currency': 'USD',
+            'weight_grams': 500,
+        },
+    ]
+    svc = _build_service(cfg)
+    report = svc.run('jadedldn.com')
+    assert report.visible_coverage == 1.0
+    assert report.parsed_visible_products == 1
     assert report.status.value == 'success'

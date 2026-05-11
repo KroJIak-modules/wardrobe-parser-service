@@ -1,6 +1,7 @@
 from __future__ import annotations
+from decimal import Decimal
 import time
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 from app.adapters.contracts import SourceContext, StrategyContext
 from app.adapters.registry import AdapterRegistry
@@ -43,7 +44,7 @@ class SourceRunService:
         handle = ''
         for i, p in enumerate(parts):
             if p == 'products' and i + 1 < len(parts):
-                handle = parts[i + 1]
+                handle = unquote(parts[i + 1])
         if not handle:
             return raw
         host = (parsed.netloc or '').strip().lower()
@@ -60,7 +61,7 @@ class SourceRunService:
         parts = [p for p in (parsed.path or '').split('/') if p]
         for i, p in enumerate(parts):
             if p == 'products' and i + 1 < len(parts):
-                return parts[i + 1].strip()
+                return unquote(parts[i + 1]).strip()
         return ''
 
     def require_runnable_source(self, source_key: str) -> None:
@@ -116,6 +117,8 @@ class SourceRunService:
         for strategy_name in strategy_sequence:
             strategy = self.strategy_registry.get(strategy_name)
             attempt = StrategyAttempt(strategy=strategy_name, success=False)
+            strategy_seen_urls: set[str] = set()
+            strategy_seen_handles: set[str] = set()
             max_retries = retry_limits.get(strategy_name, 0)
             workers = context.source_config.get(f'{strategy_name}_workers')
             logger.event('strategy_start', name=strategy_name, retries=max_retries, workers=workers if workers is not None else '-')
@@ -156,14 +159,25 @@ class SourceRunService:
                 if url and url in report.quarantined_urls:
                     continue
 
-                if url and url in seen_urls:
+                # Duplicate policy should flag duplicates inside a single strategy pass.
+                # Cross-strategy repeats are expected during fallback and must be ignored.
+                if url and url in strategy_seen_urls:
                     report.errors.append(f'duplicate_url:{url}')
                     report.quarantined_urls.append(url)
                     continue
-                if handle and handle in seen_handles:
+                if handle and handle in strategy_seen_handles:
                     report.errors.append(f'duplicate_handle:{handle}')
                     if url:
                         report.quarantined_urls.append(url)
+                    continue
+                if url:
+                    strategy_seen_urls.add(url)
+                if handle:
+                    strategy_seen_handles.add(handle)
+
+                if url and url in seen_urls:
+                    continue
+                if handle and handle in seen_handles:
                     continue
 
                 ok, reasons = adapter.validate_product(normalized)
@@ -179,6 +193,8 @@ class SourceRunService:
                 else:
                     for reason in reasons:
                         report.aggregated_unavailable_reasons[reason] = report.aggregated_unavailable_reasons.get(reason, 0) + 1
+                    if 'missing_weight' in reasons:
+                        report.missing_weight_products.append(self._missing_weight_product_snapshot(normalized))
                     if url:
                         report.quarantined_urls.append(url)
 
@@ -226,3 +242,23 @@ class SourceRunService:
         report.report_path = str(self.markdown_report_service.write(report))
 
         return report
+
+    @staticmethod
+    def _missing_weight_product_snapshot(product: dict) -> dict:
+        tags = product.get('tags')
+        return {
+            'url': str(product.get('url') or '').strip(),
+            'handle': str(product.get('handle') or '').strip(),
+            'title': str(product.get('title') or '').strip(),
+            'product_type': str(product.get('product_type') or '').strip(),
+            'tags': tags if isinstance(tags, list) else [],
+            'price': SourceRunService._jsonable_value(product.get('price')),
+            'currency': str(product.get('currency') or '').strip(),
+            'weight_source': str(product.get('weight_source') or '').strip(),
+        }
+
+    @staticmethod
+    def _jsonable_value(value):
+        if isinstance(value, Decimal):
+            return float(value)
+        return value

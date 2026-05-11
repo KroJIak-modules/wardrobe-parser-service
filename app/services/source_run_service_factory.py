@@ -1,6 +1,14 @@
 from __future__ import annotations
 
+from app.adapters.essxnyc_v1 import EssxnycV1Adapter
 from app.adapters.jadedldn_v1 import JadedldnV1Adapter
+from app.adapters.nofaithstudios_v1 import NofaithstudiosV1Adapter
+from app.adapters.paradoxeparis_v1 import ParadoxeparisV1Adapter
+from app.adapters.juliusgarden_v1 import JuliusgardenV1Adapter
+from app.adapters.professore_v1 import ProfessoreV1Adapter
+from app.adapters.thelastconspiracy_v1 import ThelastconspiracyV1Adapter
+from app.adapters.racerworldwide_v1 import RacerworldwideV1Adapter
+from app.adapters.fourteenthaddiction_v1 import FourteenthaddictionV1Adapter
 from app.adapters.registry import AdapterRegistry
 from app.core.config import settings
 from app.repositories.source_repository import SourceRepository
@@ -15,7 +23,15 @@ from app.strategies.shopify_json import ShopifyJsonStrategy
 class SourceRunServiceFactory:
     def build(self) -> SourceRunService:
         adapter_registry = AdapterRegistry()
+        adapter_registry.register(EssxnycV1Adapter())
         adapter_registry.register(JadedldnV1Adapter())
+        adapter_registry.register(NofaithstudiosV1Adapter())
+        adapter_registry.register(ParadoxeparisV1Adapter())
+        adapter_registry.register(JuliusgardenV1Adapter())
+        adapter_registry.register(ProfessoreV1Adapter())
+        adapter_registry.register(ThelastconspiracyV1Adapter())
+        adapter_registry.register(RacerworldwideV1Adapter())
+        adapter_registry.register(FourteenthaddictionV1Adapter())
 
         strategy_registry = StrategyRegistry()
         strategy_registry.register(ShopifyJsonStrategy())

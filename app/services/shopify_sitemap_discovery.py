@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 from app.services.shopify_http_client import ShopifyHttpClient
 from app.services.shopify_policies import ShopifySitemapPolicy
 
@@ -52,5 +52,5 @@ class ShopifySitemapDiscovery:
         chunks = [chunk for chunk in (parsed.path or '').strip('/').split('/') if chunk]
         for idx, chunk in enumerate(chunks):
             if chunk == 'products' and idx + 1 < len(chunks):
-                return chunks[idx + 1].strip()
-        return chunks[-1].strip() if chunks else ''
+                return unquote(chunks[idx + 1]).strip()
+        return unquote(chunks[-1]).strip() if chunks else ''

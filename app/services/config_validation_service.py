@@ -1,5 +1,5 @@
 from app.core.exceptions import ConfigError
-from app.services.shopify_policies import MAX_COLLECTION_LIMIT, MAX_JSON_PAGES, MAX_PRODUCTS_LIMIT, MAX_REQUEST_RETRIES
+from app.services.shopify_policies import ALLOWED_CURRENCY_CODES, MAX_PRODUCTS_LIMIT, MAX_REQUEST_RETRIES
 
 
 class ConfigValidationService:
@@ -45,6 +45,7 @@ class ConfigValidationService:
     def require_strategy_settings(config: dict, strategy_sequence: list[str]) -> None:
         if any(item.startswith('shopify_') for item in strategy_sequence):
             ConfigValidationService._require_shopify_sitemap_policy(config)
+            ConfigValidationService._require_shopify_currency_policy(config)
         if 'shopify_json' in strategy_sequence:
             ConfigValidationService._require_shopify_json_quality(config)
         if 'shopify_js' in strategy_sequence:
@@ -68,17 +69,39 @@ class ConfigValidationService:
         if not isinstance(request_retries, int) or request_retries < 0 or request_retries > MAX_REQUEST_RETRIES:
             raise ConfigError('Invalid source.config.shopify_sitemap.request_retries')
 
+
+    @staticmethod
+    def _require_shopify_currency_policy(config: dict) -> None:
+        raw = config.get('shopify_currency')
+        if not isinstance(raw, dict):
+            raise ConfigError('Missing source.config.shopify_currency')
+        allowed = raw.get('allowed_currencies')
+        if not isinstance(allowed, list) or not allowed:
+            raise ConfigError('Missing source.config.shopify_currency.allowed_currencies')
+        normalized = []
+        for value in allowed:
+            code = str(value or '').strip().upper()
+            if code == 'GBR':
+                code = 'GBP'
+            if code not in ALLOWED_CURRENCY_CODES:
+                raise ConfigError('Invalid source.config.shopify_currency.allowed_currencies')
+            normalized.append(code)
+        if not normalized:
+            raise ConfigError('Missing source.config.shopify_currency.allowed_currencies')
+        use_storefront = raw.get('use_storefront_currency_fallback')
+        if not isinstance(use_storefront, bool):
+            raise ConfigError('Invalid source.config.shopify_currency.use_storefront_currency_fallback')
+        requested = str(raw.get('requested_currency') or '').strip().upper()
+        if requested == 'GBR':
+            requested = 'GBP'
+        if requested and requested not in normalized:
+            raise ConfigError('Invalid source.config.shopify_currency.requested_currency')
+
     @staticmethod
     def _require_shopify_json_quality(config: dict) -> None:
         raw = config.get('shopify_json_quality')
         if not isinstance(raw, dict):
             raise ConfigError('Missing source.config.shopify_json_quality')
-        max_pages = raw.get('max_pages')
-        if not isinstance(max_pages, int) or max_pages <= 0 or max_pages > MAX_JSON_PAGES:
-            raise ConfigError('Invalid source.config.shopify_json_quality.max_pages')
-        collection_limit = raw.get('collection_limit')
-        if not isinstance(collection_limit, int) or collection_limit < 0 or collection_limit > MAX_COLLECTION_LIMIT:
-            raise ConfigError('Invalid source.config.shopify_json_quality.collection_limit')
         enrich_from_js_fields = raw.get('enrich_from_js_fields')
         if not isinstance(enrich_from_js_fields, list):
             raise ConfigError('Missing source.config.shopify_json_quality.enrich_from_js_fields')

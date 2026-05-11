@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import json
 from pathlib import Path
 from typing import Any
 
@@ -83,6 +84,11 @@ class RunReportMarkdownService:
 
         md_path = run_dir / 'report.md'
         md_path.write_text('\n'.join(lines).strip() + '\n', encoding='utf-8')
+        if report.missing_weight_products:
+            (run_dir / 'missing_weight_products.json').write_text(
+                json.dumps(report.missing_weight_products, ensure_ascii=False, indent=2) + '\n',
+                encoding='utf-8',
+            )
         return md_path
 
     @staticmethod

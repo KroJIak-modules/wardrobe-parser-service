@@ -5,8 +5,7 @@ from dataclasses import dataclass
 
 MAX_PRODUCTS_LIMIT = 50000
 MAX_REQUEST_RETRIES = 5
-MAX_JSON_PAGES = 200
-MAX_COLLECTION_LIMIT = 200
+ALLOWED_CURRENCY_CODES = {'EUR', 'USD', 'GBP'}
 
 
 @dataclass(frozen=True)
@@ -17,9 +16,14 @@ class ShopifySitemapPolicy:
 
 
 @dataclass(frozen=True)
+class ShopifyCurrencyPolicy:
+    allowed_currencies: tuple[str, ...]
+    use_storefront_currency_fallback: bool
+    requested_currency: str
+
+
+@dataclass(frozen=True)
 class ShopifyJsonQualityPolicy:
-    max_pages: int
-    collection_limit: int
     antibot_pause_sec: float
     retry_backoff_sec: tuple[float, ...]
     enrich_from_js_fields: tuple[str, ...]
@@ -36,6 +40,19 @@ class ShopifyJsQualityPolicy:
 
 class ShopifyPolicyFactory:
     @staticmethod
+    def currency(config: dict) -> ShopifyCurrencyPolicy:
+        raw = config.get('shopify_currency') if isinstance(config.get('shopify_currency'), dict) else {}
+        return ShopifyCurrencyPolicy(
+            allowed_currencies=tuple(
+                'GBP' if str(x).strip().upper() == 'GBR' else str(x).strip().upper()
+                for x in (raw.get('allowed_currencies') or [])
+                if str(x).strip()
+            ),
+            use_storefront_currency_fallback=bool(raw.get('use_storefront_currency_fallback')),
+            requested_currency='GBP' if str(raw.get('requested_currency') or '').strip().upper() == 'GBR' else str(raw.get('requested_currency') or '').strip().upper(),
+        )
+
+    @staticmethod
     def sitemap(config: dict) -> ShopifySitemapPolicy:
         raw = config.get('shopify_sitemap') if isinstance(config.get('shopify_sitemap'), dict) else {}
         return ShopifySitemapPolicy(
@@ -48,8 +65,6 @@ class ShopifyPolicyFactory:
     def json_quality(config: dict) -> ShopifyJsonQualityPolicy:
         raw = config.get('shopify_json_quality') if isinstance(config.get('shopify_json_quality'), dict) else {}
         return ShopifyJsonQualityPolicy(
-            max_pages=int(raw.get('max_pages')),
-            collection_limit=int(raw.get('collection_limit')),
             antibot_pause_sec=float(raw.get('antibot_pause_sec')),
             retry_backoff_sec=tuple(float(x) for x in (raw.get('retry_backoff_sec') or [])),
             enrich_from_js_fields=tuple(str(x).strip() for x in (raw.get('enrich_from_js_fields') or []) if str(x).strip()),

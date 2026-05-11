@@ -22,6 +22,8 @@ class WeightEnrichmentService:
                 [
                     str(product.get('title') or ''),
                     str(product.get('handle') or ''),
+                    str(product.get('product_type') or ''),
+                    WeightEnrichmentService._join_tags(product.get('tags')),
                 ]
             )
         )
@@ -49,3 +51,9 @@ class WeightEnrichmentService:
     def _normalize(text: str) -> str:
         normalized = re.sub(r'[^a-z0-9\\s]+', ' ', text.strip().lower())
         return ' '.join(normalized.split())
+
+    @staticmethod
+    def _join_tags(tags: object) -> str:
+        if not isinstance(tags, list):
+            return ''
+        return ' '.join(str(tag) for tag in tags if str(tag).strip())
