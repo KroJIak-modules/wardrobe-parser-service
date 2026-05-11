@@ -172,7 +172,7 @@ async function main() {
     }
 
     const options = {
-      maxSitemaps: parseNumber(args['max-sitemaps'], 24),
+      maxSitemaps: args['max-sitemaps'] !== undefined ? parseNumber(args['max-sitemaps'], 0) : 0,
       jsSampleSize: parseNumber(args['js-sample-size'], 80),
       forceLiveFallback: parseBoolean(args['force-live-fallback'], false),
       exportProducts: parseBoolean(args['export-products'], true),

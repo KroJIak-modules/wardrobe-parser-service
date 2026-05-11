@@ -195,7 +195,7 @@ export async function runShopifySitemapScenario({ bridge, baseUrl, options }) {
     },
   };
 
-  const maxSitemaps = Number(options.maxSitemaps || 24);
+  const maxSitemaps = Number(options.maxSitemaps || 0);
   const jsSampleSize = Number(options.jsSampleSize || 80);
   const forceLiveFallback = Boolean(options.forceLiveFallback);
   const exportProducts = Boolean(options.exportProducts);
@@ -233,7 +233,10 @@ export async function runShopifySitemapScenario({ bridge, baseUrl, options }) {
     } else {
       logStep(`sitemap.xml ok status=${sitemapResp.status ?? 'unknown'}`);
 
-      const productSitemaps = parseSitemapIndex(sitemapResp.body).slice(0, maxSitemaps);
+      const discoveredProductSitemaps = parseSitemapIndex(sitemapResp.body);
+      const productSitemaps = maxSitemaps > 0
+        ? discoveredProductSitemaps.slice(0, maxSitemaps)
+        : discoveredProductSitemaps;
       report.product_sitemap_total = productSitemaps.length;
       logStep(`product sitemaps discovered=${productSitemaps.length}`);
       await setOverlay(bridge, `Найдено product-sitemap: ${productSitemaps.length}`);

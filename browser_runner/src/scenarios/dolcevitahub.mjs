@@ -15,7 +15,7 @@ export const dolcevitahubScenario = {
       bridge,
       baseUrl,
       options: {
-        maxSitemaps: Number(options.maxSitemaps || 24),
+        maxSitemaps: Number(options.maxSitemaps || 0),
         jsSampleSize: Number(options.jsSampleSize || 120),
         forceLiveFallback: Boolean(options.forceLiveFallback),
         exportProducts: options.exportProducts !== false,

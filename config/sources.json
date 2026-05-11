@@ -1141,17 +1141,7 @@
           "include_locale_sitemaps": false,
           "request_retries": 1
         },
-        "shopify_json_quality": {
-          "antibot_pause_sec": 4,
-          "retry_backoff_sec": [
-            2,
-            5,
-            10
-          ],
-          "enrich_from_js_fields": []
-        },
         "retry_limits": {
-          "shopify_json": 1,
           "shopify_browser_extension": 0
         },
         "timeouts": {
@@ -1166,18 +1156,6 @@
             "GBP"
           ]
         },
-        "shopify_js_workers": 3,
-        "shopify_js_quality": {
-          "progress_every": 25,
-          "wait_log_sec": 20,
-          "pause_poll_sec": 0.3,
-          "antibot_pause_sec": 6,
-          "retry_backoff_sec": [
-            2,
-            5,
-            10
-          ]
-        },
         "shopify_browser_extension_quality": {
           "progress_every": 25,
           "retry_backoff_sec": [
@@ -1188,11 +1166,10 @@
         },
         "browser_extension": {
           "script_path": "/app/browser_runner/src/index.mjs",
-          "scenario_id": "dolcevitahub",
+          "scenario_id": "dolcevitahub-shopify-sitemap",
           "export_concurrency": 3,
-          "export_max_products": 200,
+          "export_max_products": 50000,
           "js_sample_size": 120,
-          "max_sitemaps": 24,
           "show_ui": false
         }
       }
