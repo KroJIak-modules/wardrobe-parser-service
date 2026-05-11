@@ -125,6 +125,20 @@ async function runPromisePool(items, worker, concurrency) {
   await Promise.all(workers);
 }
 
+async function withTimeout(promise, timeoutMs, label) {
+  let timer = null;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label}_timeout_${timeoutMs}ms`)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 async function fetchTextWithRetries(bridge, url, maxRetries = 7) {
   if (!bridge || !bridge.isConnected || !bridge.isConnected()) {
     return fetchTextHttp(url, maxRetries);
@@ -354,11 +368,14 @@ export async function runShopifySitemapScenario({ bridge, baseUrl, options }) {
   if (exportProducts) {
     let currencyCode = null;
     try {
-      const cart = await fetchJsonWithFallback(bridge, `${baseUrl}/cart.js`, 3);
+      logStep('currency probe start: cart.js');
+      const cart = await withTimeout(fetchJsonWithFallback(bridge, `${baseUrl}/cart.js`, 1), 15000, 'currency_probe');
       if (cart?.ok && typeof cart?.body?.currency === 'string' && cart.body.currency.trim()) {
         currencyCode = cart.body.currency.trim().toUpperCase();
       }
-    } catch {
+      logStep(`currency probe done: currency=${currencyCode || 'unknown'}`);
+    } catch (err) {
+      logStep(`currency probe skipped: ${String(err?.message || err)}`);
       // currency is optional
     }
 
@@ -375,6 +392,9 @@ export async function runShopifySitemapScenario({ bridge, baseUrl, options }) {
 
     logStep(`export products enabled, total=${limitedTotal}, mode=${exportMode}, concurrency=${exportConcurrency}`);
     await setOverlay(bridge, `Экспорт товаров: 0/${limitedTotal}`);
+    if (limitedTotal === 0) {
+      logStep('export skipped: no product urls available');
+    }
 
     let completed = 0;
     try {
@@ -409,6 +429,7 @@ export async function runShopifySitemapScenario({ bridge, baseUrl, options }) {
           page += 1;
         }
       } else {
+        logStep(`export js requests started: total=${limitedTotal}, concurrency=${exportConcurrency}`);
         await runPromisePool(
           allProductUrls.slice(0, limitedTotal),
         async (productUrl, index) => {
