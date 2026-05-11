@@ -36,6 +36,11 @@ class ShopifyJsQualityPolicy:
     antibot_pause_sec: float
     retry_backoff_sec: tuple[float, ...]
 
+@dataclass(frozen=True)
+class ShopifyBrowserExtensionQualityPolicy:
+    progress_every: int
+    retry_backoff_sec: tuple[float, ...]
+
 
 class ShopifyPolicyFactory:
     @staticmethod
@@ -76,5 +81,17 @@ class ShopifyPolicyFactory:
             wait_log_sec=float(raw.get('wait_log_sec')),
             pause_poll_sec=float(raw.get('pause_poll_sec')),
             antibot_pause_sec=float(raw.get('antibot_pause_sec')),
+            retry_backoff_sec=tuple(float(x) for x in (raw.get('retry_backoff_sec') or [])),
+        )
+
+    @staticmethod
+    def browser_extension_quality(config: dict) -> ShopifyBrowserExtensionQualityPolicy:
+        raw = (
+            config.get('shopify_browser_extension_quality')
+            if isinstance(config.get('shopify_browser_extension_quality'), dict)
+            else {}
+        )
+        return ShopifyBrowserExtensionQualityPolicy(
+            progress_every=int(raw.get('progress_every')),
             retry_backoff_sec=tuple(float(x) for x in (raw.get('retry_backoff_sec') or [])),
         )

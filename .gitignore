@@ -5,8 +5,7 @@ venv/
 .pytest_cache/
 .coverage
 htmlcov/
-crawlee/node_modules/
-browser-parser/node_modules/
+browser_runner/node_modules/
 old/
 
 # Service runtime artifacts

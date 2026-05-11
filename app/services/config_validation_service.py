@@ -53,6 +53,8 @@ class ConfigValidationService:
             if not isinstance(workers, int) or workers <= 0:
                 raise ConfigError('Missing or invalid source.config.shopify_js_workers')
             ConfigValidationService._require_shopify_js_quality(config)
+        if 'shopify_browser_extension' in strategy_sequence:
+            ConfigValidationService._require_shopify_browser_extension_quality(config)
 
     @staticmethod
     def _require_shopify_sitemap_policy(config: dict) -> None:
@@ -115,6 +117,16 @@ class ConfigValidationService:
         ConfigValidationService._require_number(raw, 'pause_poll_sec')
         ConfigValidationService._require_number(raw, 'antibot_pause_sec')
         ConfigValidationService._require_backoffs(raw, 'shopify_js_quality')
+
+    @staticmethod
+    def _require_shopify_browser_extension_quality(config: dict) -> None:
+        raw = config.get('shopify_browser_extension_quality')
+        if not isinstance(raw, dict):
+            raise ConfigError('Missing source.config.shopify_browser_extension_quality')
+        progress_every = raw.get('progress_every')
+        if not isinstance(progress_every, int) or progress_every <= 0:
+            raise ConfigError('Invalid source.config.shopify_browser_extension_quality.progress_every')
+        ConfigValidationService._require_backoffs(raw, 'shopify_browser_extension_quality')
 
     @staticmethod
     def _require_number(raw: dict, key: str) -> None:

@@ -12,10 +12,11 @@
         "adapter_revision": "jadedldn__v1-r2",
         "strategy_sequence": [
           "shopify_json",
-          "shopify_js"
+          "shopify_js",
+          "shopify_browser_extension"
         ],
         "shopify_sitemap": {
-          "max_products": 50000,
+          "max_products": 200,
           "include_locale_sitemaps": false,
           "request_retries": 1
         },
@@ -43,7 +44,8 @@
         },
         "retry_limits": {
           "shopify_json": 1,
-          "shopify_js": 1
+          "shopify_js": 1,
+          "shopify_browser_extension": 0
         },
         "timeouts": {
           "product_sec": 10,
@@ -1132,11 +1134,10 @@
         "adapter_ready": true,
         "adapter_revision": "dolcevitahub__v1-r1",
         "strategy_sequence": [
-          "shopify_json",
-          "shopify_js"
+          "shopify_browser_extension"
         ],
         "shopify_sitemap": {
-          "max_products": 50000,
+          "max_products": 200,
           "include_locale_sitemaps": false,
           "request_retries": 1
         },
@@ -1151,7 +1152,7 @@
         },
         "retry_limits": {
           "shopify_json": 1,
-          "shopify_js": 1
+          "shopify_browser_extension": 0
         },
         "timeouts": {
           "product_sec": 15,
@@ -1176,6 +1177,23 @@
             5,
             10
           ]
+        },
+        "shopify_browser_extension_quality": {
+          "progress_every": 25,
+          "retry_backoff_sec": [
+            2,
+            5,
+            10
+          ]
+        },
+        "browser_extension": {
+          "script_path": "/app/browser_runner/src/index.mjs",
+          "scenario_id": "dolcevitahub",
+          "export_concurrency": 3,
+          "export_max_products": 200,
+          "js_sample_size": 120,
+          "max_sitemaps": 24,
+          "show_ui": false
         }
       }
     }

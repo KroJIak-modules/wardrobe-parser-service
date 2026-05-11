@@ -10,13 +10,18 @@ from app.services.shopify_sitemap_discovery import ShopifySitemapDiscovery
 
 class DolcevitahubV1Adapter:
     adapter_key = 'dolcevitahub__v1'
-    allowed_strategies = ('shopify_json', 'shopify_js')
+    allowed_strategies = ('shopify_json', 'shopify_js', 'shopify_browser_extension')
 
     def discover_visible_catalog(self, context: SourceContext) -> list[str]:
         base_url = context.source_url.rstrip('/')
         timeout = int((context.source_config.get('timeouts') or {}).get('product_sec', 10))
         policy = ShopifyPolicyFactory.sitemap(context.source_config)
-        return sorted(ShopifySitemapDiscovery.discover_product_urls(base_url, timeout, policy))
+        try:
+            return sorted(ShopifySitemapDiscovery.discover_product_urls(base_url, timeout, policy))
+        except Exception:
+            # Some runs are rate-limited on sitemap endpoint (429).
+            # Let strategy chain continue and collect products anyway.
+            return []
 
     def normalize_product(self, raw_product: dict) -> dict:
         url = str(raw_product.get('url') or '').strip()
