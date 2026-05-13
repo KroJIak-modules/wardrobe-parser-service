@@ -36,6 +36,7 @@ def list_sources() -> list[dict]:
             'adapter_key': item.adapter_key,
             'enabled': item.enabled,
             'sync_enabled': item.sync_enabled,
+            'config': dict(item.config or {}),
         }
         for item in items
     ]

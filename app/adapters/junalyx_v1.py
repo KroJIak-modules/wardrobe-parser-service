@@ -35,6 +35,8 @@ class JunalyxV1Adapter:
             'url': url,
             'handle': handle,
             'title': title,
+            'description': str(raw_product.get('description') or '').strip() or None,
+            'vendor': str(raw_product.get('vendor') or '').strip(),
             'product_type': str(raw_product.get('product_type') or '').strip(),
             'tags': raw_product.get('tags') if isinstance(raw_product.get('tags'), list) else [],
             'price': price,

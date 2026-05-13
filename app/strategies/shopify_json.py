@@ -256,6 +256,7 @@ class ShopifyJsonStrategy:
             'url': f'{base_url}/products/{handle}' if handle else '',
             'handle': handle,
             'title': str(item.get('title') or '').strip(),
+            'description': str(item.get('body_html') or item.get('description') or '').strip() or None,
             'vendor': str(item.get('vendor') or '').strip(),
             'product_type': str(item.get('product_type') or '').strip(),
             'tags': item.get('tags') if isinstance(item.get('tags'), list) else [],

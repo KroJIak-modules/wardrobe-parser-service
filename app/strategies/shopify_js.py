@@ -246,6 +246,7 @@ class ShopifyJsStrategy:
             'url': f'{base_url}/products/{handle}',
             'handle': handle,
             'title': str(payload.get('title') or '').strip(),
+            'description': str(payload.get('body_html') or payload.get('description') or '').strip() or None,
             'vendor': str(payload.get('vendor') or '').strip(),
             'product_type': str(payload.get('type') or '').strip(),
             'tags': payload.get('tags') if isinstance(payload.get('tags'), list) else [],
