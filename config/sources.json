@@ -1187,12 +1187,177 @@
         "strategy_sequence": [
           "store_backlash_colorme"
         ],
+        "store_backlash_colorme_workers": 6,
         "retry_limits": {
           "store_backlash_colorme": 0
         },
         "timeouts": {
           "product_sec": 20,
           "source_run_sec": 420
+        }
+      }
+    },
+    {
+      "id": 23,
+      "key": "vinted.com",
+      "url": "https://www.vinted.com/",
+      "adapter_key": "vinted__v1",
+      "enabled": true,
+      "sync_enabled": true,
+      "config": {
+        "adapter_ready": false,
+        "adapter_revision": "vinted__v1-r1",
+        "strategy_sequence": [
+          "vinted_jsonld"
+        ],
+        "retry_limits": {
+          "vinted_jsonld": 0
+        },
+        "timeouts": {
+          "product_sec": 20,
+          "source_run_sec": 420
+        },
+        "vinted": {
+          "search_text": "nike"
+        },
+        "vinted_jsonld_workers": 6
+      }
+    },
+    {
+      "id": 24,
+      "key": "grailed.com",
+      "url": "https://www.grailed.com/",
+      "adapter_key": "grailed__v1",
+      "enabled": true,
+      "sync_enabled": true,
+      "config": {
+        "adapter_ready": false,
+        "adapter_revision": "grailed__v1-r1",
+        "strategy_sequence": [
+          "grailed_algolia_jsonld"
+        ],
+        "retry_limits": {
+          "grailed_algolia_jsonld": 0
+        },
+        "timeouts": {
+          "product_sec": 20,
+          "source_run_sec": 420
+        },
+        "grailed": {
+          "search_text": "leather jacket"
+        },
+        "grailed_algolia_jsonld_workers": 6
+      }
+    },
+    {
+      "id": 25,
+      "key": "newrock.com",
+      "url": "https://newrock.com/",
+      "adapter_key": "newrock__v1",
+      "enabled": true,
+      "sync_enabled": true,
+      "config": {
+        "adapter_ready": false,
+        "adapter_revision": "newrock__v1-r1",
+        "strategy_sequence": [
+          "shopify_json",
+          "shopify_js"
+        ],
+        "shopify_sitemap": {
+          "max_products": 50000,
+          "include_locale_sitemaps": false,
+          "request_retries": 1
+        },
+        "shopify_json_quality": {
+          "antibot_pause_sec": 3,
+          "retry_backoff_sec": [
+            1,
+            3
+          ],
+          "enrich_from_js_fields": []
+        },
+        "retry_limits": {
+          "shopify_json": 1,
+          "shopify_js": 1
+        },
+        "timeouts": {
+          "product_sec": 10,
+          "source_run_sec": 300
+        },
+        "shopify_currency": {
+          "use_storefront_currency_fallback": false,
+          "requested_currency_priority": [
+            "USD",
+            "EUR",
+            "GBP"
+          ]
+        },
+        "shopify_js_workers": 7,
+        "shopify_js_quality": {
+          "progress_every": 25,
+          "wait_log_sec": 15,
+          "pause_poll_sec": 0.2,
+          "antibot_pause_sec": 3,
+          "retry_backoff_sec": [
+            1,
+            3
+          ]
+        }
+      }
+    },
+    {
+      "id": 26,
+      "key": "rickowens.eu",
+      "url": "https://www.rickowens.eu/",
+      "adapter_key": "rickowens__v1",
+      "enabled": true,
+      "sync_enabled": true,
+      "config": {
+        "adapter_ready": false,
+        "adapter_revision": "rickowens__v1-r1",
+        "strategy_sequence": [
+          "shopify_json",
+          "shopify_js"
+        ],
+        "shopify_sitemap": {
+          "max_products": 50000,
+          "include_locale_sitemaps": false,
+          "request_retries": 1
+        },
+        "shopify_json_quality": {
+          "antibot_pause_sec": 3,
+          "retry_backoff_sec": [
+            1,
+            3
+          ],
+          "enrich_from_js_fields": []
+        },
+        "retry_limits": {
+          "shopify_json": 1,
+          "shopify_js": 1
+        },
+        "timeouts": {
+          "product_sec": 10,
+          "source_run_sec": 300
+        },
+        "shopify_currency": {
+          "use_storefront_currency_fallback": false,
+          "requested_currency_priority": [
+            "USD",
+            "EUR",
+            "GBP"
+          ]
+        },
+        "shopify_js_workers": 7,
+        "shopify_js_quality": {
+          "progress_every": 25,
+          "wait_log_sec": 15,
+          "pause_poll_sec": 0.2,
+          "antibot_pause_sec": 3,
+          "retry_backoff_sec": [
+            1,
+            3
+          ]
         }
       }
     }

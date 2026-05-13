@@ -425,3 +425,19 @@ def test_visible_coverage_decodes_percent_encoded_handles() -> None:
     assert report.visible_coverage == 1.0
     assert report.parsed_visible_products == 1
     assert report.status.value == 'success'
+
+
+def test_dedup_scoring_filters_title_vendor_price_duplicates() -> None:
+    cfg = _base_config()
+    cfg['visible_catalog_set'] = ['u1', 'u2']
+    cfg['dedup'] = {'enabled': True, 'score_threshold': 0.75}
+    cfg['strategy_payloads']['s1'] = [
+        {'url': 'u1', 'title': 'Black Hoodie', 'vendor': 'BrandX', 'price': 100, 'currency': 'USD', 'weight_grams': 500},
+        {'url': 'u2', 'title': ' black   hoodie ', 'vendor': 'brandx', 'price': 101, 'currency': 'USD', 'weight_grams': 500},
+    ]
+    svc = _build_service(cfg)
+    report = svc.run('jadedldn.com')
+    assert report.total_found_products == 2
+    assert report.parsed_visible_products == 1
+    assert report.aggregated_unavailable_reasons.get('deduplicated', 0) == 1
+    assert any(e.startswith('dedup_candidate:') for e in report.errors)

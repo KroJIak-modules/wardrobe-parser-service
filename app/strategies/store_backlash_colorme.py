@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import parse_qs, urlparse
 
 import requests
@@ -21,22 +22,32 @@ class StoreBacklashColormeStrategy:
         logger = RunLogger(context.run_id)
         base_url = context.source.source_url.rstrip('/')
         timeout = int((context.source.source_config.get('timeouts') or {}).get('product_sec', 15))
+        workers = int(context.source.source_config.get('store_backlash_colorme_workers') or 1)
+        workers = max(1, workers)
         logger.strategy_event('progress', self.name, stage='discover_start', base_url=base_url, timeout=timeout)
         product_urls = self._candidate_urls_or_discover(context, base_url, timeout)
         logger.strategy_event('progress', self.name, stage='discover_done', discovered=len(product_urls))
         out: list[dict] = []
-        for idx, url in enumerate(product_urls, start=1):
-            try:
-                out.append(self._fetch_one(url, timeout))
-            except Exception as exc:
-                if idx <= 5 or idx % 100 == 0:
+        logger.strategy_event('progress', self.name, stage='fetch_start', total=len(product_urls), workers=workers)
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            future_to_idx: dict = {}
+            for idx, url in enumerate(product_urls, start=1):
+                future = pool.submit(self._fetch_one, url, timeout)
+                future_to_idx[future] = idx
+            processed = 0
+            for future in as_completed(future_to_idx):
+                idx = future_to_idx[future]
+                processed += 1
+                try:
+                    out.append(future.result())
+                except Exception as exc:
                     logger.strategy_event('progress', self.name, stage='fetch_skip', index=idx, reason=str(exc))
-                continue
-            logger.strategy_event('progress', self.name, stage='fetch_progress', processed=f'{idx}/{len(product_urls)}', parsed=len(out))
+                logger.strategy_event('progress', self.name, stage='fetch_progress', processed=f'{processed}/{len(product_urls)}', parsed=len(out))
         context.diagnostics.update(
             {
                 'candidate_urls': len(product_urls),
                 'mapped_products': len(out),
+                'workers': workers,
             }
         )
         logger.strategy_event('progress', self.name, stage='run_done', parsed=len(out), discovered=len(product_urls))

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, Query, status
+from pydantic import BaseModel
 
 from app.core.exceptions import ConfigError
 from app.schemas.run_report import SourceRunJobCreated, SourceRunJobStatus, SourceRunReport
@@ -8,6 +9,49 @@ from app.services.source_run_service_factory import SourceRunServiceFactory
 router = APIRouter(prefix='/sync', tags=['sync'])
 job_service = SourceRunJobService(max_workers=2)
 service_factory = SourceRunServiceFactory()
+
+
+class SourceFlagPatch(BaseModel):
+    enabled: bool | None = None
+    sync_enabled: bool | None = None
+
+
+@router.get('/sources')
+def list_sources() -> list[dict]:
+    svc = service_factory.build()
+    items = svc.source_repo.list_all()
+    return [
+        {
+            'id': item.id,
+            'key': item.key,
+            'url': item.url,
+            'adapter_key': item.adapter_key,
+            'enabled': item.enabled,
+            'sync_enabled': item.sync_enabled,
+        }
+        for item in items
+    ]
+
+
+@router.patch('/sources/{source_key}')
+def patch_source(source_key: str, payload: SourceFlagPatch) -> dict:
+    svc = service_factory.build()
+    try:
+        updated = svc.source_repo.patch_flags(
+            source_key,
+            enabled=payload.enabled,
+            sync_enabled=payload.sync_enabled,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {
+        'id': updated.id,
+        'key': updated.key,
+        'url': updated.url,
+        'adapter_key': updated.adapter_key,
+        'enabled': updated.enabled,
+        'sync_enabled': updated.sync_enabled,
+    }
 
 
 @router.post('/sources/{source_key}/run', response_model=SourceRunReport)

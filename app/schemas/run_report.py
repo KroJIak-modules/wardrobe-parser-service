@@ -27,6 +27,8 @@ class SourceRunReport(BaseModel):
     errors: list[str] = Field(default_factory=list)
     total_found_products: int = 0
     total_valid_products: int = 0
+    valid_products: list[dict] = Field(default_factory=list)
+    unavailable_products: list[dict] = Field(default_factory=list)
     duration_sec: float = 0.0
     top_valid_products: list[dict] = Field(default_factory=list)
     missing_weight_products: list[dict] = Field(default_factory=list)

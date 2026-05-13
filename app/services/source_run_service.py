@@ -18,6 +18,59 @@ from app.strategies.registry import StrategyRegistry
 
 
 class SourceRunService:
+    @staticmethod
+    def _normalize_title(title: str) -> str:
+        return ' '.join(str(title or '').strip().lower().split())
+
+    @staticmethod
+    def _normalize_vendor(vendor: str | None) -> str:
+        return str(vendor or '').strip().lower()
+
+    @staticmethod
+    def _to_float(value: object) -> float | None:
+        try:
+            if value is None:
+                return None
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    @classmethod
+    def _dedup_score(cls, left: dict, right: dict, cfg: dict) -> tuple[float, list[str]]:
+        reasons: list[str] = []
+        score = 0.0
+        title_w = float(cfg.get('title_match_weight', 0.45))
+        vendor_w = float(cfg.get('vendor_match_weight', 0.2))
+        price_w = float(cfg.get('price_close_weight', 0.2))
+        handle_w = float(cfg.get('handle_match_weight', 0.35))
+        price_ratio_limit = float(cfg.get('price_diff_ratio_limit', 0.05))
+        score_cap = float(cfg.get('score_cap', 1.0))
+
+        if cls._normalize_title(str(left.get('title') or '')) == cls._normalize_title(str(right.get('title') or '')):
+            score += title_w
+            reasons.append('title_match')
+
+        left_vendor = cls._normalize_vendor(left.get('vendor'))
+        right_vendor = cls._normalize_vendor(right.get('vendor'))
+        if left_vendor and left_vendor == right_vendor:
+            score += vendor_w
+            reasons.append('vendor_match')
+
+        lp = cls._to_float(left.get('price'))
+        rp = cls._to_float(right.get('price'))
+        if lp is not None and rp is not None:
+            mx = max(lp, rp)
+            diff = abs(lp - rp)
+            if mx > 0 and diff / mx <= price_ratio_limit:
+                score += price_w
+                reasons.append('price_close')
+
+        if str(left.get('handle') or '').strip() and str(left.get('handle') or '').strip() == str(right.get('handle') or '').strip():
+            score += handle_w
+            reasons.append('handle_match')
+
+        return min(score, score_cap), reasons
+
     def __init__(
         self,
         source_repo: SourceRepository,
@@ -115,8 +168,13 @@ class SourceRunService:
         seen_handles: set[str] = set()
         seen_urls: set[str] = set()
         valid_products: list[dict] = []
+        unavailable_products: list[dict] = []
         weight_source_stats: dict[str, int] = {'source': 0, 'keyword_rule': 0, 'missing': 0}
         pending_candidate_urls: set[str] = set(visible_set)
+        dedup_cfg = source.config.get('dedup') if isinstance(source.config.get('dedup'), dict) else {}
+        dedup_enabled = bool(dedup_cfg.get('enabled', True))
+        dedup_threshold = float(dedup_cfg.get('score_threshold', 0.75))
+        accepted_for_dedup: list[dict] = []
 
         for strategy_name in strategy_sequence:
             strategy = self.strategy_registry.get(strategy_name)
@@ -194,24 +252,47 @@ class SourceRunService:
                 if handle and handle in seen_handles:
                     continue
 
+                if dedup_enabled and accepted_for_dedup:
+                    best_score = 0.0
+                    best_reasons: list[str] = []
+                    best_url = ''
+                    for prev in accepted_for_dedup:
+                        pair_score, pair_reasons = self._dedup_score(prev, normalized, dedup_cfg)
+                        if pair_score > best_score:
+                            best_score = pair_score
+                            best_reasons = pair_reasons
+                            best_url = str(prev.get('url') or '').strip()
+                    if best_score >= dedup_threshold:
+                        report.aggregated_unavailable_reasons['deduplicated'] = report.aggregated_unavailable_reasons.get('deduplicated', 0) + 1
+                        report.errors.append(
+                            f'dedup_candidate:score={best_score:.3f}:url={url or "-"}:dup_of={best_url or "-"}:reasons={",".join(best_reasons)}'
+                        )
+                        if url:
+                            report.quarantined_urls.append(url)
+                        continue
+
+                # Any successfully normalized unique product is considered delivered
+                # for coverage/fallback semantics; validation controls availability.
+                if url:
+                    parsed_urls.add(url)
+                    seen_urls.add(url)
+                if handle:
+                    seen_handles.add(handle)
+                    parsed_handles.add(handle)
+                attempt.parsed_count += 1
+
                 ok, reasons = adapter.validate_product(normalized)
+                accepted_for_dedup.append(normalized)
                 if ok:
-                    if url:
-                        parsed_urls.add(url)
-                        seen_urls.add(url)
-                    if handle:
-                        seen_handles.add(handle)
-                        parsed_handles.add(handle)
-                    attempt.parsed_count += 1
                     valid_products.append(normalized)
                 else:
+                    unavailable_snapshot = dict(normalized)
+                    unavailable_snapshot['unavailable_reasons'] = list(reasons)
+                    unavailable_products.append(unavailable_snapshot)
                     for reason in reasons:
                         report.aggregated_unavailable_reasons[reason] = report.aggregated_unavailable_reasons.get(reason, 0) + 1
                     if 'missing_weight' in reasons:
                         report.missing_weight_products.append(self._missing_weight_product_snapshot(normalized))
-                    if url:
-                        report.quarantined_urls.append(url)
-                        next_pending_candidate_urls.add(url)
 
             attempt.success = True
             report.attempts.append(attempt)
@@ -246,6 +327,8 @@ class SourceRunService:
             report.status = SourceRunStatus.PARTIAL
 
         report.total_valid_products = len(valid_products)
+        report.valid_products = valid_products
+        report.unavailable_products = unavailable_products
         report.top_valid_products = valid_products[:10]
         report.weight_source_stats = weight_source_stats
         report.duration_sec = time.perf_counter() - started_at

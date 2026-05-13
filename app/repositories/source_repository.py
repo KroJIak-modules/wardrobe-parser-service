@@ -45,3 +45,52 @@ class SourceRepository:
                 config=dict(item.get('config') or {}),
             )
         raise KeyError(f'Unknown source key: {source_key}')
+
+    def list_all(self) -> list[SourceRecord]:
+        if not self.config_path.exists():
+            raise KeyError(f'Sources config not found: {self.config_path}')
+        raw = json.loads(self.config_path.read_text(encoding='utf-8'))
+        items = raw.get('sources') if isinstance(raw, dict) else None
+        if not isinstance(items, list):
+            raise KeyError('Invalid sources config format: expected {"sources": [...]}')
+        out: list[SourceRecord] = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            out.append(
+                SourceRecord(
+                    id=int(item.get('id') or 0),
+                    key=str(item.get('key') or '').strip(),
+                    url=str(item.get('url') or '').strip(),
+                    adapter_key=str(item.get('adapter_key') or '').strip(),
+                    enabled=bool(item.get('enabled', True)),
+                    sync_enabled=bool(item.get('sync_enabled', True)),
+                    config=dict(item.get('config') or {}),
+                )
+            )
+        return out
+
+    def patch_flags(self, source_key: str, *, enabled: bool | None = None, sync_enabled: bool | None = None) -> SourceRecord:
+        if not self.config_path.exists():
+            raise KeyError(f'Sources config not found: {self.config_path}')
+        raw = json.loads(self.config_path.read_text(encoding='utf-8'))
+        items = raw.get('sources') if isinstance(raw, dict) else None
+        if not isinstance(items, list):
+            raise KeyError('Invalid sources config format: expected {"sources": [...]}')
+        found = False
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            key = str(item.get('key') or '').strip()
+            if key != source_key:
+                continue
+            if enabled is not None:
+                item['enabled'] = bool(enabled)
+            if sync_enabled is not None:
+                item['sync_enabled'] = bool(sync_enabled)
+            found = True
+            break
+        if not found:
+            raise KeyError(f'Unknown source key: {source_key}')
+        self.config_path.write_text(json.dumps({'sources': items}, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+        return self.get_by_key(source_key)

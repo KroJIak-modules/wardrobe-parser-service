@@ -37,6 +37,7 @@ class SourceRunJobService:
         self._futures: dict[str, Future[None]] = {}
         self._active_by_source: dict[str, str] = {}
         self._lock = Lock()
+        self._stale_pending_sec = 180
 
     def create(self, source_key: str, dry_run: bool, runner: Callable[[str], SourceRunReport]) -> SourceRunJobCreatedResult:
         now = datetime.now(timezone.utc)
@@ -52,7 +53,15 @@ class SourceRunJobService:
             if active_job_id:
                 active = self._jobs.get(active_job_id)
                 if active and active.status in {SourceRunStatus.PENDING, SourceRunStatus.IN_PROGRESS}:
-                    return SourceRunJobCreatedResult(job=active, is_new=False)
+                    if (
+                        active.status == SourceRunStatus.PENDING
+                        and (now - active.created_at).total_seconds() > self._stale_pending_sec
+                    ):
+                        self._futures.pop(active_job_id, None)
+                        self._jobs.pop(active_job_id, None)
+                        self._active_by_source.pop(source_key, None)
+                    else:
+                        return SourceRunJobCreatedResult(job=active, is_new=False)
             self._jobs[job.job_id] = job
             self._active_by_source[source_key] = job.job_id
         future = self._executor.submit(self._execute, job.job_id, runner)

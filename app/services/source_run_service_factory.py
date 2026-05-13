@@ -22,6 +22,10 @@ from app.adapters.junalyx_v1 import JunalyxV1Adapter
 from app.adapters.archived_v1 import ArchivedV1Adapter
 from app.adapters.dolcevitahub_v1 import DolcevitahubV1Adapter
 from app.adapters.store_backlash_v1 import StoreBacklashV1Adapter
+from app.adapters.vinted_v1 import VintedV1Adapter
+from app.adapters.grailed_v1 import GrailedV1Adapter
+from app.adapters.newrock_v1 import NewrockV1Adapter
+from app.adapters.rickowens_v1 import RickowensV1Adapter
 from app.adapters.registry import AdapterRegistry
 from app.core.config import settings
 from app.repositories.source_repository import SourceRepository
@@ -33,6 +37,8 @@ from app.strategies.shopify_browser_extension import ShopifyBrowserExtensionStra
 from app.strategies.shopify_js import ShopifyJsStrategy
 from app.strategies.shopify_json import ShopifyJsonStrategy
 from app.strategies.store_backlash_colorme import StoreBacklashColormeStrategy
+from app.strategies.vinted_jsonld import VintedJsonLdStrategy
+from app.strategies.grailed_algolia_jsonld import GrailedAlgoliaJsonLdStrategy
 
 
 class SourceRunServiceFactory:
@@ -60,12 +66,18 @@ class SourceRunServiceFactory:
         adapter_registry.register(ArchivedV1Adapter())
         adapter_registry.register(DolcevitahubV1Adapter())
         adapter_registry.register(StoreBacklashV1Adapter())
+        adapter_registry.register(VintedV1Adapter())
+        adapter_registry.register(GrailedV1Adapter())
+        adapter_registry.register(NewrockV1Adapter())
+        adapter_registry.register(RickowensV1Adapter())
 
         strategy_registry = StrategyRegistry()
         strategy_registry.register(ShopifyJsonStrategy())
         strategy_registry.register(ShopifyJsStrategy())
         strategy_registry.register(ShopifyBrowserExtensionStrategy())
         strategy_registry.register(StoreBacklashColormeStrategy())
+        strategy_registry.register(VintedJsonLdStrategy())
+        strategy_registry.register(GrailedAlgoliaJsonLdStrategy())
 
         weight_rules_client = WeightRulesClient(backend_base_url=settings.backend_base_url)
         return SourceRunService(
