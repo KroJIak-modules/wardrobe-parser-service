@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 from typing import Any
+from threading import Lock
+
+
+_SUBSCRIBERS: dict[str, list] = {}
+_LOCK = Lock()
 
 
 class RunLogger:
@@ -18,3 +23,36 @@ class RunLogger:
         for key, value in fields.items():
             parts.append(f'{key}={value}')
         print(' '.join(parts), flush=True)
+        if self.run_id:
+            with _LOCK:
+                callbacks = list(_SUBSCRIBERS.get(self.run_id, []))
+            payload = {
+                'type': event_name,
+                'strategy': strategy,
+                'fields': dict(fields),
+            }
+            for callback in callbacks:
+                try:
+                    callback(payload)
+                except Exception:
+                    # Logger callbacks must never break parser execution.
+                    continue
+
+
+def subscribe_run_events(run_id: str, callback) -> None:
+    if not run_id:
+        return
+    with _LOCK:
+        _SUBSCRIBERS.setdefault(run_id, []).append(callback)
+
+
+def unsubscribe_run_events(run_id: str, callback) -> None:
+    if not run_id:
+        return
+    with _LOCK:
+        callbacks = _SUBSCRIBERS.get(run_id)
+        if not callbacks:
+            return
+        _SUBSCRIBERS[run_id] = [cb for cb in callbacks if cb is not callback]
+        if not _SUBSCRIBERS[run_id]:
+            _SUBSCRIBERS.pop(run_id, None)

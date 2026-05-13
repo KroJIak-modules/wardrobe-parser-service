@@ -35,22 +35,3 @@ class SourceRunReport(BaseModel):
     weight_source_stats: dict[str, int] = Field(default_factory=dict)
     report_path: str | None = None
 
-
-class SourceRunJobCreated(BaseModel):
-    job_id: str
-    source_key: str
-    dry_run: bool
-    status: SourceRunStatus
-    created_at: str
-
-
-class SourceRunJobStatus(BaseModel):
-    job_id: str
-    source_key: str
-    dry_run: bool
-    status: SourceRunStatus
-    created_at: str
-    started_at: str | None = None
-    finished_at: str | None = None
-    error: str | None = None
-    report: SourceRunReport | None = None

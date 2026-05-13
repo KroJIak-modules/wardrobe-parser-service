@@ -15,7 +15,23 @@ class ShopifySitemapDiscovery:
         body = (response.text or '').lower()
         is_password_gate = final_url.endswith('/password') or '/password' in final_url
         if not is_password_gate:
-            is_password_gate = ('storefront password' in body) or ('enter using password' in body)
+            # Avoid false positives from storefront scripts/translations that may contain these words.
+            # Treat as password gate only when password-template/form markers are present.
+            has_password_marker = any(
+                marker in body
+                for marker in (
+                    'action="/password"',
+                    "action='/password'",
+                    'name="password"',
+                    "name='password'",
+                    'id="password"',
+                    "id='password'",
+                    'templates/password',
+                    'shopify-section-password',
+                )
+            )
+            has_password_phrase = ('storefront password' in body) or ('enter using password' in body)
+            is_password_gate = has_password_marker and has_password_phrase
         if is_password_gate:
             raise StorefrontBlockedError('storefront_password_gate')
 
