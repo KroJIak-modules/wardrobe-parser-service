@@ -1,7 +1,8 @@
 import { dolcevitahubScenario } from './dolcevitahub.mjs';
 import { defaultShopifyScenario } from './default-shopify.mjs';
+import { goatLiveScenario } from './goat-live.mjs';
 
-const scenarios = [dolcevitahubScenario, defaultShopifyScenario];
+const scenarios = [goatLiveScenario, dolcevitahubScenario, defaultShopifyScenario];
 
 export function resolveScenario(baseUrl, forcedScenarioId = '') {
   const forced = String(forcedScenarioId || '').trim();

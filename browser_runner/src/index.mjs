@@ -102,6 +102,9 @@ function buildOutputPayload({ baseUrl, report }) {
   const warnings = []
     .concat(Array.isArray(report?.warnings) ? report.warnings : [])
     .concat(Array.isArray(report?.notes) ? report.notes : []);
+  if (artifacts?.debug_first) {
+    warnings.push(`debug_first=${JSON.stringify(artifacts.debug_first)}`);
+  }
   const errorDetails = []
     .concat(Array.isArray(report?.errors) ? report.errors : [])
     .concat(

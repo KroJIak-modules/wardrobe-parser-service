@@ -215,6 +215,13 @@ class SourceRunService:
             next_pending_candidate_urls: set[str] = set()
             for raw in raw_items:
                 normalized = adapter.normalize_product(raw)
+                # Preserve critical fields from strategy payload if adapter omitted them.
+                if not str(normalized.get('vendor') or '').strip():
+                    normalized['vendor'] = str(raw.get('vendor') or raw.get('brand') or '').strip()
+                if not str(normalized.get('description') or '').strip():
+                    normalized['description'] = str(raw.get('description') or raw.get('body_html') or '').strip() or None
+                if not isinstance(normalized.get('images'), list) or not normalized.get('images'):
+                    normalized['images'] = list(raw.get('images')) if isinstance(raw.get('images'), list) else []
                 normalized = WeightEnrichmentService.apply_keyword_weight(normalized, weight_rules)
                 source = str(normalized.get('weight_source') or 'missing').strip().lower()
                 if source not in weight_source_stats:

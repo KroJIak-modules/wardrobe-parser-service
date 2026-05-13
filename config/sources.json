@@ -53,9 +53,9 @@
         "shopify_currency": {
           "use_storefront_currency_fallback": false,
           "requested_currency_priority": [
+            "GBP",
             "USD",
-            "EUR",
-            "GBP"
+            "EUR"
           ]
         }
       }
@@ -66,7 +66,7 @@
       "url": "https://www.racerworldwide.net/",
       "adapter_key": "racerworldwide__v1",
       "enabled": true,
-      "sync_enabled": false,
+      "sync_enabled": true,
       "config": {
         "adapter_ready": true,
         "adapter_revision": "racerworldwide__v1-r1",
@@ -122,7 +122,7 @@
       "url": "https://nofaithstudios.com/",
       "adapter_key": "nofaithstudios__v1",
       "enabled": true,
-      "sync_enabled": false,
+      "sync_enabled": true,
       "config": {
         "adapter_ready": true,
         "adapter_revision": "nofaithstudios__v1-r1",
@@ -154,8 +154,8 @@
         "shopify_currency": {
           "use_storefront_currency_fallback": false,
           "requested_currency_priority": [
-            "USD",
             "EUR",
+            "USD",
             "GBP"
           ]
         },
@@ -178,7 +178,7 @@
       "url": "https://professor-e.com/",
       "adapter_key": "professore__v1",
       "enabled": true,
-      "sync_enabled": false,
+      "sync_enabled": true,
       "config": {
         "adapter_ready": true,
         "adapter_revision": "professore__v1-r1",
@@ -265,12 +265,13 @@
         "shopify_currency": {
           "use_storefront_currency_fallback": false,
           "requested_currency_priority": [
+            "GBP",
+            "JPY",
             "USD",
-            "EUR",
-            "GBP"
+            "EUR"
           ]
         },
-        "shopify_js_workers": 7,
+        "shopify_js_workers": 2,
         "shopify_js_quality": {
           "progress_every": 25,
           "wait_log_sec": 15,
@@ -289,7 +290,7 @@
       "url": "https://paradoxeparis.com/",
       "adapter_key": "paradoxeparis__v1",
       "enabled": true,
-      "sync_enabled": false,
+      "sync_enabled": true,
       "config": {
         "adapter_ready": true,
         "adapter_revision": "paradoxeparis__v1-r1",
@@ -344,7 +345,7 @@
       "url": "https://thelastconspiracy.com/",
       "adapter_key": "thelastconspiracy__v1",
       "enabled": true,
-      "sync_enabled": false,
+      "sync_enabled": true,
       "config": {
         "adapter_ready": true,
         "adapter_revision": "thelastconspiracy__v1-r1",
@@ -400,7 +401,7 @@
       "url": "https://julius-garden.online/",
       "adapter_key": "juliusgarden__v1",
       "enabled": true,
-      "sync_enabled": false,
+      "sync_enabled": true,
       "config": {
         "adapter_ready": true,
         "adapter_revision": "juliusgarden__v1-r1",
@@ -456,7 +457,7 @@
       "url": "https://14thaddiction.com/",
       "adapter_key": "fourteenthaddiction__v1",
       "enabled": true,
-      "sync_enabled": false,
+      "sync_enabled": true,
       "config": {
         "adapter_ready": true,
         "adapter_revision": "fourteenthaddiction__v1-r1",
@@ -512,7 +513,7 @@
       "url": "https://prayingg.com/",
       "adapter_key": "prayingg__v1",
       "enabled": true,
-      "sync_enabled": false,
+      "sync_enabled": true,
       "config": {
         "adapter_ready": true,
         "adapter_revision": "prayingg__v1-r1",
@@ -568,7 +569,7 @@
       "url": "https://fourtwofour.com/",
       "adapter_key": "fourtwofour__v1",
       "enabled": true,
-      "sync_enabled": false,
+      "sync_enabled": true,
       "config": {
         "adapter_ready": true,
         "adapter_revision": "fourtwofour__v1-r1",
@@ -624,7 +625,7 @@
       "url": "https://remnantsvintage.com/",
       "adapter_key": "remnantsvintage__v1",
       "enabled": true,
-      "sync_enabled": false,
+      "sync_enabled": true,
       "config": {
         "adapter_ready": true,
         "adapter_revision": "remnantsvintage__v1-r1",
@@ -736,13 +737,12 @@
       "url": "https://www.hlorenzo.com/",
       "adapter_key": "hlorenzo__v1",
       "enabled": true,
-      "sync_enabled": false,
+      "sync_enabled": true,
       "config": {
         "adapter_ready": true,
         "adapter_revision": "hlorenzo__v1-r1",
         "strategy_sequence": [
-          "shopify_json",
-          "shopify_js"
+          "shopify_json"
         ],
         "shopify_sitemap": {
           "max_products": 50000,
@@ -792,7 +792,7 @@
       "url": "https://simonerocha.com/",
       "adapter_key": "simonerocha__v1",
       "enabled": true,
-      "sync_enabled": false,
+      "sync_enabled": true,
       "config": {
         "adapter_ready": true,
         "adapter_revision": "simonerocha__v1-r1",
@@ -848,7 +848,7 @@
       "url": "https://orimono.eu/",
       "adapter_key": "orimono__v1",
       "enabled": true,
-      "sync_enabled": false,
+      "sync_enabled": true,
       "config": {
         "adapter_ready": true,
         "adapter_revision": "orimono__v1-r1",
@@ -904,7 +904,7 @@
       "url": "https://pauleasterlin.com/",
       "adapter_key": "pauleasterlin__v1",
       "enabled": true,
-      "sync_enabled": false,
+      "sync_enabled": true,
       "config": {
         "adapter_ready": true,
         "adapter_revision": "pauleasterlin__v1-r1",
@@ -960,7 +960,7 @@
       "url": "https://driewgarments.com/",
       "adapter_key": "driewgarments__v1",
       "enabled": true,
-      "sync_enabled": false,
+      "sync_enabled": true,
       "config": {
         "adapter_ready": true,
         "adapter_revision": "driewgarments__v1-r1",
@@ -1016,7 +1016,7 @@
       "url": "https://junalyx.com/",
       "adapter_key": "junalyx__v1",
       "enabled": true,
-      "sync_enabled": false,
+      "sync_enabled": true,
       "config": {
         "adapter_ready": true,
         "adapter_revision": "junalyx__v1-r1",
@@ -1072,7 +1072,7 @@
       "url": "https://archived.co/",
       "adapter_key": "archived__v1",
       "enabled": true,
-      "sync_enabled": false,
+      "sync_enabled": true,
       "config": {
         "adapter_ready": true,
         "adapter_revision": "archived__v1-r1",
@@ -1128,7 +1128,7 @@
       "url": "https://dolcevitahub.com/",
       "adapter_key": "dolcevitahub__v1",
       "enabled": true,
-      "sync_enabled": false,
+      "sync_enabled": true,
       "config": {
         "adapter_ready": true,
         "adapter_revision": "dolcevitahub__v1-r1",
@@ -1179,7 +1179,7 @@
       "url": "https://store-backlash.jp/",
       "adapter_key": "store_backlash__v1",
       "enabled": true,
-      "sync_enabled": false,
+      "sync_enabled": true,
       "config": {
         "adapter_ready": false,
         "adapter_revision": "store_backlash__v1-r1",
@@ -1202,7 +1202,7 @@
       "url": "https://www.vinted.com/",
       "adapter_key": "vinted__v1",
       "enabled": true,
-      "sync_enabled": false,
+      "sync_enabled": true,
       "config": {
         "adapter_ready": false,
         "adapter_revision": "vinted__v1-r1",
@@ -1228,7 +1228,7 @@
       "url": "https://www.grailed.com/",
       "adapter_key": "grailed__v1",
       "enabled": true,
-      "sync_enabled": false,
+      "sync_enabled": true,
       "config": {
         "adapter_ready": false,
         "adapter_revision": "grailed__v1-r1",
@@ -1310,7 +1310,7 @@
       "url": "https://www.rickowens.eu/",
       "adapter_key": "rickowens__v1",
       "enabled": true,
-      "sync_enabled": false,
+      "sync_enabled": true,
       "config": {
         "adapter_ready": false,
         "adapter_revision": "rickowens__v1-r1",
@@ -1342,8 +1342,8 @@
         "shopify_currency": {
           "use_storefront_currency_fallback": false,
           "requested_currency_priority": [
-            "USD",
             "EUR",
+            "USD",
             "GBP"
           ]
         },
@@ -1358,6 +1358,48 @@
             3
           ]
         }
+      }
+    },
+    {
+      "id": 27,
+      "key": "intl-protocol-index.com",
+      "url": "https://intl-protocol-index.com/",
+      "adapter_key": "intlprotocolindex__v1",
+      "enabled": true,
+      "sync_enabled": true,
+      "config": {
+        "adapter_ready": true,
+        "adapter_revision": "intlprotocolindex__v1-r1",
+        "strategy_sequence": [
+          "intl_protocol_index_cafe24"
+        ],
+        "shopify_sitemap": {
+          "max_products": 50000,
+          "include_locale_sitemaps": false,
+          "request_retries": 1
+        },
+        "shopify_json_quality": {
+          "antibot_pause_sec": 3,
+          "retry_backoff_sec": [
+            1,
+            3
+          ],
+          "enrich_from_js_fields": []
+        },
+        "retry_limits": {
+          "intl_protocol_index_cafe24": 0
+        },
+        "timeouts": {
+          "product_sec": 10,
+          "source_run_sec": 300
+        },
+        "shopify_currency": {
+          "use_storefront_currency_fallback": false,
+          "requested_currency_priority": [
+            "USD"
+          ]
+        },
+        "intl_protocol_index_workers": 6
       }
     }
   ]

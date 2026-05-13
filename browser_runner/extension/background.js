@@ -110,6 +110,25 @@ async function getPageMeta() {
   });
 }
 
+async function executeJs(script) {
+  const tabId = await getActiveTabId();
+  if (tabId === null) return { ok: false, error: 'no_tab' };
+  const [result] = await chrome.scripting.executeScript({
+    target: { tabId },
+    func: (code) => {
+      try {
+        // eslint-disable-next-line no-new-func
+        const fn = new Function(`return (${code});`);
+        return { ok: true, value: fn() };
+      } catch (err) {
+        return { ok: false, error: String(err?.message || err) };
+      }
+    },
+    args: [script],
+  });
+  return result?.result || { ok: false, error: 'execute_failed' };
+}
+
 async function renderStatusOverlay(text, tone = 'info') {
   return runInTab(
     (value, kind) => {
@@ -222,6 +241,9 @@ async function handleCommand(command) {
   }
   if (action === 'status_overlay') {
     return renderStatusOverlay(command.text || '', command.tone || 'info');
+  }
+  if (action === 'execute_js') {
+    return executeJs(String(command.script || 'null'));
   }
   return { ok: false, error: `unknown_action:${action}` };
 }

@@ -26,6 +26,8 @@ from app.adapters.vinted_v1 import VintedV1Adapter
 from app.adapters.grailed_v1 import GrailedV1Adapter
 from app.adapters.newrock_v1 import NewrockV1Adapter
 from app.adapters.rickowens_v1 import RickowensV1Adapter
+from app.adapters.goat_v1 import GoatV1Adapter
+from app.adapters.intlprotocolindex_v1 import IntlprotocolindexV1Adapter
 from app.adapters.registry import AdapterRegistry
 from app.core.config import settings
 from app.repositories.source_repository import SourceRepository
@@ -39,6 +41,8 @@ from app.strategies.shopify_json import ShopifyJsonStrategy
 from app.strategies.store_backlash_colorme import StoreBacklashColormeStrategy
 from app.strategies.vinted_jsonld import VintedJsonLdStrategy
 from app.strategies.grailed_algolia_jsonld import GrailedAlgoliaJsonLdStrategy
+from app.strategies.goat_browser_extension import GoatBrowserExtensionStrategy
+from app.strategies.intl_protocol_index_cafe24 import IntlProtocolIndexCafe24Strategy
 
 
 class SourceRunServiceFactory:
@@ -70,6 +74,8 @@ class SourceRunServiceFactory:
         adapter_registry.register(GrailedV1Adapter())
         adapter_registry.register(NewrockV1Adapter())
         adapter_registry.register(RickowensV1Adapter())
+        adapter_registry.register(GoatV1Adapter())
+        adapter_registry.register(IntlprotocolindexV1Adapter())
 
         strategy_registry = StrategyRegistry()
         strategy_registry.register(ShopifyJsonStrategy())
@@ -78,6 +84,8 @@ class SourceRunServiceFactory:
         strategy_registry.register(StoreBacklashColormeStrategy())
         strategy_registry.register(VintedJsonLdStrategy())
         strategy_registry.register(GrailedAlgoliaJsonLdStrategy())
+        strategy_registry.register(GoatBrowserExtensionStrategy())
+        strategy_registry.register(IntlProtocolIndexCafe24Strategy())
 
         weight_rules_client = WeightRulesClient(backend_base_url=settings.backend_base_url)
         return SourceRunService(
