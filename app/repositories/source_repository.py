@@ -70,7 +70,14 @@ class SourceRepository:
             )
         return out
 
-    def patch_flags(self, source_key: str, *, enabled: bool | None = None, sync_enabled: bool | None = None) -> SourceRecord:
+    def patch_flags(
+        self,
+        source_key: str,
+        *,
+        enabled: bool | None = None,
+        sync_enabled: bool | None = None,
+        requested_currency_priority: list[str] | None = None,
+    ) -> SourceRecord:
         if not self.config_path.exists():
             raise KeyError(f'Sources config not found: {self.config_path}')
         raw = json.loads(self.config_path.read_text(encoding='utf-8'))
@@ -88,6 +95,13 @@ class SourceRepository:
                 item['enabled'] = bool(enabled)
             if sync_enabled is not None:
                 item['sync_enabled'] = bool(sync_enabled)
+            if requested_currency_priority is not None:
+                cfg = item.get('config') if isinstance(item.get('config'), dict) else {}
+                currency_cfg = cfg.get('shopify_currency') if isinstance(cfg.get('shopify_currency'), dict) else {}
+                normalized = [str(x).strip().upper() for x in requested_currency_priority if str(x).strip()]
+                currency_cfg['requested_currency_priority'] = normalized
+                cfg['shopify_currency'] = currency_cfg
+                item['config'] = cfg
             found = True
             break
         if not found:

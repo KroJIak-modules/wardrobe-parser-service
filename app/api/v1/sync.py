@@ -21,6 +21,7 @@ sync_orchestrator = SyncOrchestratorService(max_workers=1)
 class SourceFlagPatch(BaseModel):
     enabled: bool | None = None
     sync_enabled: bool | None = None
+    requested_currency_priority: list[str] | None = None
 
 
 @router.get('/sources')
@@ -48,6 +49,7 @@ def patch_source(source_key: str, payload: SourceFlagPatch) -> dict:
             source_key,
             enabled=payload.enabled,
             sync_enabled=payload.sync_enabled,
+            requested_currency_priority=payload.requested_currency_priority,
         )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
