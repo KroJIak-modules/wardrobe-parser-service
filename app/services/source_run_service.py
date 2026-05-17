@@ -303,7 +303,6 @@ class SourceRunService:
 
             attempt.success = True
             report.attempts.append(attempt)
-            pending_candidate_urls = next_pending_candidate_urls
 
             # Fallback semantics: stop sequence as soon as we got full visible coverage.
             if report.visible_catalog_products > 0:
@@ -312,8 +311,19 @@ class SourceRunService:
                 else:
                     current_coverage = len(parsed_urls.intersection(visible_set)) / report.visible_catalog_products
                 logger.event('strategy_coverage', strategy=strategy_name, coverage=f'{current_coverage:.6f}')
+                # Fallback always processes only missing visible candidates.
+                if visible_handles:
+                    missing_handles = visible_handles.difference(parsed_handles)
+                    pending_candidate_urls = {
+                        x for x in visible_set
+                        if self._extract_handle(x) in missing_handles
+                    }
+                else:
+                    pending_candidate_urls = visible_set.difference(parsed_urls)
                 if current_coverage == 1.0:
                     break
+            else:
+                pending_candidate_urls = next_pending_candidate_urls
 
         if report.visible_catalog_products > 0:
             if visible_handles:

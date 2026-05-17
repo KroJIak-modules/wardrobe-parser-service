@@ -15,7 +15,7 @@
           "shopify_js"
         ],
         "shopify_sitemap": {
-          "max_products": 200,
+          "max_products": 50000,
           "include_locale_sitemaps": false,
           "request_retries": 1
         },
@@ -30,7 +30,7 @@
             "images"
           ]
         },
-        "shopify_js_workers": 7,
+        "shopify_js_workers": 14,
         "shopify_js_quality": {
           "progress_every": 100,
           "wait_log_sec": 15,
@@ -47,7 +47,7 @@
           "shopify_browser_extension": 0
         },
         "timeouts": {
-          "product_sec": 10,
+          "product_sec": 6,
           "source_run_sec": 300
         },
         "shopify_currency": {
@@ -92,7 +92,7 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 10,
+          "product_sec": 6,
           "source_run_sec": 300
         },
         "shopify_currency": {
@@ -103,7 +103,7 @@
             "GBP"
           ]
         },
-        "shopify_js_workers": 7,
+        "shopify_js_workers": 14,
         "shopify_js_quality": {
           "progress_every": 25,
           "wait_log_sec": 15,
@@ -148,7 +148,7 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 10,
+          "product_sec": 6,
           "source_run_sec": 300
         },
         "shopify_currency": {
@@ -159,7 +159,7 @@
             "GBP"
           ]
         },
-        "shopify_js_workers": 7,
+        "shopify_js_workers": 14,
         "shopify_js_quality": {
           "progress_every": 25,
           "wait_log_sec": 15,
@@ -204,7 +204,7 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 10,
+          "product_sec": 6,
           "source_run_sec": 300
         },
         "shopify_currency": {
@@ -215,7 +215,7 @@
             "GBP"
           ]
         },
-        "shopify_js_workers": 7,
+        "shopify_js_workers": 14,
         "shopify_js_quality": {
           "progress_every": 25,
           "wait_log_sec": 15,
@@ -234,7 +234,7 @@
       "url": "https://essxnyc.com/",
       "adapter_key": "essxnyc__v1",
       "enabled": true,
-      "sync_enabled": false,
+      "sync_enabled": true,
       "config": {
         "adapter_ready": true,
         "adapter_revision": "essxnyc__v1-r1",
@@ -259,19 +259,18 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 10,
+          "product_sec": 6,
           "source_run_sec": 300
         },
         "shopify_currency": {
           "use_storefront_currency_fallback": false,
           "requested_currency_priority": [
             "GBP",
-            "JPY",
             "USD",
             "EUR"
           ]
         },
-        "shopify_js_workers": 2,
+        "shopify_js_workers": 14,
         "shopify_js_quality": {
           "progress_every": 25,
           "wait_log_sec": 15,
@@ -315,7 +314,7 @@
           "shopify_json": 1
         },
         "timeouts": {
-          "product_sec": 10,
+          "product_sec": 6,
           "source_run_sec": 300
         },
         "shopify_currency": {
@@ -326,7 +325,7 @@
             "GBP"
           ]
         },
-        "shopify_js_workers": 7,
+        "shopify_js_workers": 14,
         "shopify_js_quality": {
           "progress_every": 25,
           "wait_log_sec": 15,
@@ -371,7 +370,7 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 10,
+          "product_sec": 6,
           "source_run_sec": 300
         },
         "shopify_currency": {
@@ -382,7 +381,7 @@
             "GBP"
           ]
         },
-        "shopify_js_workers": 7,
+        "shopify_js_workers": 14,
         "shopify_js_quality": {
           "progress_every": 25,
           "wait_log_sec": 15,
@@ -427,7 +426,7 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 10,
+          "product_sec": 6,
           "source_run_sec": 300
         },
         "shopify_currency": {
@@ -438,7 +437,7 @@
             "GBP"
           ]
         },
-        "shopify_js_workers": 7,
+        "shopify_js_workers": 14,
         "shopify_js_quality": {
           "progress_every": 25,
           "wait_log_sec": 15,
@@ -483,7 +482,7 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 10,
+          "product_sec": 6,
           "source_run_sec": 300
         },
         "shopify_currency": {
@@ -494,7 +493,7 @@
             "GBP"
           ]
         },
-        "shopify_js_workers": 7,
+        "shopify_js_workers": 14,
         "shopify_js_quality": {
           "progress_every": 25,
           "wait_log_sec": 15,
@@ -539,7 +538,7 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 10,
+          "product_sec": 6,
           "source_run_sec": 300
         },
         "shopify_currency": {
@@ -550,7 +549,7 @@
             "GBP"
           ]
         },
-        "shopify_js_workers": 7,
+        "shopify_js_workers": 14,
         "shopify_js_quality": {
           "progress_every": 25,
           "wait_log_sec": 15,
@@ -595,7 +594,7 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 10,
+          "product_sec": 6,
           "source_run_sec": 300
         },
         "shopify_currency": {
@@ -606,7 +605,7 @@
             "GBP"
           ]
         },
-        "shopify_js_workers": 7,
+        "shopify_js_workers": 14,
         "shopify_js_quality": {
           "progress_every": 25,
           "wait_log_sec": 15,
@@ -651,7 +650,7 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 10,
+          "product_sec": 6,
           "source_run_sec": 300
         },
         "shopify_currency": {
@@ -662,7 +661,7 @@
             "GBP"
           ]
         },
-        "shopify_js_workers": 7,
+        "shopify_js_workers": 14,
         "shopify_js_quality": {
           "progress_every": 25,
           "wait_log_sec": 15,
@@ -681,7 +680,7 @@
       "url": "https://misssixty.com/",
       "adapter_key": "misssixty__v1",
       "enabled": true,
-      "sync_enabled": false,
+      "sync_enabled": true,
       "config": {
         "adapter_ready": true,
         "adapter_revision": "misssixty__v1-r1",
@@ -707,7 +706,7 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 10,
+          "product_sec": 6,
           "source_run_sec": 300
         },
         "shopify_currency": {
@@ -718,7 +717,7 @@
             "GBP"
           ]
         },
-        "shopify_js_workers": 7,
+        "shopify_js_workers": 14,
         "shopify_js_quality": {
           "progress_every": 25,
           "wait_log_sec": 15,
@@ -762,7 +761,7 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 10,
+          "product_sec": 6,
           "source_run_sec": 300
         },
         "shopify_currency": {
@@ -818,7 +817,7 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 10,
+          "product_sec": 6,
           "source_run_sec": 300
         },
         "shopify_currency": {
@@ -829,7 +828,7 @@
             "GBP"
           ]
         },
-        "shopify_js_workers": 7,
+        "shopify_js_workers": 14,
         "shopify_js_quality": {
           "progress_every": 25,
           "wait_log_sec": 15,
@@ -874,7 +873,7 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 10,
+          "product_sec": 6,
           "source_run_sec": 300
         },
         "shopify_currency": {
@@ -885,7 +884,7 @@
             "GBP"
           ]
         },
-        "shopify_js_workers": 7,
+        "shopify_js_workers": 14,
         "shopify_js_quality": {
           "progress_every": 25,
           "wait_log_sec": 15,
@@ -930,7 +929,7 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 10,
+          "product_sec": 6,
           "source_run_sec": 300
         },
         "shopify_currency": {
@@ -941,7 +940,7 @@
             "GBP"
           ]
         },
-        "shopify_js_workers": 7,
+        "shopify_js_workers": 14,
         "shopify_js_quality": {
           "progress_every": 25,
           "wait_log_sec": 15,
@@ -986,7 +985,7 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 10,
+          "product_sec": 6,
           "source_run_sec": 300
         },
         "shopify_currency": {
@@ -997,7 +996,7 @@
             "GBP"
           ]
         },
-        "shopify_js_workers": 7,
+        "shopify_js_workers": 14,
         "shopify_js_quality": {
           "progress_every": 25,
           "wait_log_sec": 15,
@@ -1042,7 +1041,7 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 10,
+          "product_sec": 6,
           "source_run_sec": 300
         },
         "shopify_currency": {
@@ -1053,7 +1052,7 @@
             "GBP"
           ]
         },
-        "shopify_js_workers": 7,
+        "shopify_js_workers": 14,
         "shopify_js_quality": {
           "progress_every": 25,
           "wait_log_sec": 15,
@@ -1098,7 +1097,7 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 10,
+          "product_sec": 6,
           "source_run_sec": 300
         },
         "shopify_currency": {
@@ -1109,7 +1108,7 @@
             "GBP"
           ]
         },
-        "shopify_js_workers": 7,
+        "shopify_js_workers": 14,
         "shopify_js_quality": {
           "progress_every": 25,
           "wait_log_sec": 15,
@@ -1128,7 +1127,7 @@
       "url": "https://dolcevitahub.com/",
       "adapter_key": "dolcevitahub__v1",
       "enabled": true,
-      "sync_enabled": true,
+      "sync_enabled": false,
       "config": {
         "adapter_ready": true,
         "adapter_revision": "dolcevitahub__v1-r1",
@@ -1166,10 +1165,13 @@
         "browser_extension": {
           "script_path": "/app/browser_runner/src/index.mjs",
           "scenario_id": "dolcevitahub-shopify-sitemap",
-          "export_concurrency": 3,
+          "export_concurrency": 50,
           "export_max_products": 50000,
-          "js_sample_size": 120,
-          "show_ui": false
+          "max_collection_pages": 400,
+          "skip_discovery_for_limited_json_export": false,
+          "js_sample_size": 40,
+          "show_ui": false,
+          "includeLocaleSitemaps": false
         }
       }
     },
@@ -1254,7 +1256,7 @@
       "url": "https://newrock.com/",
       "adapter_key": "newrock__v1",
       "enabled": true,
-      "sync_enabled": false,
+      "sync_enabled": true,
       "config": {
         "adapter_ready": false,
         "adapter_revision": "newrock__v1-r1",
@@ -1280,7 +1282,7 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 10,
+          "product_sec": 6,
           "source_run_sec": 300
         },
         "shopify_currency": {
@@ -1291,7 +1293,7 @@
             "GBP"
           ]
         },
-        "shopify_js_workers": 7,
+        "shopify_js_workers": 14,
         "shopify_js_quality": {
           "progress_every": 25,
           "wait_log_sec": 15,
@@ -1336,7 +1338,7 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 10,
+          "product_sec": 6,
           "source_run_sec": 300
         },
         "shopify_currency": {
@@ -1347,7 +1349,7 @@
             "GBP"
           ]
         },
-        "shopify_js_workers": 7,
+        "shopify_js_workers": 14,
         "shopify_js_quality": {
           "progress_every": 25,
           "wait_log_sec": 15,

@@ -26,11 +26,13 @@ class ShopifyBrowserExtensionStrategy:
         logger = RunLogger(context.run_id)
         cfg = context.source.source_config
         quality = ShopifyPolicyFactory.browser_extension_quality(cfg)
+        currency_policy = ShopifyPolicyFactory.currency(cfg)
         base_url = context.source.source_url.rstrip('/')
         timeout = int(cfg.get('timeouts', {}).get('source_run_sec', 600))
         candidate_urls = [str(x).strip() for x in context.candidate_urls if str(x).strip()]
 
         raw_browser_cfg = cfg.get('browser_extension') if isinstance(cfg.get('browser_extension'), dict) else {}
+        raw_currency_cfg = cfg.get('shopify_currency') if isinstance(cfg.get('shopify_currency'), dict) else {}
         script_path = str(raw_browser_cfg.get('script_path') or '').strip()
         if not script_path:
             raise RuntimeError('Missing source.config.browser_extension.script_path')
@@ -43,6 +45,10 @@ class ShopifyBrowserExtensionStrategy:
         show_ui = bool(raw_browser_cfg.get('show_ui', False))
         export_mode = str(raw_browser_cfg.get('export_mode', 'json')).strip().lower() or 'json'
         export_max_products = int(raw_browser_cfg.get('export_max_products', 0))
+        max_collection_pages = int(raw_browser_cfg.get('max_collection_pages', 0))
+        skip_discovery_for_limited_json_export = bool(raw_browser_cfg.get('skip_discovery_for_limited_json_export', False))
+        country_code = str(raw_currency_cfg.get('country_code') or '').strip().upper()
+        requested_currency_priority = list(currency_policy.requested_currency_priority)
 
         logger.strategy_event('start', self.name, base_url=base_url, total=len(candidate_urls))
         payload = self._run_runner(
@@ -56,6 +62,10 @@ class ShopifyBrowserExtensionStrategy:
             show_ui=show_ui,
             export_mode=export_mode,
             export_max_products=max(0, export_max_products),
+            max_collection_pages=max(0, max_collection_pages),
+            skip_discovery_for_limited_json_export=skip_discovery_for_limited_json_export,
+            country_code=country_code,
+            currency_priority=requested_currency_priority,
             logger=logger,
         )
         previews = payload.get('previews')
@@ -105,6 +115,10 @@ class ShopifyBrowserExtensionStrategy:
         show_ui: bool,
         export_mode: str,
         export_max_products: int,
+        max_collection_pages: int,
+        skip_discovery_for_limited_json_export: bool,
+        country_code: str,
+        currency_priority: list[str],
         logger: RunLogger,
     ) -> dict:
         if which('node') is None:
@@ -136,8 +150,16 @@ class ShopifyBrowserExtensionStrategy:
             cmd += ['--max-sitemaps', str(max_sitemaps)]
         if export_max_products > 0:
             cmd += ['--export-max-products', str(export_max_products)]
+        if max_collection_pages > 0:
+            cmd += ['--max-collection-pages', str(max_collection_pages)]
+        if skip_discovery_for_limited_json_export:
+            cmd += ['--skip-discovery-for-limited-json-export', 'true']
         if scenario_id:
             cmd += ['--scenario-id', scenario_id]
+        if currency_priority:
+            cmd += ['--currency-priority', ','.join(currency_priority)]
+        if country_code:
+            cmd += ['--country-code', country_code]
 
         proc = subprocess.Popen(
             cmd,
@@ -213,18 +235,28 @@ class ShopifyBrowserExtensionStrategy:
     def _map_preview(item: dict) -> dict:
         variants = item.get('variants') if isinstance(item.get('variants'), list) else []
         image_urls = item.get('image_urls') if isinstance(item.get('image_urls'), list) else []
+        if not image_urls and isinstance(item.get('images'), list):
+            image_urls = [str(x).strip() for x in item.get('images') if str(x).strip()]
+        raw_url = str(item.get('product_url') or item.get('url') or '').strip()
+        raw_currency = str(item.get('currency') or item.get('currency_code') or '').strip().upper()
+        raw_price = item.get('price')
+        if raw_price in (None, '') and variants:
+            first = variants[0] if isinstance(variants[0], dict) else {}
+            raw_price = first.get('price')
         return {
-            'url': str(item.get('product_url') or '').strip(),
+            'url': raw_url,
             'handle': str(item.get('handle') or '').strip(),
             'title': str(item.get('title') or '').strip(),
             'product_type': str(item.get('product_type') or '').strip(),
             'tags': [],
-            'price': ShopifyBrowserExtensionStrategy._to_decimal(item.get('price')),
-            'currency': str(item.get('currency') or '').strip().upper(),
+            'price': ShopifyBrowserExtensionStrategy._to_decimal(raw_price),
+            'currency': raw_currency,
             'weight_grams': None,
             'variants': variants,
             'images': [str(x).strip() for x in image_urls if str(x).strip()],
             'image_url': str(image_urls[0]).strip() if image_urls else '',
+            'description': str(item.get('description') or '').strip() or None,
+            'vendor': str(item.get('vendor') or '').strip(),
         }
 
     @staticmethod

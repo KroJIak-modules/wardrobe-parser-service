@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 MAX_PRODUCTS_LIMIT = 50000
 MAX_REQUEST_RETRIES = 5
-ALLOWED_CURRENCY_CODES = {'EUR', 'USD', 'GBP'}
+ALLOWED_CURRENCY_CODES = {'EUR', 'USD', 'GBP', 'JPY'}
 
 
 @dataclass(frozen=True)
@@ -46,12 +46,17 @@ class ShopifyPolicyFactory:
     @staticmethod
     def currency(config: dict) -> ShopifyCurrencyPolicy:
         raw = config.get('shopify_currency') if isinstance(config.get('shopify_currency'), dict) else {}
-        return ShopifyCurrencyPolicy(
-            requested_currency_priority=tuple(
+        normalized_priority = tuple(
+            code
+            for code in (
                 'GBP' if str(x).strip().upper() == 'GBR' else str(x).strip().upper()
                 for x in (raw.get('requested_currency_priority') or [])
                 if str(x).strip()
-            ),
+            )
+            if code in ALLOWED_CURRENCY_CODES
+        )
+        return ShopifyCurrencyPolicy(
+            requested_currency_priority=normalized_priority,
             use_storefront_currency_fallback=bool(raw.get('use_storefront_currency_fallback')),
         )
 

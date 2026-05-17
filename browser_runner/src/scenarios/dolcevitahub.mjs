@@ -16,12 +16,15 @@ export const dolcevitahubScenario = {
       baseUrl,
       options: {
         maxSitemaps: Number(options.maxSitemaps || 0),
+        includeLocaleSitemaps: Boolean(options.includeLocaleSitemaps),
         jsSampleSize: Number(options.jsSampleSize || 120),
         forceLiveFallback: Boolean(options.forceLiveFallback),
         exportProducts: options.exportProducts !== false,
         exportConcurrency: Number(options.exportConcurrency || 8),
         exportMode: String(options.exportMode || 'json'),
         exportMaxProducts: Number(options.exportMaxProducts || 0),
+        maxCollectionPages: Number(options.maxCollectionPages || 0),
+        skipDiscoveryForLimitedJsonExport: Boolean(options.skipDiscoveryForLimitedJsonExport),
       },
     });
   },

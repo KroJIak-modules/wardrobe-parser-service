@@ -116,7 +116,9 @@ def get_latest_sync_job() -> SyncJobStatusResponse | None:
     if job is None:
         return None
     total = max(1, len(job.source_keys))
-    progress = min(100.0, max(0.0, (job.processed_sources / total) * 100.0))
+    progress = float(getattr(job, "current_progress_percent", 0.0) or 0.0)
+    if progress <= 0.0:
+        progress = min(100.0, max(0.0, (job.processed_sources / total) * 100.0))
     if job.status in {'completed', 'failed', 'cancelled'}:
         progress = 100.0
     stage = job.current_stage
@@ -168,7 +170,9 @@ def get_sync_job_status(job_id: str) -> SyncJobStatusResponse:
     if job is None:
         raise HTTPException(status_code=404, detail=f'job not found: {job_id}')
     total = max(1, len(job.source_keys))
-    progress = min(100.0, max(0.0, (job.processed_sources / total) * 100.0))
+    progress = float(getattr(job, "current_progress_percent", 0.0) or 0.0)
+    if progress <= 0.0:
+        progress = min(100.0, max(0.0, (job.processed_sources / total) * 100.0))
     if job.status in {'completed', 'failed', 'cancelled'}:
         progress = 100.0
     stage = job.current_stage

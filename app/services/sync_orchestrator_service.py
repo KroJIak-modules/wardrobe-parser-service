@@ -50,6 +50,7 @@ class RuntimeJob:
     seq_counter: int = 0
     events: list[RuntimeEvent] = field(default_factory=list)
     processed_sources: int = 0
+    current_progress_percent: float = 0.0
 
 
 class SyncOrchestratorService:
@@ -157,8 +158,16 @@ class SyncOrchestratorService:
             return (SyncStageCode.SOURCE_DONE, STAGE_LABEL_RU[SyncStageCode.SOURCE_DONE])
         if stage_name.startswith("live_dom"):
             return (SyncStageCode.DISCOVER_PRODUCTS, "Сканирование витрины (DOM)")
+        if stage_name.startswith("export progress"):
+            return (SyncStageCode.EXPORT_PRODUCTS, "Экспорт карточек товаров")
+        if stage_name.startswith("export done"):
+            return (SyncStageCode.EXPORT_PRODUCTS, "Экспорт карточек товаров")
         if stage_name.startswith("export"):
             return (SyncStageCode.EXPORT_PRODUCTS, STAGE_LABEL_RU[SyncStageCode.EXPORT_PRODUCTS])
+        if stage_name.startswith("sitemap "):
+            return (SyncStageCode.DISCOVER_PRODUCTS, "Сбор ссылок товаров")
+        if stage_name.startswith("products.js progress"):
+            return (SyncStageCode.DISCOVER_PRODUCTS, "Проверка доступа к карточкам")
         if stage_name.startswith("phase="):
             return (SyncStageCode.STRATEGY_RUN, "Выполнение сценария браузера")
         if strategy_name == "shopify_browser_extension" and stage_name:
@@ -226,14 +235,21 @@ class SyncOrchestratorService:
             if not isinstance(variant, dict):
                 continue
             v_price = SyncOrchestratorService._to_float(variant.get("price"))
+            source_variant_id = str(variant.get("id") or "").strip() or None
+            source_variant_title = str(variant.get("title") or "").strip() or None
             variants.append(
                 {
-                    "id": str(variant.get("id") or "").strip() or None,
-                    "title": str(variant.get("title") or "").strip() or None,
+                    "id": source_variant_id,
+                    "title": source_variant_title,
                     "sku": str(variant.get("sku") or "").strip() or None,
                     "price": v_price,
                     "currency": str(variant.get("currency") or currency or "").strip().upper() or None,
                     "available": bool(variant.get("available", True)),
+                    # Variant-level source lineage: required for safe cross-source combine/merge.
+                    "source_key": source_key,
+                    "source_product_url": url or None,
+                    "source_variant_id": source_variant_id,
+                    "source_variant_title": source_variant_title,
                 }
             )
 
@@ -335,14 +351,39 @@ class SyncOrchestratorService:
                 fields = event_payload.get("fields") if isinstance(event_payload.get("fields"), dict) else {}
                 raw_stage = str(fields.get("stage") or "").strip() or "progress"
                 stage_code, stage_label = self._raw_strategy_stage_to_contract(strategy=strategy, stage=raw_stage)
+                strategy_percent: float | None = None
+                pct_value = self._to_float(fields.get("pct"))
+                if pct_value is None:
+                    pct_value = self._to_float(fields.get("percent"))
+                if pct_value is not None:
+                    strategy_percent = max(0.0, min(100.0, pct_value))
+                if strategy_percent is None:
+                    processed_text = str(fields.get("processed") or "").strip()
+                    if "/" in processed_text:
+                        try:
+                            left, right = processed_text.split("/", 1)
+                            done = float(left.strip())
+                            total_items = float(right.strip())
+                            if total_items > 0:
+                                strategy_percent = max(0.0, min(100.0, (done / total_items) * 100.0))
+                        except Exception:
+                            strategy_percent = None
                 with self._lock:
                     live_job = self._jobs.get(job_id)
                     if not live_job or live_job.status not in {"in_progress", "queued"}:
                         return
                     live_job.current_strategy = strategy or live_job.current_strategy
-                    live_job.current_stage = stage_label
+                    stage_text = stage_label
                     total = max(1, len(live_job.source_keys))
-                    progress_percent = ((max(live_job.processed_sources, 0)) / total) * 100.0
+                    source_completed_base = ((max(index - 1, 0)) / total) * 100.0
+                    source_share = 100.0 / total
+                    stage_share = (strategy_percent or 0.0) / 100.0
+                    progress_percent = source_completed_base + (source_share * stage_share)
+                    progress_percent = max(0.0, min(100.0, progress_percent))
+                    if strategy_percent is not None:
+                        stage_text = f"{stage_text} | {int(round(strategy_percent))}%"
+                    live_job.current_stage = stage_text
+                    live_job.current_progress_percent = progress_percent
                     self._append_event(
                         live_job,
                         "source_progress",
@@ -356,6 +397,7 @@ class SyncOrchestratorService:
                             "stage_label": stage_label,
                             "products_success": live_job.products_success,
                             "products_error": live_job.products_error,
+                            "fields": fields,
                             "progress_percent": round(progress_percent, 2),
                         },
                     )
@@ -381,6 +423,7 @@ class SyncOrchestratorService:
                     job = self._jobs[job_id]
                     job.current_strategy = strategy
                     job.current_stage = stage
+                    job.current_progress_percent = max(0.0, min(100.0, ((index - 1) / max(1, len(job.source_keys))) * 100.0))
                     job.products_success += len(valid_products)
                     job.products_error += len(unavailable_products)
                     progress_percent = 0.0

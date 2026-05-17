@@ -47,6 +47,7 @@ class ShopifyJsonStrategy:
             currency_priority=tuple(requested_priority),
             logger=logger,
             fail_types=fail_types,
+            candidate_urls=tuple(context.candidate_urls or ()),
         )
         for item in base_items:
             pid = item.get('id')
@@ -100,13 +101,34 @@ class ShopifyJsonStrategy:
         currency_priority: tuple[str, ...],
         logger: RunLogger,
         fail_types: Counter[str],
+        candidate_urls: tuple[str, ...] = (),
     ) -> tuple[list[dict], int]:
         out: list[dict] = []
         seen_signatures: set[str] = set()
         failed_pages: list[int] = []
         pages_fetched = 0
+        # Do not cap to a hardcoded small number (e.g. 20 pages = 5000 items),
+        # otherwise large catalogs are truncated. Bound by sitemap max_products.
+        if max_products > 0:
+            max_pages_cap = max(1, (int(max_products) + self.PAGE_LIMIT - 1) // self.PAGE_LIMIT)
+        else:
+            # Fallback safety cap when max_products is not set.
+            max_pages_cap = 500
         page = 1
-        while len(out) < max_products:
+        candidate_handles = {self._extract_handle_from_url(x) for x in candidate_urls if str(x).strip()}
+        candidate_handles.discard('')
+        while page <= max_pages_cap:
+            effective_before = min(len(out), max_products) if max_products > 0 else len(out)
+            pre_pct = (effective_before / max_products) * 100 if max_products > 0 else 0
+            logger.strategy_event(
+                'progress',
+                self.name,
+                stage='fetch_progress',
+                processed=f'{effective_before}/{max_products}',
+                pct=f'{pre_pct:.2f}',
+                page=page,
+                pages_fetched=pages_fetched,
+            )
             items, state = self._fetch_products_page_with_retry(
                 base_url,
                 timeout,
@@ -120,6 +142,17 @@ class ShopifyJsonStrategy:
                 if state == 'antibot':
                     time.sleep(quality.antibot_pause_sec)
                 failed_pages.append(page)
+                fail_effective = min(len(out), max_products) if max_products > 0 else len(out)
+                fail_pct = (fail_effective / max_products) * 100 if max_products > 0 else 0
+                logger.strategy_event(
+                    'progress',
+                    self.name,
+                    stage='fetch_skip',
+                    processed=f'{fail_effective}/{max_products}',
+                    pct=f'{fail_pct:.2f}',
+                    page=page,
+                    reason=state or 'http_other',
+                )
                 page += 1
                 continue
             pages_fetched += 1
@@ -130,27 +163,80 @@ class ShopifyJsonStrategy:
                 logger.strategy_event('page_loop_detected', self.name, page=page, pages_fetched=pages_fetched)
                 break
             seen_signatures.add(signature)
-            remaining = max_products - len(out)
-            out.extend(items[:remaining])
+            out.extend(items)
+            effective_after = min(len(out), max_products) if max_products > 0 else len(out)
+            post_pct = (effective_after / max_products) * 100 if max_products > 0 else 100
+            logger.strategy_event(
+                'progress',
+                self.name,
+                stage='fetch_progress',
+                processed=f'{effective_after}/{max_products}',
+                pct=f'{post_pct:.2f}',
+                page=page,
+                pages_fetched=pages_fetched,
+                page_items=len(items),
+            )
             if len(items) < self.PAGE_LIMIT:
                 break
+            if candidate_handles:
+                collected_handles = {
+                    str(item.get('handle') or '').strip()
+                    for item in out
+                    if isinstance(item, dict) and str(item.get('handle') or '').strip()
+                }
+                if candidate_handles.issubset(collected_handles):
+                    logger.strategy_event(
+                        'progress',
+                        self.name,
+                        stage='candidate_cover_reached',
+                        candidate_total=len(candidate_handles),
+                        page=page,
+                        pages_fetched=pages_fetched,
+                    )
+                    break
             page += 1
-        if failed_pages and len(out) < max_products:
+        if failed_pages:
             recovered = 0
             for page in failed_pages:
-                if len(out) >= max_products:
-                    break
                 items, _state = self._fetch_products_page(
                     base_url, timeout, page=page, storefront_currency=storefront_currency, currency_priority=currency_priority
                 )
                 if items:
-                    remaining = max_products - len(out)
-                    out.extend(items[:remaining])
+                    out.extend(items)
                     recovered += 1
                 elif _state:
                     fail_types[_state] += 1
             logger.strategy_event('second_pass_done', self.name, recovered_pages=recovered, still_failed=len(failed_pages) - recovered)
+        if max_products > 0 and out:
+            out = self._prioritize_by_candidates(out, candidate_handles, max_products)
         return out, pages_fetched
+
+    @staticmethod
+    def _prioritize_by_candidates(items: list[dict], candidate_handles: set[str], max_products: int) -> list[dict]:
+        by_candidate: list[dict] = []
+        by_other: list[dict] = []
+        seen_handles: set[str] = set()
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            handle = str(item.get('handle') or '').strip()
+            if not handle or handle in seen_handles:
+                continue
+            seen_handles.add(handle)
+            if handle in candidate_handles:
+                by_candidate.append(item)
+            else:
+                by_other.append(item)
+        ordered = by_candidate + by_other
+        return ordered[:max_products]
+
+    @staticmethod
+    def _extract_handle_from_url(url: str) -> str:
+        parts = [p for p in str(url or '').strip().split('/') if p]
+        for i, p in enumerate(parts):
+            if p == 'products' and i + 1 < len(parts):
+                return parts[i + 1].strip()
+        return ''
 
     @staticmethod
     def _page_signature(items: list[dict]) -> str:

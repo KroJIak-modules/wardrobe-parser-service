@@ -49,6 +49,18 @@ def test_currency_policy_requested_currency_priority_is_normalized() -> None:
     assert policy.requested_currency_priority[0] == 'GBP'
 
 
+def test_currency_policy_filters_unsupported_codes() -> None:
+    from app.services.shopify_policies import ShopifyPolicyFactory
+
+    policy = ShopifyPolicyFactory.currency({
+        'shopify_currency': {
+            'requested_currency_priority': ['JPY', 'usd', 'ZZZ', 'gbr'],
+            'use_storefront_currency_fallback': True,
+        }
+    })
+    assert policy.requested_currency_priority == ('USD', 'GBP')
+
+
 def test_shopify_js_weight_accepts_weight_field() -> None:
     from app.strategies.shopify_js import ShopifyJsStrategy
 

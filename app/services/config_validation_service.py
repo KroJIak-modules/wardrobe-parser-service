@@ -80,12 +80,17 @@ class ConfigValidationService:
         priority = raw.get('requested_currency_priority')
         if not isinstance(priority, list) or not priority:
             raise ConfigError('Missing source.config.shopify_currency.requested_currency_priority')
+        valid_codes: list[str] = []
         for value in priority:
             code = str(value or '').strip().upper()
             if code == 'GBR':
                 code = 'GBP'
-            if code not in ALLOWED_CURRENCY_CODES:
-                raise ConfigError('Invalid source.config.shopify_currency.requested_currency_priority')
+            if code in ALLOWED_CURRENCY_CODES:
+                valid_codes.append(code)
+        # Ignore unknown currencies (for example JPY in legacy configs),
+        # but require at least one supported code so runtime selection remains deterministic.
+        if not valid_codes:
+            raise ConfigError('Invalid source.config.shopify_currency.requested_currency_priority')
         use_storefront = raw.get('use_storefront_currency_fallback')
         if not isinstance(use_storefront, bool):
             raise ConfigError('Invalid source.config.shopify_currency.use_storefront_currency_fallback')

@@ -48,7 +48,9 @@ export async function runLiveDomFallback({ bridge, baseUrl, options }) {
       product_urls: [],
     };
   }
-  const maxPages = Number(options.maxCollectionPages || 12);
+  const hardMaxPages = Number(options.maxCollectionPages || 0) > 0
+    ? Number(options.maxCollectionPages)
+    : 400;
   const jsSampleSize = Number(options.jsSampleSize || 80);
   const startedAt = new Date().toISOString();
 
@@ -68,7 +70,34 @@ export async function runLiveDomFallback({ bridge, baseUrl, options }) {
 
   await setOverlay(bridge, 'Fallback: живой обход страниц коллекции...');
 
+  let detectedMaxPages = 0;
+  try {
+    await bridge.send('navigate', { url: `${baseUrl}/collections/all?page=1` }, 45000);
+    await sleep(1800);
+    const pageLinks = await bridge.send(
+      'collect_links',
+      { selector: 'a[href*="/collections/all?page="]', limit: 5000 },
+      45000,
+    );
+    const links = Array.isArray(pageLinks?.links) ? pageLinks.links : [];
+    for (const raw of links) {
+      try {
+        const u = new URL(raw, baseUrl);
+        if (!u.pathname.includes('/collections/all')) continue;
+        const v = Number(u.searchParams.get('page') || '');
+        if (Number.isFinite(v) && v > detectedMaxPages) detectedMaxPages = v;
+      } catch {
+        // ignore bad url
+      }
+    }
+  } catch {
+    // best-effort only
+  }
+  const maxPages = Math.max(1, Math.min(hardMaxPages, detectedMaxPages || hardMaxPages));
+  logLive(`pagination detected=${detectedMaxPages || 'unknown'} cap=${hardMaxPages} final_max=${maxPages}`);
+
   const found = new Set();
+  let zeroAddedInRow = 0;
   for (let page = 1; page <= maxPages; page += 1) {
     const pageUrl = `${baseUrl}/collections/all?page=${page}`;
     logLive(`navigate page ${page}/${maxPages}: ${pageUrl}`);
@@ -110,9 +139,11 @@ export async function runLiveDomFallback({ bridge, baseUrl, options }) {
     }
     const added = found.size - before;
     logLive(`page ${page} links=${links.length} added=${added} total=${found.size}`);
+    if (added === 0) zeroAddedInRow += 1;
+    else zeroAddedInRow = 0;
 
-    if (page >= 2 && added === 0) {
-      result.notes.push(`early stop: no new product links on page ${page}`);
+    if (page >= 3 && zeroAddedInRow >= 3) {
+      result.notes.push(`early stop: no new product links on 3 pages in a row, last=${page}`);
       break;
     }
   }

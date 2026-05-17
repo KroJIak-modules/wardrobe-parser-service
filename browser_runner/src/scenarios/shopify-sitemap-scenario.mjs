@@ -18,6 +18,16 @@ function parseSitemapIndex(xmlText) {
   }
 }
 
+function isLocaleProductSitemap(url) {
+  try {
+    const u = new URL(url);
+    // /zh/sitemap_products_1.xml, /ja/sitemap_products_1.xml, /en-us/...
+    return /^\/[a-z]{2}(?:-[a-z]{2})?\/sitemap_products_/i.test(u.pathname);
+  } catch {
+    return false;
+  }
+}
+
 function parseProductUrls(xmlText) {
   try {
     const parsed = xmlParser.parse(xmlText);
@@ -170,8 +180,147 @@ async function fetchJsonWithFallback(bridge, url, maxRetries = 5) {
   }
 }
 
+async function fetchJsonPreferHttp(bridge, url, maxRetries = 4) {
+  // Fast path: direct HTTP is significantly faster than extension bridge for bulk export.
+  const direct = await fetchJsonWithRetries(url, maxRetries);
+  if (direct?.ok) return direct;
+  // Fallback to bridge path only if direct failed and browser session exists.
+  return fetchJsonWithFallback(bridge, url, Math.max(1, maxRetries - 1));
+}
+
+function appendCurrencyAndCountry(url, currencyCode, countryCode) {
+  try {
+    const u = new URL(url);
+    if (currencyCode) u.searchParams.set('currency', String(currencyCode).trim().toUpperCase());
+    if (countryCode) u.searchParams.set('country', String(countryCode).trim().toUpperCase());
+    return u.toString();
+  } catch {
+    return url;
+  }
+}
+
+async function fetchTextPreferHttp(bridge, url, maxRetries = 3) {
+  const direct = await fetchTextHttp(url, maxRetries);
+  if (direct?.ok) return direct;
+  return fetchTextWithRetries(bridge, url, Math.max(1, maxRetries - 1));
+}
+
 function logStep(message) {
   console.log(`[scenario:shopify] ${message}`);
+}
+
+function parseJsonSafe(raw) {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function toProductNode(node) {
+  if (!node || typeof node !== 'object') return null;
+  if (String(node['@type'] || '').toLowerCase() === 'product') return node;
+  const graph = Array.isArray(node['@graph']) ? node['@graph'] : [];
+  for (const item of graph) {
+    if (item && String(item['@type'] || '').toLowerCase() === 'product') {
+      return item;
+    }
+  }
+  return null;
+}
+
+function extractMetaContent(html, key) {
+  const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const rg = new RegExp(`<meta[^>]+(?:property|name)=["']${escaped}["'][^>]+content=["']([^"']+)["'][^>]*>`, 'i');
+  const m = html.match(rg);
+  return m?.[1]?.trim() || '';
+}
+
+function mapHtmlProductForExport(html, productUrl, fallbackCurrencyCode = null) {
+  const scripts = [...html.matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)];
+  let productNode = null;
+  for (const m of scripts) {
+    const parsed = parseJsonSafe((m[1] || '').trim());
+    const candidate = toProductNode(parsed);
+    if (candidate) {
+      productNode = candidate;
+      break;
+    }
+  }
+  if (!productNode) return null;
+
+  const offersRaw = Array.isArray(productNode.offers)
+    ? productNode.offers
+    : (productNode.offers ? [productNode.offers] : []);
+  const imageRaw = Array.isArray(productNode.image)
+    ? productNode.image
+    : (typeof productNode.image === 'string' && productNode.image.trim() ? [productNode.image.trim()] : []);
+
+  const variants = offersRaw
+    .map((offer, idx) => {
+      const price = Number(offer?.price);
+      return {
+        id: offer?.sku || offer?.mpn || `offer_${idx + 1}`,
+        title: String(offer?.name || offer?.sku || `Variant ${idx + 1}`).trim(),
+        sku: offer?.sku || null,
+        available: !String(offer?.availability || '').toLowerCase().includes('outofstock'),
+        price: Number.isFinite(price) ? price : null,
+        compare_at_price: null,
+        currency_code: String(offer?.priceCurrency || '').trim().toUpperCase() || null,
+        option1: null,
+        option2: null,
+        option3: null,
+      };
+    })
+    .filter((v) => v.price !== null);
+
+  let currency = variants[0]?.currency_code || null;
+  let basePrice = variants[0]?.price ?? null;
+  if (basePrice === null) {
+    const amount = Number(extractMetaContent(html, 'product:price:amount'));
+    if (Number.isFinite(amount) && amount > 0) basePrice = amount;
+    const metaCurrency = extractMetaContent(html, 'product:price:currency');
+    if (metaCurrency) currency = metaCurrency.toUpperCase();
+  }
+  if (!currency) currency = fallbackCurrencyCode;
+  if (basePrice === null) return null;
+
+  const normalizedVariants = variants.length
+    ? variants.map((v) => ({ ...v, currency_code: v.currency_code || currency }))
+    : [{
+      id: null,
+      title: 'Default Title',
+      sku: null,
+      available: true,
+      price: basePrice,
+      compare_at_price: null,
+      currency_code: currency,
+      option1: null,
+      option2: null,
+      option3: null,
+    }];
+
+  return {
+    id: productNode.sku || null,
+    handle: handleFromProductUrl(productUrl) || null,
+    title: String(productNode.name || '').trim() || null,
+    description: String(productNode.description || '').trim() || null,
+    vendor: String(productNode?.brand?.name || productNode?.brand || '').trim() || null,
+    product_type: null,
+    tags: [],
+    status: null,
+    published_at: null,
+    url: productUrl,
+    currency_code: currency || null,
+    currency_source: currency ? 'html_ld_json' : null,
+    currency_warning: null,
+    first_image: imageRaw[0] || null,
+    image_urls: imageRaw,
+    images_count: imageRaw.length,
+    variants_count: normalizedVariants.length,
+    variants: normalizedVariants,
+    normalization_hints: ['html_fallback'],
+  };
 }
 
 async function setOverlay(bridge, text, tone = 'info') {
@@ -210,13 +359,17 @@ export async function runShopifySitemapScenario({ bridge, baseUrl, options }) {
   };
 
   const maxSitemaps = Number(options.maxSitemaps || 0);
+  const includeLocaleSitemaps = Boolean(options.includeLocaleSitemaps);
   const jsSampleSize = Number(options.jsSampleSize || 80);
   const forceLiveFallback = Boolean(options.forceLiveFallback);
   const exportProducts = Boolean(options.exportProducts);
   const exportConcurrency = Number(options.exportConcurrency || 8);
   const exportMode = String(options.exportMode || 'json').toLowerCase();
   const exportMaxProducts = Number(options.exportMaxProducts || 0);
-  const canSkipDiscoveryForLimitedJsonExport = exportProducts && exportMode === 'json' && exportMaxProducts > 0;
+  const canSkipDiscoveryForLimitedJsonExport = Boolean(options.skipDiscoveryForLimitedJsonExport)
+    && exportProducts
+    && exportMode === 'json'
+    && exportMaxProducts > 0;
 
   logStep(`start base=${baseUrl} maxSitemaps=${maxSitemaps} jsSample=${jsSampleSize}`);
   await setOverlay(bridge, 'Запуск сценария и открытие сайта...');
@@ -247,7 +400,10 @@ export async function runShopifySitemapScenario({ bridge, baseUrl, options }) {
     } else {
       logStep(`sitemap.xml ok status=${sitemapResp.status ?? 'unknown'}`);
 
-      const discoveredProductSitemaps = parseSitemapIndex(sitemapResp.body);
+      const discoveredProductSitemapsRaw = parseSitemapIndex(sitemapResp.body);
+      const discoveredProductSitemaps = includeLocaleSitemaps
+        ? discoveredProductSitemapsRaw
+        : discoveredProductSitemapsRaw.filter((url) => !isLocaleProductSitemap(url));
       const productSitemaps = maxSitemaps > 0
         ? discoveredProductSitemaps.slice(0, maxSitemaps)
         : discoveredProductSitemaps;
@@ -368,10 +524,27 @@ export async function runShopifySitemapScenario({ bridge, baseUrl, options }) {
   if (exportProducts) {
     let currencyCode = null;
     try {
-      logStep('currency probe start: cart.js');
-      const cart = await withTimeout(fetchJsonWithFallback(bridge, `${baseUrl}/cart.js`, 1), 15000, 'currency_probe');
-      if (cart?.ok && typeof cart?.body?.currency === 'string' && cart.body.currency.trim()) {
-        currencyCode = cart.body.currency.trim().toUpperCase();
+      const configuredPriority = Array.isArray(options?.currencyPriority)
+        ? options.currencyPriority.map((x) => String(x || '').trim().toUpperCase()).filter(Boolean)
+        : [];
+      const fallbackPriority = ['USD', 'EUR', 'GBP', 'JPY'];
+      const probeOrder = [...new Set(configuredPriority.length ? configuredPriority : fallbackPriority)];
+      const countryCode = String(options?.countryCode || '').trim().toUpperCase();
+      logStep(`currency probe start: order=${probeOrder.join(',') || 'default'} country=${countryCode || '-'}`);
+      for (const candidate of probeOrder) {
+        const targetUrl = appendCurrencyAndCountry(`${baseUrl}/cart.js`, candidate, countryCode);
+        const cart = await withTimeout(fetchJsonPreferHttp(bridge, targetUrl, 1), 15000, 'currency_probe');
+        if (cart?.ok && typeof cart?.body?.currency === 'string' && cart.body.currency.trim()) {
+          currencyCode = cart.body.currency.trim().toUpperCase();
+          logStep(`currency probe hit: requested=${candidate} resolved=${currencyCode}`);
+          break;
+        }
+      }
+      if (!currencyCode) {
+        const fallback = await withTimeout(fetchJsonPreferHttp(bridge, `${baseUrl}/cart.js`, 1), 15000, 'currency_probe');
+        if (fallback?.ok && typeof fallback?.body?.currency === 'string' && fallback.body.currency.trim()) {
+          currencyCode = fallback.body.currency.trim().toUpperCase();
+        }
       }
       logStep(`currency probe done: currency=${currencyCode || 'unknown'}`);
     } catch (err) {
@@ -383,9 +556,9 @@ export async function runShopifySitemapScenario({ bridge, baseUrl, options }) {
     const exportedProducts = [];
     const exportFailures = [];
     report.products_export.enabled = true;
-    const limitedTotal = exportMode === 'json'
-      ? (exportMaxProducts > 0 ? exportMaxProducts : allProductUrls.length)
-      : (exportMaxProducts > 0 ? Math.min(allProductUrls.length, exportMaxProducts) : allProductUrls.length);
+    const limitedTotal = exportMaxProducts > 0
+      ? Math.min(allProductUrls.length, exportMaxProducts)
+      : allProductUrls.length;
     report.products_export.products_total = limitedTotal;
     report.products_export.products_exported = 0;
     report.products_export.products_failed = 0;
@@ -397,15 +570,87 @@ export async function runShopifySitemapScenario({ bridge, baseUrl, options }) {
     }
 
     let completed = 0;
+    const runJsExport = async (urls, totalForExport) => {
+      logStep(`export js requests started: total=${totalForExport}, concurrency=${exportConcurrency}`);
+      await runPromisePool(
+        urls.slice(0, totalForExport),
+        async (productUrl, index) => {
+          const handle = handleFromProductUrl(productUrl);
+          if (!handle) {
+            exportFailures.push({ url: productUrl, reason: 'empty_handle' });
+            completed += 1;
+            return;
+          }
+          try {
+            const res = await fetchJsonPreferHttp(bridge, `${baseUrl}/products/${handle}.js`, 4);
+            if (res?.ok && res?.body && (res.body.id || res.body.handle)) {
+              exportedProducts.push(mapProductForExport(res.body, productUrl, currencyCode));
+            } else {
+              const html = await fetchTextPreferHttp(bridge, productUrl, 3);
+              if (html?.ok && typeof html.body === 'string' && html.body.length > 0) {
+                const mapped = mapHtmlProductForExport(html.body, productUrl, currencyCode);
+                if (mapped) {
+                  exportedProducts.push(mapped);
+                } else {
+                  const reason = `js_failed_html_unmapped:${res?.error || `status_${res?.status ?? 'unknown'}`}`;
+                  exportFailures.push({ url: productUrl, handle, reason, status: res?.status ?? null });
+                }
+              } else {
+                const reason = `js_failed_html_failed:${res?.error || `status_${res?.status ?? 'unknown'}`}`;
+                exportFailures.push({ url: productUrl, handle, reason, status: res?.status ?? null });
+              }
+            }
+          } catch (err) {
+            try {
+              const html = await fetchTextPreferHttp(bridge, productUrl, 2);
+              if (html?.ok && typeof html.body === 'string' && html.body.length > 0) {
+                const mapped = mapHtmlProductForExport(html.body, productUrl, currencyCode);
+                if (mapped) {
+                  exportedProducts.push(mapped);
+                } else {
+                  exportFailures.push({ url: productUrl, handle, reason: `js_exception_html_unmapped:${String(err?.message || err)}` });
+                }
+              } else {
+                exportFailures.push({ url: productUrl, handle, reason: `js_exception_html_failed:${String(err?.message || err)}` });
+              }
+            } catch (htmlErr) {
+              exportFailures.push({
+                url: productUrl,
+                handle,
+                reason: `js_exception:${String(err?.message || err)}; html_exception:${String(htmlErr?.message || htmlErr)}`,
+              });
+            }
+          }
+          completed += 1;
+          const boundedCompleted = Math.min(completed, limitedTotal);
+          if (completed % 100 === 0 || boundedCompleted === limitedTotal || index === 0) {
+            logStep(`export progress ${boundedCompleted}/${limitedTotal}`);
+            await setOverlay(bridge, `Экспорт товаров: ${boundedCompleted}/${limitedTotal}`);
+          }
+        },
+        exportConcurrency,
+      );
+    };
     try {
       if (exportMode === 'json') {
         const pageLimit = 250;
         let page = 1;
+        let jsonFallbackToJs = false;
+        const exportedHandleSet = new Set();
         while (exportedProducts.length < limitedTotal) {
           const res = await fetchJsonWithFallback(bridge, `${baseUrl}/products.json?limit=${pageLimit}&page=${page}`, 4);
           if (!res?.ok || !res?.body || !Array.isArray(res.body.products)) {
             const reason = res?.error || `status_${res?.status ?? 'unknown'}`;
             exportFailures.push({ url: `${baseUrl}/products.json?page=${page}`, reason, status: res?.status ?? null });
+            if (allProductUrls.length > 0) {
+              jsonFallbackToJs = true;
+              const statusCode = Number(res?.status || 0);
+              if (statusCode === 401 || statusCode === 403) {
+                logStep(`products.json blocked (${statusCode}), switching to js export`);
+              } else {
+                logStep(`products.json failed (${reason}), switching to js export`);
+              }
+            }
             break;
           }
           const items = res.body.products;
@@ -418,46 +663,28 @@ export async function runShopifySitemapScenario({ bridge, baseUrl, options }) {
               exportFailures.push({ url: '', reason: 'empty_handle' });
               continue;
             }
+            exportedHandleSet.add(handle);
             exportedProducts.push(mapProductForExport(product, productUrl, currencyCode));
           }
           completed = exportedProducts.length;
-          if (completed % 100 === 0 || completed === limitedTotal || page === 1) {
-            logStep(`export progress ${completed}/${limitedTotal}`);
-            await setOverlay(bridge, `Экспорт товаров: ${completed}/${limitedTotal}`);
+          const boundedCompleted = Math.min(completed, limitedTotal);
+          if (completed % 100 === 0 || boundedCompleted === limitedTotal || page === 1) {
+            logStep(`export progress ${boundedCompleted}/${limitedTotal}`);
+            await setOverlay(bridge, `Экспорт товаров: ${boundedCompleted}/${limitedTotal}`);
           }
           if (items.length < pageLimit) break;
           page += 1;
         }
+        if (jsonFallbackToJs && exportedProducts.length < limitedTotal) {
+          const remainingUrls = allProductUrls.filter((u) => {
+            const h = handleFromProductUrl(u);
+            return h && !exportedHandleSet.has(h);
+          });
+          // Keep already exported JSON products and append missing tail via JS.
+          await runJsExport(remainingUrls, Math.max(0, limitedTotal - exportedProducts.length));
+        }
       } else {
-        logStep(`export js requests started: total=${limitedTotal}, concurrency=${exportConcurrency}`);
-        await runPromisePool(
-          allProductUrls.slice(0, limitedTotal),
-        async (productUrl, index) => {
-          const handle = handleFromProductUrl(productUrl);
-          if (!handle) {
-            exportFailures.push({ url: productUrl, reason: 'empty_handle' });
-            completed += 1;
-            return;
-          }
-          try {
-            const res = await fetchJsonWithFallback(bridge, `${baseUrl}/products/${handle}.js`, 4);
-            if (res?.ok && res?.body && (res.body.id || res.body.handle)) {
-              exportedProducts.push(mapProductForExport(res.body, productUrl, currencyCode));
-            } else {
-              const reason = res?.error || `status_${res?.status ?? 'unknown'}`;
-              exportFailures.push({ url: productUrl, handle, reason, status: res?.status ?? null });
-            }
-          } catch (err) {
-            exportFailures.push({ url: productUrl, handle, reason: String(err?.message || err) });
-          }
-          completed += 1;
-          if (completed % 100 === 0 || completed === limitedTotal || index === 0) {
-            logStep(`export progress ${completed}/${limitedTotal}`);
-            await setOverlay(bridge, `Экспорт товаров: ${completed}/${limitedTotal}`);
-          }
-        },
-        exportConcurrency,
-        );
+        await runJsExport(allProductUrls, limitedTotal);
       }
     } catch (err) {
       const reason = String(err?.message || err);

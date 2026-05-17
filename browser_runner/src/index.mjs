@@ -75,9 +75,11 @@ function toPreview(item) {
     imageUrls.push(item.first_image.trim());
   }
   const minPrice = minVariantPrice(variants);
+  const resolvedUrl = item?.url || '';
+  const resolvedHandle = item?.handle || handleFromProductUrl(resolvedUrl);
   return {
-    product_url: item?.url || '',
-    handle: item?.handle || '',
+    product_url: resolvedUrl,
+    handle: resolvedHandle,
     title: item?.title || null,
     description: item?.description || null,
     vendor: item?.vendor || null,
@@ -91,13 +93,20 @@ function toPreview(item) {
   };
 }
 
+function handleFromProductUrl(url) {
+  const marker = '/products/';
+  const idx = String(url || '').indexOf(marker);
+  if (idx < 0) return '';
+  return String(url).slice(idx + marker.length).split('?')[0].replace(/\/$/, '');
+}
+
 function buildOutputPayload({ baseUrl, report }) {
   const artifacts = report?.artifacts || {};
   const products = Array.isArray(artifacts.products) ? artifacts.products : [];
   const failures = Array.isArray(artifacts.failed_products) ? artifacts.failed_products : [];
   const previews = products
     .map((item) => toPreview(item))
-    .filter((item) => item.product_url && item.handle);
+    .filter((item) => item.product_url);
 
   const warnings = []
     .concat(Array.isArray(report?.warnings) ? report.warnings : [])
@@ -182,6 +191,13 @@ async function main() {
       exportConcurrency: parseNumber(args['export-concurrency'], 8),
       exportMode: String(args['export-mode'] || 'json').trim().toLowerCase(),
       exportMaxProducts: parseNumber(args['export-max-products'], 0),
+      maxCollectionPages: parseNumber(args['max-collection-pages'], 0),
+      skipDiscoveryForLimitedJsonExport: parseBoolean(args['skip-discovery-for-limited-json-export'], false),
+      currencyPriority: String(args['currency-priority'] || '')
+        .split(',')
+        .map((x) => String(x || '').trim().toUpperCase())
+        .filter(Boolean),
+      countryCode: String(args['country-code'] || '').trim().toUpperCase(),
     };
 
     const scenario = resolveScenario(baseUrl, scenarioId);

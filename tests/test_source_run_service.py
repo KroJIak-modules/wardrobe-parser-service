@@ -327,6 +327,38 @@ def test_config_validation_rejects_invalid_json_js_enrichment_field() -> None:
         assert True
 
 
+def test_config_validation_ignores_unsupported_currency_codes_if_any_valid_left() -> None:
+    cfg = _base_config()
+    cfg['shopify_sitemap'] = {
+        'max_products': 50000,
+        'include_locale_sitemaps': False,
+        'request_retries': 1,
+    }
+    cfg['shopify_currency'] = {
+        'requested_currency_priority': ['JPY', 'USD', 'ABC'],
+        'use_storefront_currency_fallback': True,
+    }
+    ConfigValidationService.require_strategy_settings(cfg, ['shopify_json'])
+
+
+def test_config_validation_rejects_currency_priority_without_any_supported_code() -> None:
+    cfg = _base_config()
+    cfg['shopify_sitemap'] = {
+        'max_products': 50000,
+        'include_locale_sitemaps': False,
+        'request_retries': 1,
+    }
+    cfg['shopify_currency'] = {
+        'requested_currency_priority': ['JPY', 'ABC'],
+        'use_storefront_currency_fallback': True,
+    }
+    try:
+        ConfigValidationService.require_strategy_settings(cfg, ['shopify_json'])
+        assert False, 'expected ConfigError'
+    except ConfigError:
+        assert True
+
+
 def test_duplicate_policy_marks_error() -> None:
     cfg = _base_config()
     cfg['strategy_payloads']['s1'] = [
