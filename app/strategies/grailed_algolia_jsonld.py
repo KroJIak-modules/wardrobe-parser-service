@@ -127,13 +127,14 @@ class GrailedAlgoliaJsonLdStrategy:
         response.raise_for_status()
         final_url = response.url
         payload = self._extract_product_ld_json(response.text)
+        next_data_images = self._extract_images_from_next_data(response.text)
 
         offers = payload.get('offers') if isinstance(payload.get('offers'), dict) else {}
         currency = str(offers.get('priceCurrency') or '').strip().upper()
         price = offers.get('price')
         availability = str(offers.get('availability') or '').strip().lower()
         available = 'instock' in availability or 'in_stock' in availability
-        image_urls = self._to_list_images(payload.get('image'))
+        image_urls = next_data_images or self._to_list_images(payload.get('image'))
         handle = final_url.rstrip('/').split('/')[-1]
         brand = payload.get('brand') if isinstance(payload.get('brand'), dict) else {}
         vendor = str(brand.get('name') or '').strip()
@@ -195,3 +196,33 @@ class GrailedAlgoliaJsonLdStrategy:
         if isinstance(value, list):
             return [str(x).strip() for x in value if str(x).strip()]
         return []
+
+    @staticmethod
+    def _extract_images_from_next_data(html: str) -> list[str]:
+        match = re.search(r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', html, flags=re.S)
+        if not match:
+            return []
+        try:
+            payload = json.loads(match.group(1))
+        except json.JSONDecodeError:
+            return []
+        listing = (
+            (payload.get('props') or {})
+            .get('pageProps', {})
+            .get('listing', {})
+        )
+        photos = listing.get('photos') if isinstance(listing, dict) else None
+        if not isinstance(photos, list):
+            return []
+        out: list[str] = []
+        seen: set[str] = set()
+        for photo in photos:
+            if not isinstance(photo, dict):
+                continue
+            # Grailed stores image URL under `url`; use exact value to avoid quality regressions.
+            url = str(photo.get('url') or '').strip()
+            if not url or url in seen:
+                continue
+            seen.add(url)
+            out.append(url)
+        return out
