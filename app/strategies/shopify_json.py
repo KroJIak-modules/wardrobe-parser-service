@@ -4,8 +4,8 @@ from decimal import Decimal
 import time
 
 from app.adapters.contracts import StrategyContext
-from app.services.shopify_currency_resolver import ShopifyCurrencyResolver
 from app.services.run_logger import RunLogger
+from app.services.shopify_currency_resolver import ShopifyCurrencyResolver
 from app.services.shopify_http_client import ShopifyHttpClient
 from app.services.shopify_policies import ShopifyJsonQualityPolicy, ShopifyPolicyFactory
 
@@ -42,13 +42,6 @@ class ShopifyJsonStrategy:
             effective_currency_priority = tuple(requested_priority)
             storefront_currency = requested_priority[0]
             storefront_currency_source = 'shopify_currency_requested_priority'
-        elif currency_policy.use_storefront_currency_fallback:
-            effective_currency_priority = ()
-            storefront_currency, storefront_currency_source = ShopifyCurrencyResolver.resolve_storefront_currency(
-                base_url,
-                timeout,
-                ('EUR', 'USD', 'GBP'),
-            )
         else:
             effective_currency_priority = ()
         logger.strategy_event('start', self.name, base_url=base_url, max_products=sitemap_policy.max_products)
@@ -91,7 +84,7 @@ class ShopifyJsonStrategy:
                 base_url,
                 timeout,
                 quality=quality,
-                allowed_currencies=('EUR', 'USD', 'GBP'),
+                allowed_currencies=('EUR', 'USD', 'GBP', 'JPY'),
                 storefront_currency=storefront_currency,
                 fail_types=fail_types,
             )

@@ -8,8 +8,8 @@ from urllib.parse import urlparse
 import time
 
 from app.adapters.contracts import StrategyContext
-from app.services.shopify_currency_resolver import ShopifyCurrencyResolver
 from app.services.run_logger import RunLogger
+from app.services.shopify_currency_resolver import ShopifyCurrencyResolver
 from app.services.shopify_http_client import ShopifyHttpClient
 from app.services.shopify_policies import ShopifyJsQualityPolicy, ShopifyPolicyFactory, ShopifySitemapPolicy
 from app.services.shopify_sitemap_discovery import ShopifySitemapDiscovery
@@ -44,13 +44,6 @@ class ShopifyJsStrategy:
             effective_currency_priority = tuple(requested_priority)
             storefront_currency = requested_priority[0]
             storefront_currency_source = 'shopify_currency_requested_priority'
-        elif currency_policy.use_storefront_currency_fallback:
-            effective_currency_priority = tuple()
-            storefront_currency, storefront_currency_source = ShopifyCurrencyResolver.resolve_storefront_currency(
-                base_url,
-                timeout,
-                ('EUR', 'USD', 'GBP'),
-            )
         else:
             effective_currency_priority = tuple()
         quality = ShopifyPolicyFactory.js_quality(cfg)
@@ -96,7 +89,7 @@ class ShopifyJsStrategy:
                 timeout,
                 activate_pause=activate_pause,
                 quality=quality,
-                allowed_currencies=('EUR', 'USD', 'GBP'),
+                allowed_currencies=('EUR', 'USD', 'GBP', 'JPY'),
                 currency_priority=effective_currency_priority,
                 storefront_currency=storefront_currency,
             )
@@ -153,7 +146,7 @@ class ShopifyJsStrategy:
                     base_url,
                     url,
                     timeout,
-                    allowed_currencies=('EUR', 'USD', 'GBP'),
+                    allowed_currencies=('EUR', 'USD', 'GBP', 'JPY'),
                     currency_priority=effective_currency_priority,
                     storefront_currency=storefront_currency,
                 )

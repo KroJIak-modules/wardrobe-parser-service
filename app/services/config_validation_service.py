@@ -100,10 +100,6 @@ class ConfigValidationService:
                 locked = 'GBP'
             if locked not in ALLOWED_CURRENCY_CODES:
                 raise ConfigError('Invalid source.config.shopify_currency.locked_currency')
-        use_storefront = raw.get('use_storefront_currency_fallback')
-        if not isinstance(use_storefront, bool):
-            raise ConfigError('Invalid source.config.shopify_currency.use_storefront_currency_fallback')
-
     @staticmethod
     def _require_shopify_json_quality(config: dict) -> None:
         raw = config.get('shopify_json_quality')

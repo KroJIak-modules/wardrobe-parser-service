@@ -158,11 +158,35 @@ def create_sync_job(payload: SyncJobCreateRequest) -> SyncJobCreateResponse:
         if not allowed_enabled:
             raise HTTPException(status_code=400, detail='no sync-enabled sources')
         raise HTTPException(status_code=400, detail='no eligible sources')
+    candidate_urls_by_source: dict[str, list[str]] = {}
+    raw_candidates = payload.candidate_urls_by_source if isinstance(payload.candidate_urls_by_source, dict) else {}
+    for raw_key, raw_urls in raw_candidates.items():
+        key = str(raw_key or "").strip()
+        if not key or key not in source_keys:
+            continue
+        if not isinstance(raw_urls, list):
+            continue
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for raw_url in raw_urls:
+            url = str(raw_url or "").strip()
+            if not url or url in seen:
+                continue
+            seen.add(url)
+            normalized.append(url)
+        candidate_urls_by_source[key] = normalized
+
     try:
         job = sync_orchestrator.create_job(
             source_keys=source_keys,
+            source_candidate_urls=candidate_urls_by_source,
             dry_run=bool(payload.dry_run),
-            runner=lambda source_key, dry_run, run_id: svc.run(source_key=source_key, dry_run=dry_run, run_id=run_id),
+            runner=lambda source_key, dry_run, run_id, candidate_urls: svc.run(
+                source_key=source_key,
+                dry_run=dry_run,
+                run_id=run_id,
+                candidate_urls=candidate_urls,
+            ),
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -192,9 +216,10 @@ def create_probe_product_job(payload: ProbeProductRequest) -> SyncJobCreateRespo
     try:
         job = probe_orchestrator.create_job(
             source_keys=[matched_source_key],
+            source_candidate_urls={matched_source_key: [product_url]},
             dry_run=bool(payload.dry_run),
-            runner=lambda source_key, dry_run, run_id: _filter_report_by_product_url(
-                svc.run(source_key=source_key, dry_run=dry_run, run_id=run_id),
+            runner=lambda source_key, dry_run, run_id, candidate_urls: _filter_report_by_product_url(
+                svc.run(source_key=source_key, dry_run=dry_run, run_id=run_id, candidate_urls=candidate_urls),
                 product_url,
             ),
         )

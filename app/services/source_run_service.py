@@ -122,7 +122,14 @@ class SourceRunService:
         if not source.enabled or not source.sync_enabled:
             raise ConfigError(f'source disabled: {source_key}')
 
-    def run(self, source_key: str, *, dry_run: bool = False, run_id: str | None = None) -> SourceRunReport:
+    def run(
+        self,
+        source_key: str,
+        *,
+        dry_run: bool = False,
+        run_id: str | None = None,
+        candidate_urls: list[str] | tuple[str, ...] | None = None,
+    ) -> SourceRunReport:
         logger = RunLogger(run_id)
         started_at = time.perf_counter()
         source = self.source_repo.get_by_key(source_key)
@@ -151,10 +158,17 @@ class SourceRunService:
             status=SourceRunStatus.IN_PROGRESS,
         )
 
-        try:
-            visible_urls = adapter.discover_visible_catalog(context)
-        except StorefrontBlockedError as exc:
-            raise ConfigError(f'storefront_blocked:{exc}') from exc
+        sync_mode = str(source.config.get('mode') or 'auto').strip().lower()
+        if sync_mode not in {'auto', 'manual'}:
+            sync_mode = 'auto'
+        if sync_mode == 'manual':
+            visible_urls = [str(x).strip() for x in (candidate_urls or []) if str(x).strip()]
+            logger.event('discovery_skipped_manual_mode', provided_candidates=len(visible_urls))
+        else:
+            try:
+                visible_urls = adapter.discover_visible_catalog(context)
+            except StorefrontBlockedError as exc:
+                raise ConfigError(f'storefront_blocked:{exc}') from exc
         visible_set = {self._canonical_product_url(x) for x in visible_urls if str(x).strip()}
         visible_handles = {self._extract_handle(x) for x in visible_urls if str(x).strip()}
         visible_handles.discard('')
@@ -193,6 +207,11 @@ class SourceRunService:
                 run_id=run_id or '',
                 candidate_urls=tuple(sorted(pending_candidate_urls)) if pending_candidate_urls else (),
             )
+            if sync_mode == 'manual' and not strategy_context.candidate_urls:
+                logger.event('strategy_skip_manual_no_candidates', name=strategy_name)
+                attempt.success = True
+                report.attempts.append(attempt)
+                continue
             for _ in range(max_retries + 1):
                 try:
                     strategy_context.diagnostics.clear()
@@ -288,7 +307,18 @@ class SourceRunService:
                     parsed_handles.add(handle)
                 attempt.parsed_count += 1
 
+                self._normalize_variant_currencies(normalized)
                 ok, reasons = adapter.validate_product(normalized)
+                variant_currency = self._derive_currency_from_variants(normalized)
+                reasons_set = {str(x).strip().lower() for x in reasons if str(x).strip()}
+                if variant_currency:
+                    reasons_set.discard('missing_currency')
+                else:
+                    reasons_set.add('missing_currency')
+                reasons = sorted(reasons_set)
+                ok = len(reasons) == 0
+                # Currency is variant-level only in service output contract.
+                normalized.pop('currency', None)
                 accepted_for_dedup.append(normalized)
                 if ok:
                     valid_products.append(normalized)
@@ -360,6 +390,34 @@ class SourceRunService:
         return report
 
     @staticmethod
+    def _derive_currency_from_variants(product: dict) -> str:
+        variants = product.get('variants') if isinstance(product.get('variants'), list) else []
+        for variant in variants:
+            if not isinstance(variant, dict):
+                continue
+            cur = str(variant.get('currency') or '').strip().upper()
+            if len(cur) == 3:
+                return cur
+        return ''
+
+    @staticmethod
+    def _normalize_variant_currencies(product: dict) -> None:
+        variants = product.get('variants') if isinstance(product.get('variants'), list) else []
+        if not variants:
+            return
+        fallback = str(product.get('currency') or '').strip().upper()
+        fallback_currency = fallback if len(fallback) == 3 else ''
+        for variant in variants:
+            if not isinstance(variant, dict):
+                continue
+            current = str(variant.get('currency') or '').strip().upper()
+            if len(current) == 3:
+                variant['currency'] = current
+                continue
+            if fallback_currency:
+                variant['currency'] = fallback_currency
+
+    @staticmethod
     def _missing_weight_product_snapshot(product: dict) -> dict:
         tags = product.get('tags')
         return {
@@ -369,7 +427,7 @@ class SourceRunService:
             'product_type': str(product.get('product_type') or '').strip(),
             'tags': tags if isinstance(tags, list) else [],
             'price': SourceRunService._jsonable_value(product.get('price')),
-            'currency': str(product.get('currency') or '').strip(),
+            'currency': SourceRunService._derive_currency_from_variants(product),
             'weight_source': str(product.get('weight_source') or '').strip(),
         }
 

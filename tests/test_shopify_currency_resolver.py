@@ -18,32 +18,12 @@ def test_resolve_currency_uses_storefront_currency_without_usd_fallback() -> Non
     assert ShopifyJsonStrategy._resolve_currency('CAD', 'CAD', ('EUR', 'USD', 'GBP')) == ''
 
 
-def test_currency_policy_flag_is_site_configured() -> None:
-    from app.services.shopify_policies import ShopifyPolicyFactory
-
-    disabled = ShopifyPolicyFactory.currency({
-        'shopify_currency': {
-            'requested_currency_priority': ['USD', 'EUR', 'GBP'],
-            'use_storefront_currency_fallback': False,
-        }
-    })
-    enabled = ShopifyPolicyFactory.currency({
-        'shopify_currency': {
-            'requested_currency_priority': ['USD', 'EUR', 'GBP'],
-            'use_storefront_currency_fallback': True,
-        }
-    })
-    assert disabled.use_storefront_currency_fallback is False
-    assert enabled.use_storefront_currency_fallback is True
-
-
 def test_currency_policy_requested_currency_priority_is_normalized() -> None:
     from app.services.shopify_policies import ShopifyPolicyFactory
 
     policy = ShopifyPolicyFactory.currency({
         'shopify_currency': {
             'requested_currency_priority': ['gbr', 'usd'],
-            'use_storefront_currency_fallback': True,
         }
     })
     assert policy.requested_currency_priority[0] == 'GBP'
@@ -55,7 +35,6 @@ def test_currency_policy_filters_unsupported_codes() -> None:
     policy = ShopifyPolicyFactory.currency({
         'shopify_currency': {
             'requested_currency_priority': ['JPY', 'usd', 'ZZZ', 'gbr'],
-            'use_storefront_currency_fallback': True,
         }
     })
     assert policy.requested_currency_priority == ('USD', 'GBP')
@@ -69,7 +48,6 @@ def test_currency_policy_locked_no_currency_mode() -> None:
             'method': 'locked_no_currency',
             'locked_currency': 'eur',
             'requested_currency_priority': ['USD', 'EUR', 'GBP'],
-            'use_storefront_currency_fallback': False,
         }
     })
     assert policy.method == 'locked_no_currency'
@@ -84,7 +62,6 @@ def test_currency_policy_locked_param_currency_mode() -> None:
             'method': 'locked_param_currency',
             'locked_currency': 'gbr',
             'requested_currency_priority': ['USD', 'EUR', 'GBP'],
-            'use_storefront_currency_fallback': False,
         }
     })
     assert policy.method == 'locked_param_currency'

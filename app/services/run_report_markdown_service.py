@@ -75,9 +75,10 @@ class RunReportMarkdownService:
         lines.append('|---:|---|---|---:|---:|---|---|')
 
         for idx, product in enumerate(report.top_valid_products[:10], start=1):
+            currency = self._currency_from_variants(product)
             lines.append(
                 f'| {idx} | {self._fmt(product.get("title"))} | {self._fmt(product.get("handle"))} | '
-                f'{self._fmt(product.get("price"))} {self._fmt(product.get("currency"))} | '
+                f'{self._fmt(product.get("price"))} {self._fmt(currency)} | '
                 f'{self._fmt(product.get("weight_grams"))} | {self._fmt(product.get("weight_source"))} | '
                 f'{self._fmt(product.get("url"))} |'
             )
@@ -97,3 +98,14 @@ class RunReportMarkdownService:
             return '—'
         text = str(value).replace('\n', ' ').strip()
         return text if text else '—'
+
+    @staticmethod
+    def _currency_from_variants(product: dict[str, Any]) -> str | None:
+        variants = product.get("variants") if isinstance(product.get("variants"), list) else []
+        for variant in variants:
+            if not isinstance(variant, dict):
+                continue
+            currency = str(variant.get("currency") or "").strip().upper()
+            if len(currency) == 3:
+                return currency
+        return None

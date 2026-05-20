@@ -19,7 +19,6 @@ class ShopifySitemapPolicy:
 @dataclass(frozen=True)
 class ShopifyCurrencyPolicy:
     requested_currency_priority: tuple[str, ...]
-    use_storefront_currency_fallback: bool
     method: str
     locked_currency: str
 
@@ -71,7 +70,6 @@ class ShopifyPolicyFactory:
                 locked_currency = normalized_priority[0]
         return ShopifyCurrencyPolicy(
             requested_currency_priority=normalized_priority,
-            use_storefront_currency_fallback=bool(raw.get('use_storefront_currency_fallback')),
             method=method,
             locked_currency=locked_currency,
         )

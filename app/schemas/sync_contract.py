@@ -7,6 +7,7 @@ class SyncJobCreateRequest(BaseModel):
     triggered_by: str = "manual"
     dry_run: bool = False
     sources: list[str] = Field(default_factory=list)
+    candidate_urls_by_source: dict[str, list[str]] = Field(default_factory=dict)
 
 
 class SyncJobCreateResponse(BaseModel):

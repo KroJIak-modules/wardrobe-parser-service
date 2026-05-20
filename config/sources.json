@@ -17,13 +17,14 @@
         "shopify_sitemap": {
           "max_products": 50000,
           "include_locale_sitemaps": false,
-          "request_retries": 1
+          "request_retries": 3
         },
         "shopify_json_quality": {
           "antibot_pause_sec": 3,
           "retry_backoff_sec": [
             1,
-            3
+            3,
+            7
           ],
           "enrich_from_js_fields": [
             "price",
@@ -47,18 +48,19 @@
           "shopify_browser_extension": 0
         },
         "timeouts": {
-          "product_sec": 6,
+          "product_sec": 12,
           "source_run_sec": 300
         },
         "shopify_currency": {
-          "use_storefront_currency_fallback": false,
           "requested_currency_priority": [
             "GBP",
             "USD",
-            "EUR"
+            "EUR",
+            "JPY"
           ],
           "method": "priority_list"
-        }
+        },
+        "mode": "auto"
       }
     },
     {
@@ -78,13 +80,14 @@
         "shopify_sitemap": {
           "max_products": 50000,
           "include_locale_sitemaps": false,
-          "request_retries": 1
+          "request_retries": 3
         },
         "shopify_json_quality": {
           "antibot_pause_sec": 3,
           "retry_backoff_sec": [
             1,
-            3
+            3,
+            7
           ],
           "enrich_from_js_fields": []
         },
@@ -93,18 +96,17 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 6,
+          "product_sec": 12,
           "source_run_sec": 300
         },
         "shopify_currency": {
-          "use_storefront_currency_fallback": false,
           "requested_currency_priority": [
             "EUR",
             "USD",
-            "GBP"
+            "GBP",
+            "JPY"
           ],
-          "method": "locked_no_currency",
-          "locked_currency": "EUR"
+          "method": "priority_list"
         },
         "shopify_js_workers": 14,
         "shopify_js_quality": {
@@ -116,7 +118,8 @@
             1,
             3
           ]
-        }
+        },
+        "mode": "auto"
       }
     },
     {
@@ -136,13 +139,14 @@
         "shopify_sitemap": {
           "max_products": 50000,
           "include_locale_sitemaps": false,
-          "request_retries": 1
+          "request_retries": 3
         },
         "shopify_json_quality": {
           "antibot_pause_sec": 3,
           "retry_backoff_sec": [
             1,
-            3
+            3,
+            7
           ],
           "enrich_from_js_fields": []
         },
@@ -151,18 +155,17 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 6,
+          "product_sec": 12,
           "source_run_sec": 300
         },
         "shopify_currency": {
-          "use_storefront_currency_fallback": false,
           "requested_currency_priority": [
             "EUR",
             "USD",
-            "GBP"
+            "GBP",
+            "JPY"
           ],
-          "method": "locked_no_currency",
-          "locked_currency": "EUR"
+          "method": "priority_list"
         },
         "shopify_js_workers": 14,
         "shopify_js_quality": {
@@ -174,7 +177,8 @@
             1,
             3
           ]
-        }
+        },
+        "mode": "auto"
       }
     },
     {
@@ -194,13 +198,14 @@
         "shopify_sitemap": {
           "max_products": 50000,
           "include_locale_sitemaps": false,
-          "request_retries": 1
+          "request_retries": 3
         },
         "shopify_json_quality": {
           "antibot_pause_sec": 3,
           "retry_backoff_sec": [
             1,
-            3
+            3,
+            7
           ],
           "enrich_from_js_fields": []
         },
@@ -209,18 +214,17 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 6,
+          "product_sec": 12,
           "source_run_sec": 300
         },
         "shopify_currency": {
-          "use_storefront_currency_fallback": false,
           "requested_currency_priority": [
             "USD",
             "EUR",
-            "GBP"
+            "GBP",
+            "JPY"
           ],
-          "method": "locked_no_currency",
-          "locked_currency": "USD"
+          "method": "priority_list"
         },
         "shopify_js_workers": 14,
         "shopify_js_quality": {
@@ -232,7 +236,8 @@
             1,
             3
           ]
-        }
+        },
+        "mode": "auto"
       }
     },
     {
@@ -252,13 +257,14 @@
         "shopify_sitemap": {
           "max_products": 50000,
           "include_locale_sitemaps": false,
-          "request_retries": 1
+          "request_retries": 3
         },
         "shopify_json_quality": {
           "antibot_pause_sec": 3,
           "retry_backoff_sec": [
             1,
-            3
+            3,
+            7
           ],
           "enrich_from_js_fields": []
         },
@@ -266,15 +272,15 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 6,
+          "product_sec": 12,
           "source_run_sec": 300
         },
         "shopify_currency": {
-          "use_storefront_currency_fallback": false,
           "requested_currency_priority": [
-            "GBP",
             "USD",
-            "EUR"
+            "EUR",
+            "GBP",
+            "JPY"
           ],
           "method": "priority_list"
         },
@@ -288,7 +294,8 @@
             1,
             3
           ]
-        }
+        },
+        "mode": "auto"
       }
     },
     {
@@ -308,13 +315,14 @@
         "shopify_sitemap": {
           "max_products": 50000,
           "include_locale_sitemaps": false,
-          "request_retries": 1
+          "request_retries": 3
         },
         "shopify_json_quality": {
           "antibot_pause_sec": 3,
           "retry_backoff_sec": [
             1,
-            3
+            3,
+            7
           ],
           "enrich_from_js_fields": []
         },
@@ -322,15 +330,15 @@
           "shopify_json": 1
         },
         "timeouts": {
-          "product_sec": 6,
+          "product_sec": 12,
           "source_run_sec": 300
         },
         "shopify_currency": {
-          "use_storefront_currency_fallback": false,
           "requested_currency_priority": [
-            "USD",
             "EUR",
-            "GBP"
+            "USD",
+            "GBP",
+            "JPY"
           ],
           "method": "priority_list"
         },
@@ -344,7 +352,8 @@
             1,
             3
           ]
-        }
+        },
+        "mode": "auto"
       }
     },
     {
@@ -364,13 +373,14 @@
         "shopify_sitemap": {
           "max_products": 50000,
           "include_locale_sitemaps": false,
-          "request_retries": 1
+          "request_retries": 3
         },
         "shopify_json_quality": {
           "antibot_pause_sec": 3,
           "retry_backoff_sec": [
             1,
-            3
+            3,
+            7
           ],
           "enrich_from_js_fields": []
         },
@@ -379,18 +389,17 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 6,
+          "product_sec": 12,
           "source_run_sec": 300
         },
         "shopify_currency": {
-          "use_storefront_currency_fallback": false,
           "requested_currency_priority": [
             "EUR",
             "USD",
-            "GBP"
+            "GBP",
+            "JPY"
           ],
-          "method": "locked_no_currency",
-          "locked_currency": "EUR"
+          "method": "priority_list"
         },
         "shopify_js_workers": 14,
         "shopify_js_quality": {
@@ -402,7 +411,8 @@
             1,
             3
           ]
-        }
+        },
+        "mode": "auto"
       }
     },
     {
@@ -422,13 +432,14 @@
         "shopify_sitemap": {
           "max_products": 50000,
           "include_locale_sitemaps": false,
-          "request_retries": 1
+          "request_retries": 3
         },
         "shopify_json_quality": {
           "antibot_pause_sec": 3,
           "retry_backoff_sec": [
             1,
-            3
+            3,
+            7
           ],
           "enrich_from_js_fields": []
         },
@@ -437,17 +448,18 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 6,
+          "product_sec": 12,
           "source_run_sec": 300
         },
         "shopify_currency": {
-          "use_storefront_currency_fallback": false,
           "requested_currency_priority": [
+            "JPY",
             "USD",
             "EUR",
             "GBP"
           ],
-          "method": "priority_list"
+          "method": "locked_param_currency",
+          "locked_currency": "JPY"
         },
         "shopify_js_workers": 14,
         "shopify_js_quality": {
@@ -459,7 +471,8 @@
             1,
             3
           ]
-        }
+        },
+        "mode": "auto"
       }
     },
     {
@@ -479,13 +492,14 @@
         "shopify_sitemap": {
           "max_products": 50000,
           "include_locale_sitemaps": false,
-          "request_retries": 1
+          "request_retries": 3
         },
         "shopify_json_quality": {
           "antibot_pause_sec": 3,
           "retry_backoff_sec": [
             1,
-            3
+            3,
+            7
           ],
           "enrich_from_js_fields": []
         },
@@ -494,17 +508,18 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 6,
+          "product_sec": 12,
           "source_run_sec": 300
         },
         "shopify_currency": {
-          "use_storefront_currency_fallback": false,
           "requested_currency_priority": [
             "USD",
             "EUR",
-            "GBP"
+            "GBP",
+            "JPY"
           ],
-          "method": "priority_list"
+          "method": "locked_param_currency",
+          "locked_currency": "USD"
         },
         "shopify_js_workers": 14,
         "shopify_js_quality": {
@@ -516,7 +531,8 @@
             1,
             3
           ]
-        }
+        },
+        "mode": "auto"
       }
     },
     {
@@ -536,13 +552,14 @@
         "shopify_sitemap": {
           "max_products": 50000,
           "include_locale_sitemaps": false,
-          "request_retries": 1
+          "request_retries": 3
         },
         "shopify_json_quality": {
           "antibot_pause_sec": 3,
           "retry_backoff_sec": [
             1,
-            3
+            3,
+            7
           ],
           "enrich_from_js_fields": []
         },
@@ -551,15 +568,15 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 6,
+          "product_sec": 12,
           "source_run_sec": 300
         },
         "shopify_currency": {
-          "use_storefront_currency_fallback": false,
           "requested_currency_priority": [
             "USD",
             "EUR",
-            "GBP"
+            "GBP",
+            "JPY"
           ],
           "method": "priority_list"
         },
@@ -573,7 +590,8 @@
             1,
             3
           ]
-        }
+        },
+        "mode": "auto"
       }
     },
     {
@@ -593,13 +611,14 @@
         "shopify_sitemap": {
           "max_products": 50000,
           "include_locale_sitemaps": false,
-          "request_retries": 1
+          "request_retries": 3
         },
         "shopify_json_quality": {
           "antibot_pause_sec": 3,
           "retry_backoff_sec": [
             1,
-            3
+            3,
+            7
           ],
           "enrich_from_js_fields": []
         },
@@ -608,15 +627,15 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 6,
+          "product_sec": 12,
           "source_run_sec": 300
         },
         "shopify_currency": {
-          "use_storefront_currency_fallback": false,
           "requested_currency_priority": [
             "USD",
             "EUR",
-            "GBP"
+            "GBP",
+            "JPY"
           ],
           "method": "priority_list"
         },
@@ -630,7 +649,8 @@
             1,
             3
           ]
-        }
+        },
+        "mode": "auto"
       }
     },
     {
@@ -650,13 +670,14 @@
         "shopify_sitemap": {
           "max_products": 50000,
           "include_locale_sitemaps": false,
-          "request_retries": 1
+          "request_retries": 3
         },
         "shopify_json_quality": {
           "antibot_pause_sec": 3,
           "retry_backoff_sec": [
             1,
-            3
+            3,
+            7
           ],
           "enrich_from_js_fields": []
         },
@@ -665,15 +686,15 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 6,
+          "product_sec": 12,
           "source_run_sec": 300
         },
         "shopify_currency": {
-          "use_storefront_currency_fallback": false,
           "requested_currency_priority": [
             "USD",
             "EUR",
-            "GBP"
+            "GBP",
+            "JPY"
           ],
           "method": "priority_list"
         },
@@ -687,7 +708,8 @@
             1,
             3
           ]
-        }
+        },
+        "mode": "auto"
       }
     },
     {
@@ -707,13 +729,14 @@
         "shopify_sitemap": {
           "max_products": 50000,
           "include_locale_sitemaps": false,
-          "request_retries": 1
+          "request_retries": 3
         },
         "shopify_json_quality": {
           "antibot_pause_sec": 3,
           "retry_backoff_sec": [
             1,
-            3
+            3,
+            7
           ],
           "enrich_from_js_fields": []
         },
@@ -722,15 +745,15 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 6,
+          "product_sec": 12,
           "source_run_sec": 300
         },
         "shopify_currency": {
-          "use_storefront_currency_fallback": false,
           "requested_currency_priority": [
             "EUR",
             "USD",
-            "GBP"
+            "GBP",
+            "JPY"
           ],
           "method": "priority_list"
         },
@@ -744,7 +767,8 @@
             1,
             3
           ]
-        }
+        },
+        "mode": "auto"
       }
     },
     {
@@ -763,13 +787,14 @@
         "shopify_sitemap": {
           "max_products": 50000,
           "include_locale_sitemaps": false,
-          "request_retries": 1
+          "request_retries": 3
         },
         "shopify_json_quality": {
           "antibot_pause_sec": 3,
           "retry_backoff_sec": [
             1,
-            3
+            3,
+            7
           ],
           "enrich_from_js_fields": []
         },
@@ -778,15 +803,15 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 6,
+          "product_sec": 12,
           "source_run_sec": 300
         },
         "shopify_currency": {
-          "use_storefront_currency_fallback": false,
           "requested_currency_priority": [
             "USD",
             "EUR",
-            "GBP"
+            "GBP",
+            "JPY"
           ],
           "method": "priority_list"
         },
@@ -800,7 +825,8 @@
             1,
             3
           ]
-        }
+        },
+        "mode": "auto"
       }
     },
     {
@@ -820,13 +846,14 @@
         "shopify_sitemap": {
           "max_products": 50000,
           "include_locale_sitemaps": false,
-          "request_retries": 1
+          "request_retries": 3
         },
         "shopify_json_quality": {
           "antibot_pause_sec": 3,
           "retry_backoff_sec": [
             1,
-            3
+            3,
+            7
           ],
           "enrich_from_js_fields": []
         },
@@ -835,13 +862,15 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 6,
+          "product_sec": 12,
           "source_run_sec": 300
         },
         "shopify_currency": {
-          "use_storefront_currency_fallback": false,
           "requested_currency_priority": [
-            "GBP"
+            "GBP",
+            "USD",
+            "EUR",
+            "JPY"
           ],
           "method": "locked_no_currency",
           "locked_currency": "GBP"
@@ -856,7 +885,8 @@
             1,
             3
           ]
-        }
+        },
+        "mode": "auto"
       }
     },
     {
@@ -876,13 +906,14 @@
         "shopify_sitemap": {
           "max_products": 50000,
           "include_locale_sitemaps": false,
-          "request_retries": 1
+          "request_retries": 3
         },
         "shopify_json_quality": {
           "antibot_pause_sec": 3,
           "retry_backoff_sec": [
             1,
-            3
+            3,
+            7
           ],
           "enrich_from_js_fields": []
         },
@@ -891,15 +922,15 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 6,
+          "product_sec": 12,
           "source_run_sec": 300
         },
         "shopify_currency": {
-          "use_storefront_currency_fallback": false,
           "requested_currency_priority": [
             "EUR",
             "USD",
-            "GBP"
+            "GBP",
+            "JPY"
           ],
           "method": "locked_no_currency",
           "locked_currency": "EUR"
@@ -914,7 +945,8 @@
             1,
             3
           ]
-        }
+        },
+        "mode": "auto"
       }
     },
     {
@@ -934,13 +966,14 @@
         "shopify_sitemap": {
           "max_products": 50000,
           "include_locale_sitemaps": false,
-          "request_retries": 1
+          "request_retries": 3
         },
         "shopify_json_quality": {
           "antibot_pause_sec": 3,
           "retry_backoff_sec": [
             1,
-            3
+            3,
+            7
           ],
           "enrich_from_js_fields": []
         },
@@ -949,15 +982,15 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 6,
+          "product_sec": 12,
           "source_run_sec": 300
         },
         "shopify_currency": {
-          "use_storefront_currency_fallback": false,
           "requested_currency_priority": [
             "USD",
             "EUR",
-            "GBP"
+            "GBP",
+            "JPY"
           ],
           "method": "priority_list"
         },
@@ -971,7 +1004,8 @@
             1,
             3
           ]
-        }
+        },
+        "mode": "auto"
       }
     },
     {
@@ -991,13 +1025,14 @@
         "shopify_sitemap": {
           "max_products": 50000,
           "include_locale_sitemaps": false,
-          "request_retries": 1
+          "request_retries": 3
         },
         "shopify_json_quality": {
           "antibot_pause_sec": 3,
           "retry_backoff_sec": [
             1,
-            3
+            3,
+            7
           ],
           "enrich_from_js_fields": []
         },
@@ -1006,15 +1041,15 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 6,
+          "product_sec": 12,
           "source_run_sec": 300
         },
         "shopify_currency": {
-          "use_storefront_currency_fallback": false,
           "requested_currency_priority": [
             "USD",
             "EUR",
-            "GBP"
+            "GBP",
+            "JPY"
           ],
           "method": "priority_list"
         },
@@ -1028,7 +1063,8 @@
             1,
             3
           ]
-        }
+        },
+        "mode": "auto"
       }
     },
     {
@@ -1048,13 +1084,14 @@
         "shopify_sitemap": {
           "max_products": 50000,
           "include_locale_sitemaps": false,
-          "request_retries": 1
+          "request_retries": 3
         },
         "shopify_json_quality": {
           "antibot_pause_sec": 3,
           "retry_backoff_sec": [
             1,
-            3
+            3,
+            7
           ],
           "enrich_from_js_fields": []
         },
@@ -1063,11 +1100,10 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 6,
+          "product_sec": 12,
           "source_run_sec": 300
         },
         "shopify_currency": {
-          "use_storefront_currency_fallback": false,
           "requested_currency_priority": [
             "USD",
             "EUR",
@@ -1085,7 +1121,8 @@
             1,
             3
           ]
-        }
+        },
+        "mode": "auto"
       }
     },
     {
@@ -1105,13 +1142,14 @@
         "shopify_sitemap": {
           "max_products": 50000,
           "include_locale_sitemaps": false,
-          "request_retries": 1
+          "request_retries": 3
         },
         "shopify_json_quality": {
           "antibot_pause_sec": 3,
           "retry_backoff_sec": [
             1,
-            3
+            3,
+            7
           ],
           "enrich_from_js_fields": []
         },
@@ -1120,15 +1158,15 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 6,
+          "product_sec": 12,
           "source_run_sec": 300
         },
         "shopify_currency": {
-          "use_storefront_currency_fallback": false,
           "requested_currency_priority": [
             "USD",
             "EUR",
-            "GBP"
+            "GBP",
+            "JPY"
           ],
           "method": "priority_list"
         },
@@ -1142,7 +1180,8 @@
             1,
             3
           ]
-        }
+        },
+        "mode": "auto"
       }
     },
     {
@@ -1161,7 +1200,7 @@
         "shopify_sitemap": {
           "max_products": 200,
           "include_locale_sitemaps": false,
-          "request_retries": 1
+          "request_retries": 3
         },
         "retry_limits": {
           "shopify_browser_extension": 0
@@ -1171,7 +1210,6 @@
           "source_run_sec": 420
         },
         "shopify_currency": {
-          "use_storefront_currency_fallback": false,
           "requested_currency_priority": [
             "USD",
             "EUR",
@@ -1199,7 +1237,8 @@
           "includeLocaleSitemaps": false,
           "export_mode": "js",
           "prefer_bridge_fetch": true
-        }
+        },
+        "mode": "auto"
       }
     },
     {
@@ -1222,7 +1261,8 @@
         "timeouts": {
           "product_sec": 20,
           "source_run_sec": 420
-        }
+        },
+        "mode": "auto"
       }
     },
     {
@@ -1248,7 +1288,8 @@
         "vinted": {
           "search_text": "nike"
         },
-        "vinted_jsonld_workers": 6
+        "vinted_jsonld_workers": 6,
+        "mode": "manual"
       }
     },
     {
@@ -1274,7 +1315,8 @@
         "grailed": {
           "search_text": "leather jacket"
         },
-        "grailed_algolia_jsonld_workers": 6
+        "grailed_algolia_jsonld_workers": 6,
+        "mode": "manual"
       }
     },
     {
@@ -1294,13 +1336,14 @@
         "shopify_sitemap": {
           "max_products": 50000,
           "include_locale_sitemaps": false,
-          "request_retries": 1
+          "request_retries": 3
         },
         "shopify_json_quality": {
           "antibot_pause_sec": 3,
           "retry_backoff_sec": [
             1,
-            3
+            3,
+            7
           ],
           "enrich_from_js_fields": []
         },
@@ -1309,15 +1352,15 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 6,
+          "product_sec": 12,
           "source_run_sec": 300
         },
         "shopify_currency": {
-          "use_storefront_currency_fallback": false,
           "requested_currency_priority": [
             "EUR",
             "USD",
-            "GBP"
+            "GBP",
+            "JPY"
           ],
           "method": "priority_list"
         },
@@ -1331,7 +1374,8 @@
             1,
             3
           ]
-        }
+        },
+        "mode": "auto"
       }
     },
     {
@@ -1351,13 +1395,14 @@
         "shopify_sitemap": {
           "max_products": 50000,
           "include_locale_sitemaps": false,
-          "request_retries": 1
+          "request_retries": 3
         },
         "shopify_json_quality": {
           "antibot_pause_sec": 3,
           "retry_backoff_sec": [
             1,
-            3
+            3,
+            7
           ],
           "enrich_from_js_fields": []
         },
@@ -1366,15 +1411,15 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 6,
+          "product_sec": 12,
           "source_run_sec": 300
         },
         "shopify_currency": {
-          "use_storefront_currency_fallback": false,
           "requested_currency_priority": [
             "EUR",
             "USD",
-            "GBP"
+            "GBP",
+            "JPY"
           ],
           "method": "locked_no_currency",
           "locked_currency": "EUR"
@@ -1389,7 +1434,8 @@
             1,
             3
           ]
-        }
+        },
+        "mode": "auto"
       }
     },
     {
@@ -1426,13 +1472,13 @@
           "source_run_sec": 300
         },
         "shopify_currency": {
-          "use_storefront_currency_fallback": false,
           "requested_currency_priority": [
             "USD"
           ],
           "method": "priority_list"
         },
-        "intl_protocol_index_workers": 6
+        "intl_protocol_index_workers": 6,
+        "mode": "auto"
       }
     }
   ]

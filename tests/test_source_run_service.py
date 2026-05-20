@@ -313,7 +313,6 @@ def test_config_validation_rejects_invalid_json_js_enrichment_field() -> None:
     }
     cfg['shopify_currency'] = {
         'requested_currency_priority': ['USD', 'EUR', 'GBP'],
-        'use_storefront_currency_fallback': True,
     }
     cfg['shopify_json_quality'] = {
         'antibot_pause_sec': 3,
@@ -336,7 +335,6 @@ def test_config_validation_ignores_unsupported_currency_codes_if_any_valid_left(
     }
     cfg['shopify_currency'] = {
         'requested_currency_priority': ['JPY', 'USD', 'ABC'],
-        'use_storefront_currency_fallback': True,
     }
     ConfigValidationService.require_strategy_settings(cfg, ['shopify_json'])
 
@@ -350,7 +348,6 @@ def test_config_validation_rejects_currency_priority_without_any_supported_code(
     }
     cfg['shopify_currency'] = {
         'requested_currency_priority': ['JPY', 'ABC'],
-        'use_storefront_currency_fallback': True,
     }
     try:
         ConfigValidationService.require_strategy_settings(cfg, ['shopify_json'])

@@ -37,6 +37,7 @@ class RuntimeJob:
     created_at: datetime
     dry_run: bool
     source_keys: list[str] = field(default_factory=list)
+    source_candidate_urls: dict[str, list[str]] = field(default_factory=dict)
     started_at: datetime | None = None
     finished_at: datetime | None = None
     current_source_name: str | None = None
@@ -65,8 +66,9 @@ class SyncOrchestratorService:
         self,
         *,
         source_keys: list[str],
+        source_candidate_urls: dict[str, list[str]] | None = None,
         dry_run: bool,
-        runner: Callable[[str, bool, str], SourceRunReport],
+        runner: Callable[[str, bool, str, list[str]], SourceRunReport],
     ) -> RuntimeJob:
         with self._lock:
             if self._active_job_id:
@@ -79,6 +81,7 @@ class SyncOrchestratorService:
                 created_at=_utcnow(),
                 dry_run=dry_run,
                 source_keys=list(source_keys),
+                source_candidate_urls=dict(source_candidate_urls or {}),
             )
             self._jobs[job.job_id] = job
             self._active_job_id = job.job_id
@@ -202,7 +205,7 @@ class SyncOrchestratorService:
         description = str(item.get("description") or "").strip() or None
         vendor = str(item.get("vendor") or item.get("brand") or "").strip() or None
         product_type = str(item.get("product_type") or item.get("category") or "").strip() or None
-        currency = str(item.get("currency") or "").strip().upper() or None
+        item_currency = str(item.get("currency") or "").strip().upper() or None
         price = SyncOrchestratorService._to_float(item.get("price"))
         weight_grams = SyncOrchestratorService._to_int(item.get("weight_grams"))
         status = str(item.get("status") or "").strip().lower() or "unavailable"
@@ -243,13 +246,28 @@ class SyncOrchestratorService:
                     "title": source_variant_title,
                     "sku": str(variant.get("sku") or "").strip() or None,
                     "price": v_price,
-                    "currency": str(variant.get("currency") or currency or "").strip().upper() or None,
+                    "currency": str(variant.get("currency") or "").strip().upper() or None,
                     "available": bool(variant.get("available", True)),
                     # Variant-level source lineage: required for safe cross-source combine/merge.
                     "source_key": source_key,
                     "source_product_url": url or None,
                     "source_variant_id": source_variant_id,
                     "source_variant_title": source_variant_title,
+                }
+            )
+        if not variants:
+            variants.append(
+                {
+                    "id": None,
+                    "title": "Default",
+                    "sku": None,
+                    "price": price,
+                    "currency": item_currency,
+                    "available": status != "out_of_stock",
+                    "source_key": source_key,
+                    "source_product_url": url or None,
+                    "source_variant_id": None,
+                    "source_variant_title": "Default",
                 }
             )
 
@@ -263,12 +281,13 @@ class SyncOrchestratorService:
             "description": description,
             "vendor": vendor,
             "product_type": product_type,
-            "currency": currency,
             "price": price,
             "weight_grams": weight_grams,
             "status": status,
             "unavailable_reason": unavailable_reason,
             "images": dedup_images,
+            "buyer_total_price": SyncOrchestratorService._to_float(item.get("buyer_total_price")),
+            "buyer_service_fee": SyncOrchestratorService._to_float(item.get("buyer_service_fee")),
             "variants": variants,
         }
 
@@ -288,13 +307,26 @@ class SyncOrchestratorService:
                 continue
             item = dict(raw)
             item.setdefault("status", "unavailable")
+            reasons_list = item.get("unavailable_reasons") if isinstance(item.get("unavailable_reasons"), list) else []
+            normalized_reasons = [str(x).strip().lower() for x in reasons_list if str(x).strip()]
+            reason_text = str(item.get("unavailable_reason") or "").strip().lower()
+            # Business rule: only missing_weight-only unavailable products may reach backend.
+            # Any missing_currency (or any other unavailable reason) must be dropped.
+            allow_unavailable = False
+            if normalized_reasons:
+                unique_reasons = {x for x in normalized_reasons}
+                allow_unavailable = unique_reasons == {"missing_weight"}
+            elif reason_text:
+                allow_unavailable = ("missing_weight" in reason_text) and ("missing_currency" not in reason_text)
+            if not allow_unavailable:
+                continue
             normalized = self._normalize_product_batch_item(item, source_key=source_key)
             if not normalized.get("source_product_url"):
                 continue
             out.append(normalized)
         return out
 
-    def _execute(self, job_id: str, runner: Callable[[str, bool, str], SourceRunReport]) -> None:
+    def _execute(self, job_id: str, runner: Callable[[str, bool, str, list[str]], SourceRunReport]) -> None:
         with self._lock:
             job = self._jobs.get(job_id)
             if not job:
@@ -337,11 +369,12 @@ class SyncOrchestratorService:
                         "total_sources": len(job.source_keys),
                         "stage_code": SyncStageCode.SOURCE_PREPARE.value,
                         "stage_label": self._stage_label(SyncStageCode.SOURCE_PREPARE),
-                        "progress_percent": round(progress_percent, 2),
+                        "progress_percent": round(max(job.current_progress_percent, progress_percent), 2),
                     },
                 )
 
             progress_run_id = f"sync:{job.job_id}:{source_key}:{index}"
+            candidate_urls = list(job.source_candidate_urls.get(source_key, []))
 
             def _on_strategy_progress(event_payload: dict) -> None:
                 event_type = str(event_payload.get("type") or "").strip()
@@ -380,6 +413,9 @@ class SyncOrchestratorService:
                     stage_share = (strategy_percent or 0.0) / 100.0
                     progress_percent = source_completed_base + (source_share * stage_share)
                     progress_percent = max(0.0, min(100.0, progress_percent))
+                    # Global progress must be monotonic for UI: strategy internal stage
+                    # can reset (for example second pass), but overall job progress must not decrease.
+                    progress_percent = max(float(live_job.current_progress_percent or 0.0), progress_percent)
                     if strategy_percent is not None:
                         stage_text = f"{stage_text} | {int(round(strategy_percent))}%"
                     live_job.current_stage = stage_text
@@ -404,7 +440,7 @@ class SyncOrchestratorService:
 
             subscribe_run_events(progress_run_id, _on_strategy_progress)
             try:
-                report = runner(source_key, job.dry_run, progress_run_id)
+                report = runner(source_key, job.dry_run, progress_run_id, candidate_urls)
                 valid_products = list(report.valid_products or [])
                 unavailable_products = list(report.unavailable_products or [])
                 all_products = self._build_product_batch_items(
@@ -423,13 +459,15 @@ class SyncOrchestratorService:
                     job = self._jobs[job_id]
                     job.current_strategy = strategy
                     job.current_stage = stage
-                    job.current_progress_percent = max(0.0, min(100.0, ((index - 1) / max(1, len(job.source_keys))) * 100.0))
+                    completed_sources_progress = max(0.0, min(100.0, (index / max(1, len(job.source_keys))) * 100.0))
+                    job.current_progress_percent = max(float(job.current_progress_percent or 0.0), completed_sources_progress)
                     job.products_success += len(valid_products)
                     job.products_error += len(unavailable_products)
                     progress_percent = 0.0
                     total = max(1, len(job.source_keys))
                     if total > 0:
-                        progress_percent = ((index - 1) / total) * 100.0
+                        progress_percent = (index / total) * 100.0
+                    progress_percent = max(float(job.current_progress_percent or 0.0), progress_percent)
                     self._append_event(
                         job,
                         "source_progress",

@@ -73,17 +73,26 @@ class VintedJsonLdStrategy:
         response.raise_for_status()
         html = response.text
         payload = self._extract_product_ld_json(html)
+        item_id = self._extract_item_id(item_url)
+        runtime_meta = self._extract_runtime_item_meta(html, item_id=item_id)
         product_type = self._extract_product_type(html)
         offers = payload.get('offers') if isinstance(payload.get('offers'), dict) else {}
         currency = str(offers.get('priceCurrency') or '').strip().upper()
         price = offers.get('price')
         availability = str(offers.get('availability') or '').strip().lower()
         available = 'instock' in availability or 'in_stock' in availability
-        image_urls = self._to_list_images(payload.get('image'))
+        image_urls = list(runtime_meta.get('images') or []) or self._to_list_images(payload.get('image'))
         handle_match = re.search(r'/items/(\d+)', item_url)
         handle = f'item-{handle_match.group(1)}' if handle_match else ''
         brand = payload.get('brand') if isinstance(payload.get('brand'), dict) else {}
         vendor = str(brand.get('name') or '').strip()
+        runtime_price = runtime_meta.get('price')
+        runtime_total_price = runtime_meta.get('total_item_price')
+        runtime_fee = runtime_meta.get('service_fee')
+        runtime_currency = str(runtime_meta.get('currency') or '').strip().upper()
+        if runtime_currency and runtime_currency == currency:
+            if runtime_price is not None:
+                price = runtime_price
         variant = {
             'id': handle,
             'title': payload.get('name'),
@@ -97,7 +106,7 @@ class VintedJsonLdStrategy:
             'compare_at_price': None,
             'currency_code': currency or None,
         }
-        return {
+        out = {
             'url': item_url,
             'handle': handle,
             'title': payload.get('name'),
@@ -111,6 +120,100 @@ class VintedJsonLdStrategy:
             'variants': [variant],
             'tags': [],
         }
+        if runtime_total_price is not None:
+            out['buyer_total_price'] = runtime_total_price
+        if runtime_fee is not None:
+            out['buyer_service_fee'] = runtime_fee
+        return out
+
+    @staticmethod
+    def _extract_item_id(item_url: str) -> str:
+        match = re.search(r'/items/(\d+)', item_url)
+        return str(match.group(1)) if match else ''
+
+    @staticmethod
+    def _extract_runtime_item_meta(html: str, *, item_id: str) -> dict:
+        if not item_id:
+            return {}
+        marker = f'\\"id\\":{item_id}'
+        start = html.find(marker)
+        if start < 0:
+            return {}
+        # Localized chunk around target item payload in hydration script.
+        chunk = html[start:start + 220_000]
+        if not chunk:
+            return {}
+
+        def _extract_money(key: str) -> tuple[float | None, str | None]:
+            pattern = rf'\\"{re.escape(key)}\\":\{{\\"amount\\":\\"([0-9]+(?:\.[0-9]+)?)\\",\\"currency_code\\":\\"([A-Z]{{3}})\\"\}}'
+            m = re.search(pattern, chunk)
+            if not m:
+                return None, None
+            try:
+                return float(m.group(1)), str(m.group(2)).strip().upper()
+            except Exception:
+                return None, None
+
+        def _extract_photos_block() -> str:
+            token = '\\"photos\\":['
+            pos = chunk.find(token)
+            if pos < 0:
+                return ''
+            i = pos + len(token) - 1  # points to '['
+            depth = 0
+            in_string = False
+            escaped = False
+            end = -1
+            while i < len(chunk):
+                ch = chunk[i]
+                if in_string:
+                    if escaped:
+                        escaped = False
+                    elif ch == '\\':
+                        escaped = True
+                    elif ch == '"':
+                        in_string = False
+                else:
+                    if ch == '"':
+                        in_string = True
+                    elif ch == '[':
+                        depth += 1
+                    elif ch == ']':
+                        depth -= 1
+                        if depth == 0:
+                            end = i
+                            break
+                i += 1
+            if end < 0:
+                return ''
+            return chunk[pos + len(token):end]
+
+        price, currency = _extract_money('price')
+        service_fee, fee_currency = _extract_money('service_fee')
+        total_price, total_currency = _extract_money('total_item_price')
+        photos_block = _extract_photos_block()
+        # Grab full-size images from each photo object (ignore thumbnail URLs).
+        photo_urls = re.findall(r'\\"image_no\\":\d+.*?\\"url\\":\\"(https:[^"]+?/f\d+/[^"]+)\\"', photos_block, re.S)
+        dedup: list[str] = []
+        seen: set[str] = set()
+        for url in photo_urls:
+            clean = str(url).replace('\\/', '/').strip()
+            if not clean or clean in seen:
+                continue
+            seen.add(clean)
+            dedup.append(clean)
+        out: dict = {}
+        if dedup:
+            out['images'] = dedup
+        if price is not None:
+            out['price'] = price
+        if total_price is not None:
+            out['total_item_price'] = total_price
+        if service_fee is not None:
+            out['service_fee'] = service_fee
+        # Prefer item/base currency if present.
+        out['currency'] = currency or total_currency or fee_currency
+        return out
 
     @staticmethod
     def _extract_product_ld_json(html: str) -> dict:

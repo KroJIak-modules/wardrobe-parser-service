@@ -31,6 +31,8 @@ class VintedV1Adapter:
             'tags': raw_product.get('tags') if isinstance(raw_product.get('tags'), list) else [],
             'price': self._to_decimal(raw_product.get('price')),
             'currency': str(raw_product.get('currency') or '').strip().upper(),
+            'buyer_total_price': self._to_decimal(raw_product.get('buyer_total_price')),
+            'buyer_service_fee': self._to_decimal(raw_product.get('buyer_service_fee')),
             'weight_grams': self._to_decimal(raw_product.get('weight_grams')),
             'image_url': image_url,
             'variants': variants,
