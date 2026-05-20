@@ -1,6 +1,7 @@
 import { ExtensionBridge } from './core/extension-bridge.mjs';
 import { startBrowserEnvironment } from './core/browser-launcher.mjs';
 import { resolveScenario } from './scenarios/registry.mjs';
+import fs from 'node:fs';
 
 function parseBoolean(value, fallback = false) {
   if (value === undefined || value === null || value === '') return fallback;
@@ -27,6 +28,16 @@ function parseArgs(argv) {
     }
   }
   return args;
+}
+
+function writeOutputArtifact(path, payload) {
+  if (!path) return;
+  try {
+    fs.writeFileSync(path, JSON.stringify(payload), { encoding: 'utf-8' });
+    console.log(`[runner] phase=output_written path=${path}`);
+  } catch (err) {
+    console.log(`[runner] phase=output_write_failed reason=${String(err?.message || err)}`);
+  }
 }
 
 function minVariantPrice(variants) {
@@ -155,6 +166,7 @@ async function main() {
   const showUi = parseBoolean(args['show-ui'], false);
   const networkOnly = parseBoolean(args['network-only'], false);
   const scenarioId = (args['scenario-id'] || '').trim();
+  const outputJsonPath = (args['output-json-path'] || '').trim();
 
   const bridge = networkOnly ? null : new ExtensionBridge(wsPort);
   console.log(
@@ -198,6 +210,7 @@ async function main() {
         .map((x) => String(x || '').trim().toUpperCase())
         .filter(Boolean),
       countryCode: String(args['country-code'] || '').trim().toUpperCase(),
+      preferBridgeFetch: parseBoolean(args['prefer-bridge-fetch'], false),
     };
 
     const scenario = resolveScenario(baseUrl, scenarioId);
@@ -210,6 +223,7 @@ async function main() {
     });
     console.log('[runner] phase=scenario_done');
     const output = buildOutputPayload({ baseUrl, report });
+    writeOutputArtifact(outputJsonPath, output);
     // Keep last line pure JSON for parser client.
     process.stdout.write(`${JSON.stringify(output)}\n`);
   } catch (err) {

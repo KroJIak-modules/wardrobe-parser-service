@@ -77,6 +77,9 @@ class ConfigValidationService:
         raw = config.get('shopify_currency')
         if not isinstance(raw, dict):
             raise ConfigError('Missing source.config.shopify_currency')
+        method = str(raw.get('method') or 'priority_list').strip().lower()
+        if method not in {'priority_list', 'locked_param_currency', 'locked_no_currency'}:
+            raise ConfigError('Invalid source.config.shopify_currency.method')
         priority = raw.get('requested_currency_priority')
         if not isinstance(priority, list) or not priority:
             raise ConfigError('Missing source.config.shopify_currency.requested_currency_priority')
@@ -91,6 +94,12 @@ class ConfigValidationService:
         # but require at least one supported code so runtime selection remains deterministic.
         if not valid_codes:
             raise ConfigError('Invalid source.config.shopify_currency.requested_currency_priority')
+        if method in {'locked_param_currency', 'locked_no_currency'}:
+            locked = str(raw.get('locked_currency') or '').strip().upper()
+            if locked == 'GBR':
+                locked = 'GBP'
+            if locked not in ALLOWED_CURRENCY_CODES:
+                raise ConfigError('Invalid source.config.shopify_currency.locked_currency')
         use_storefront = raw.get('use_storefront_currency_fallback')
         if not isinstance(use_storefront, bool):
             raise ConfigError('Invalid source.config.shopify_currency.use_storefront_currency_fallback')

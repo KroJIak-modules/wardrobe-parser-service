@@ -29,15 +29,30 @@ class ShopifyJsStrategy:
         storefront_currency = ''
         storefront_currency_source = 'disabled'
         requested_priority = list(currency_policy.requested_currency_priority)
-        if requested_priority:
+        currency_method = str(currency_policy.method or 'priority_list').strip().lower()
+        locked_currency = str(currency_policy.locked_currency or '').strip().upper()
+        if currency_method == 'locked_param_currency' and locked_currency:
+            effective_currency_priority = tuple([locked_currency])
+            storefront_currency = locked_currency
+            storefront_currency_source = 'shopify_currency_locked_param_currency'
+        elif currency_method == 'locked_no_currency':
+            effective_currency_priority = tuple()
+            if locked_currency:
+                storefront_currency = locked_currency
+                storefront_currency_source = 'shopify_currency_locked_no_currency'
+        elif requested_priority:
+            effective_currency_priority = tuple(requested_priority)
             storefront_currency = requested_priority[0]
             storefront_currency_source = 'shopify_currency_requested_priority'
         elif currency_policy.use_storefront_currency_fallback:
+            effective_currency_priority = tuple()
             storefront_currency, storefront_currency_source = ShopifyCurrencyResolver.resolve_storefront_currency(
                 base_url,
                 timeout,
                 ('EUR', 'USD', 'GBP'),
             )
+        else:
+            effective_currency_priority = tuple()
         quality = ShopifyPolicyFactory.js_quality(cfg)
         workers = max(1, int(cfg['shopify_js_workers']))
         candidate_urls = [str(x).strip() for x in context.candidate_urls if str(x).strip()]
@@ -82,7 +97,7 @@ class ShopifyJsStrategy:
                 activate_pause=activate_pause,
                 quality=quality,
                 allowed_currencies=('EUR', 'USD', 'GBP'),
-                currency_priority=tuple(requested_priority),
+                currency_priority=effective_currency_priority,
                 storefront_currency=storefront_currency,
             )
             return url, item, fail_type
@@ -139,7 +154,7 @@ class ShopifyJsStrategy:
                     url,
                     timeout,
                     allowed_currencies=('EUR', 'USD', 'GBP'),
-                    currency_priority=tuple(requested_priority),
+                    currency_priority=effective_currency_priority,
                     storefront_currency=storefront_currency,
                 )
                 if item is not None:
@@ -161,6 +176,8 @@ class ShopifyJsStrategy:
                 'max_products': sitemap_policy.max_products,
                 'storefront_currency': storefront_currency,
                 'storefront_currency_source': storefront_currency_source,
+                'currency_method': currency_method,
+                'locked_currency': locked_currency,
             })
         else:
             context.diagnostics.update({
@@ -178,6 +195,8 @@ class ShopifyJsStrategy:
                 'max_products': sitemap_policy.max_products,
                 'storefront_currency': storefront_currency,
                 'storefront_currency_source': storefront_currency_source,
+                'currency_method': currency_method,
+                'locked_currency': locked_currency,
             })
         logger.strategy_event('done', self.name, parsed=len(out), total=total)
         return out

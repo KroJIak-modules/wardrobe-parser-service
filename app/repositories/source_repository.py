@@ -77,6 +77,8 @@ class SourceRepository:
         enabled: bool | None = None,
         sync_enabled: bool | None = None,
         requested_currency_priority: list[str] | None = None,
+        currency_method: str | None = None,
+        locked_currency: str | None = None,
     ) -> SourceRecord:
         if not self.config_path.exists():
             raise KeyError(f'Sources config not found: {self.config_path}')
@@ -100,6 +102,21 @@ class SourceRepository:
                 currency_cfg = cfg.get('shopify_currency') if isinstance(cfg.get('shopify_currency'), dict) else {}
                 normalized = [str(x).strip().upper() for x in requested_currency_priority if str(x).strip()]
                 currency_cfg['requested_currency_priority'] = normalized
+                cfg['shopify_currency'] = currency_cfg
+                item['config'] = cfg
+            if currency_method is not None or locked_currency is not None:
+                cfg = item.get('config') if isinstance(item.get('config'), dict) else {}
+                currency_cfg = cfg.get('shopify_currency') if isinstance(cfg.get('shopify_currency'), dict) else {}
+                if currency_method is not None:
+                    normalized_method = str(currency_method).strip().lower()
+                    currency_cfg['method'] = normalized_method
+                    if normalized_method == 'priority_list' and locked_currency is None:
+                        currency_cfg.pop('locked_currency', None)
+                if locked_currency is not None:
+                    normalized_locked = str(locked_currency).strip().upper()
+                    if normalized_locked == 'GBR':
+                        normalized_locked = 'GBP'
+                    currency_cfg['locked_currency'] = normalized_locked
                 cfg['shopify_currency'] = currency_cfg
                 item['config'] = cfg
             found = True

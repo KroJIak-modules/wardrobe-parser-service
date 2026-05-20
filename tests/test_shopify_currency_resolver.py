@@ -61,6 +61,36 @@ def test_currency_policy_filters_unsupported_codes() -> None:
     assert policy.requested_currency_priority == ('USD', 'GBP')
 
 
+def test_currency_policy_locked_no_currency_mode() -> None:
+    from app.services.shopify_policies import ShopifyPolicyFactory
+
+    policy = ShopifyPolicyFactory.currency({
+        'shopify_currency': {
+            'method': 'locked_no_currency',
+            'locked_currency': 'eur',
+            'requested_currency_priority': ['USD', 'EUR', 'GBP'],
+            'use_storefront_currency_fallback': False,
+        }
+    })
+    assert policy.method == 'locked_no_currency'
+    assert policy.locked_currency == 'EUR'
+
+
+def test_currency_policy_locked_param_currency_mode() -> None:
+    from app.services.shopify_policies import ShopifyPolicyFactory
+
+    policy = ShopifyPolicyFactory.currency({
+        'shopify_currency': {
+            'method': 'locked_param_currency',
+            'locked_currency': 'gbr',
+            'requested_currency_priority': ['USD', 'EUR', 'GBP'],
+            'use_storefront_currency_fallback': False,
+        }
+    })
+    assert policy.method == 'locked_param_currency'
+    assert policy.locked_currency == 'GBP'
+
+
 def test_shopify_js_weight_accepts_weight_field() -> None:
     from app.strategies.shopify_js import ShopifyJsStrategy
 

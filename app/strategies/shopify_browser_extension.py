@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 import re
+import tempfile
 from decimal import Decimal, InvalidOperation
 from shutil import which
 
@@ -47,8 +48,17 @@ class ShopifyBrowserExtensionStrategy:
         export_max_products = int(raw_browser_cfg.get('export_max_products', 0))
         max_collection_pages = int(raw_browser_cfg.get('max_collection_pages', 0))
         skip_discovery_for_limited_json_export = bool(raw_browser_cfg.get('skip_discovery_for_limited_json_export', False))
+        prefer_bridge_fetch = bool(raw_browser_cfg.get('prefer_bridge_fetch', False))
         country_code = str(raw_currency_cfg.get('country_code') or '').strip().upper()
         requested_currency_priority = list(currency_policy.requested_currency_priority)
+        currency_method = str(currency_policy.method or 'priority_list').strip().lower()
+        locked_currency = str(currency_policy.locked_currency or '').strip().upper()
+        if currency_method == 'locked_param_currency' and locked_currency:
+            effective_currency_priority = [locked_currency]
+        elif currency_method == 'locked_no_currency':
+            effective_currency_priority = []
+        else:
+            effective_currency_priority = requested_currency_priority
 
         logger.strategy_event('start', self.name, base_url=base_url, total=len(candidate_urls))
         payload = self._run_runner(
@@ -64,8 +74,9 @@ class ShopifyBrowserExtensionStrategy:
             export_max_products=max(0, export_max_products),
             max_collection_pages=max(0, max_collection_pages),
             skip_discovery_for_limited_json_export=skip_discovery_for_limited_json_export,
+            prefer_bridge_fetch=prefer_bridge_fetch,
             country_code=country_code,
-            currency_priority=requested_currency_priority,
+            currency_priority=effective_currency_priority,
             logger=logger,
         )
         previews = payload.get('previews')
@@ -97,6 +108,8 @@ class ShopifyBrowserExtensionStrategy:
                 'products_fetch_failed': int(payload.get('products_fetch_failed') or 0),
                 'http_429_count': int(payload.get('http_429_count') or 0),
                 'retry_backoff_sec': ','.join(str(x) for x in quality.retry_backoff_sec),
+                'currency_method': currency_method,
+                'locked_currency': locked_currency,
             }
         )
         logger.strategy_event('done', self.name, parsed=len(out), total=len(candidate_urls))
@@ -117,6 +130,7 @@ class ShopifyBrowserExtensionStrategy:
         export_max_products: int,
         max_collection_pages: int,
         skip_discovery_for_limited_json_export: bool,
+        prefer_bridge_fetch: bool,
         country_code: str,
         currency_priority: list[str],
         logger: RunLogger,
@@ -146,6 +160,10 @@ class ShopifyBrowserExtensionStrategy:
             '--show-ui',
             'true' if show_ui else 'false',
         ]
+        tmp_file = tempfile.NamedTemporaryFile(prefix='browser_runner_out_', suffix='.json', delete=False)
+        output_json_path = tmp_file.name
+        tmp_file.close()
+        cmd += ['--output-json-path', output_json_path]
         if max_sitemaps > 0:
             cmd += ['--max-sitemaps', str(max_sitemaps)]
         if export_max_products > 0:
@@ -154,6 +172,8 @@ class ShopifyBrowserExtensionStrategy:
             cmd += ['--max-collection-pages', str(max_collection_pages)]
         if skip_discovery_for_limited_json_export:
             cmd += ['--skip-discovery-for-limited-json-export', 'true']
+        if prefer_bridge_fetch:
+            cmd += ['--prefer-bridge-fetch', 'true']
         if scenario_id:
             cmd += ['--scenario-id', scenario_id]
         if currency_priority:
@@ -184,9 +204,19 @@ class ShopifyBrowserExtensionStrategy:
 
         if timed_out:
             tail = '\n'.join(stdout_lines[-20:])
+            try:
+                if os.path.exists(output_json_path):
+                    os.unlink(output_json_path)
+            except Exception:
+                pass
             raise RuntimeError(f'browser_extension_runner_timeout details={tail}')
         if proc.returncode != 0:
             tail = '\n'.join(stdout_lines[-20:])
+            try:
+                if os.path.exists(output_json_path):
+                    os.unlink(output_json_path)
+            except Exception:
+                pass
             raise RuntimeError(f'browser_extension_runner_failed code={proc.returncode} details={tail}')
 
         for line in reversed(stdout_lines):
@@ -198,7 +228,26 @@ class ShopifyBrowserExtensionStrategy:
             except json.JSONDecodeError:
                 continue
             if isinstance(parsed, dict):
+                try:
+                    if os.path.exists(output_json_path):
+                        os.unlink(output_json_path)
+                except Exception:
+                    pass
                 return parsed
+        try:
+            if os.path.exists(output_json_path):
+                raw = open(output_json_path, 'r', encoding='utf-8').read()
+                parsed = json.loads(raw)
+                if isinstance(parsed, dict):
+                    os.unlink(output_json_path)
+                    return parsed
+        except Exception:
+            pass
+        try:
+            if os.path.exists(output_json_path):
+                os.unlink(output_json_path)
+        except Exception:
+            pass
         raise RuntimeError('browser_extension_runner_no_json_output')
 
     @staticmethod

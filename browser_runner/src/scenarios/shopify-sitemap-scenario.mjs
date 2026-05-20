@@ -4,6 +4,7 @@ import { runLiveDomFallback } from './live-dom-fallback.mjs';
 import { fetchJsonWithRetries, fetchTextWithRetries as fetchTextHttp } from '../core/http-client.mjs';
 
 const xmlParser = new XMLParser({ ignoreAttributes: false, trimValues: true });
+let PREFER_BRIDGE_FETCH = false;
 
 function parseSitemapIndex(xmlText) {
   try {
@@ -181,6 +182,9 @@ async function fetchJsonWithFallback(bridge, url, maxRetries = 5) {
 }
 
 async function fetchJsonPreferHttp(bridge, url, maxRetries = 4) {
+  if (PREFER_BRIDGE_FETCH && bridge && bridge.isConnected && bridge.isConnected()) {
+    return fetchJsonWithFallback(bridge, url, maxRetries);
+  }
   // Fast path: direct HTTP is significantly faster than extension bridge for bulk export.
   const direct = await fetchJsonWithRetries(url, maxRetries);
   if (direct?.ok) return direct;
@@ -200,6 +204,9 @@ function appendCurrencyAndCountry(url, currencyCode, countryCode) {
 }
 
 async function fetchTextPreferHttp(bridge, url, maxRetries = 3) {
+  if (PREFER_BRIDGE_FETCH && bridge && bridge.isConnected && bridge.isConnected()) {
+    return fetchTextWithRetries(bridge, url, maxRetries);
+  }
   const direct = await fetchTextHttp(url, maxRetries);
   if (direct?.ok) return direct;
   return fetchTextWithRetries(bridge, url, Math.max(1, maxRetries - 1));
@@ -366,12 +373,15 @@ export async function runShopifySitemapScenario({ bridge, baseUrl, options }) {
   const exportConcurrency = Number(options.exportConcurrency || 8);
   const exportMode = String(options.exportMode || 'json').toLowerCase();
   const exportMaxProducts = Number(options.exportMaxProducts || 0);
+  const preferBridgeFetch = Boolean(options.preferBridgeFetch);
+  PREFER_BRIDGE_FETCH = preferBridgeFetch;
   const canSkipDiscoveryForLimitedJsonExport = Boolean(options.skipDiscoveryForLimitedJsonExport)
     && exportProducts
     && exportMode === 'json'
     && exportMaxProducts > 0;
 
   logStep(`start base=${baseUrl} maxSitemaps=${maxSitemaps} jsSample=${jsSampleSize}`);
+  logStep(`export transport=${preferBridgeFetch ? 'bridge-first' : 'http-first'}`);
   await setOverlay(bridge, 'Запуск сценария и открытие сайта...');
   const productUrls = new Set();
   if (bridge && bridge.isConnected && bridge.isConnected()) {
@@ -699,6 +709,20 @@ export async function runShopifySitemapScenario({ bridge, baseUrl, options }) {
     for (const item of exportFailures) {
       const key = String(item.reason || 'unknown');
       report.products_export.failed_reasons[key] = (report.products_export.failed_reasons[key] || 0) + 1;
+    }
+    if (exportFailures.length > 0) {
+      const grouped = {};
+      for (const item of exportFailures) {
+        const raw = String(item.reason || 'unknown');
+        const key = raw.split(':')[0] || 'unknown';
+        grouped[key] = (grouped[key] || 0) + 1;
+      }
+      const top = Object.entries(grouped)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10)
+        .map(([k, v]) => `${k}=${v}`)
+        .join(', ');
+      logStep(`export failed reasons top: ${top}`);
     }
 
     report.artifacts = {

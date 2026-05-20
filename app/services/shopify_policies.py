@@ -6,6 +6,7 @@ from dataclasses import dataclass
 MAX_PRODUCTS_LIMIT = 50000
 MAX_REQUEST_RETRIES = 5
 ALLOWED_CURRENCY_CODES = {'EUR', 'USD', 'GBP', 'JPY'}
+ALLOWED_CURRENCY_METHODS = {'priority_list', 'locked_param_currency', 'locked_no_currency'}
 
 
 @dataclass(frozen=True)
@@ -19,6 +20,8 @@ class ShopifySitemapPolicy:
 class ShopifyCurrencyPolicy:
     requested_currency_priority: tuple[str, ...]
     use_storefront_currency_fallback: bool
+    method: str
+    locked_currency: str
 
 
 @dataclass(frozen=True)
@@ -55,9 +58,22 @@ class ShopifyPolicyFactory:
             )
             if code in ALLOWED_CURRENCY_CODES
         )
+        raw_method = str(raw.get('method') or '').strip().lower()
+        method = raw_method if raw_method in ALLOWED_CURRENCY_METHODS else 'priority_list'
+        locked_currency = ''
+        if method in {'locked_param_currency', 'locked_no_currency'}:
+            candidate = str(raw.get('locked_currency') or '').strip().upper()
+            if candidate == 'GBR':
+                candidate = 'GBP'
+            if candidate in ALLOWED_CURRENCY_CODES:
+                locked_currency = candidate
+            elif normalized_priority:
+                locked_currency = normalized_priority[0]
         return ShopifyCurrencyPolicy(
             requested_currency_priority=normalized_priority,
             use_storefront_currency_fallback=bool(raw.get('use_storefront_currency_fallback')),
+            method=method,
+            locked_currency=locked_currency,
         )
 
     @staticmethod
