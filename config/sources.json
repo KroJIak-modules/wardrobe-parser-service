@@ -1478,7 +1478,11 @@
           "method": "priority_list"
         },
         "intl_protocol_index_workers": 6,
-        "mode": "auto"
+        "mode": "auto",
+        "source_domains": [
+          "intl-protocol-index.com",
+          "protocolindex.cafe24.com"
+        ]
       }
     }
   ]

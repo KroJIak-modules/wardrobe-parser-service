@@ -47,6 +47,70 @@ class ShopifyJsonStrategy:
         logger.strategy_event('start', self.name, base_url=base_url, max_products=sitemap_policy.max_products)
         unique: dict[int, dict] = {}
         fail_types: Counter[str] = Counter()
+        candidate_handles = {
+            self._extract_handle_from_url(x)
+            for x in (context.candidate_urls or ())
+            if str(x).strip()
+        }
+        candidate_handles.discard('')
+
+        # Candidate-only probe/sync: avoid full catalog scan for a single URL.
+        # This makes probe-by-url deterministic and fast even when URL is gone.
+        if context.candidate_only and candidate_handles and len(candidate_handles) <= 20:
+            direct_items = self._collect_direct_candidates(
+                base_url,
+                timeout,
+                handles=tuple(sorted(candidate_handles)),
+                storefront_currency=storefront_currency,
+                currency_priority=effective_currency_priority,
+                request_without_currency=request_without_currency,
+                logger=logger,
+                fail_types=fail_types,
+            )
+            for item in direct_items:
+                pid = item.get('id')
+                if isinstance(pid, int):
+                    unique[pid] = item
+            context.diagnostics.update(
+                {
+                    'pages_fetched': 0,
+                    'page_limit': self.PAGE_LIMIT,
+                    'max_products': sitemap_policy.max_products,
+                    'storefront_currency': storefront_currency,
+                    'storefront_currency_source': storefront_currency_source,
+                    'currency_method': currency_method,
+                    'locked_currency': locked_currency,
+                    'request_without_currency': int(request_without_currency),
+                    'base_items': len(direct_items),
+                    'dedup_items': len(unique),
+                    'candidate_direct_only': 1,
+                }
+            )
+            out = [
+                self._map_product(
+                    item,
+                    base_url,
+                    timeout,
+                    quality=quality,
+                    allowed_currencies=('EUR', 'USD', 'GBP', 'JPY'),
+                    storefront_currency=storefront_currency,
+                    fail_types=fail_types,
+                )
+                for item in unique.values()
+            ]
+            context.diagnostics.update(
+                {
+                    'fail_antibot': int(fail_types.get('antibot', 0)),
+                    'fail_network': int(fail_types.get('network', 0)),
+                    'fail_data': int(fail_types.get('data', 0)),
+                    'fail_http_other': int(fail_types.get('http_other', 0)),
+                    'js_enrich_price': int(fail_types.get('js_enrich_price', 0)),
+                    'js_enrich_images': int(fail_types.get('js_enrich_images', 0)),
+                }
+            )
+            logger.strategy_event('done', self.name, parsed=len(out), candidate_direct_only=1)
+            return out
+
         base_items, pages_fetched = self._collect_base_pages(
             base_url,
             timeout,
@@ -231,6 +295,37 @@ class ShopifyJsonStrategy:
             out = self._prioritize_by_candidates(out, candidate_handles, max_products)
         return out, pages_fetched
 
+    def _collect_direct_candidates(
+        self,
+        base_url: str,
+        timeout: int,
+        *,
+        handles: tuple[str, ...],
+        storefront_currency: str,
+        currency_priority: tuple[str, ...],
+        request_without_currency: bool,
+        logger: RunLogger,
+        fail_types: Counter[str],
+    ) -> list[dict]:
+        out: list[dict] = []
+        for handle in handles:
+            item, state = self._fetch_product_by_handle(
+                base_url,
+                timeout,
+                handle=handle,
+                storefront_currency=storefront_currency,
+                currency_priority=currency_priority,
+                request_without_currency=request_without_currency,
+            )
+            if item is None:
+                if state:
+                    fail_types[state] += 1
+                logger.strategy_event('progress', self.name, stage='candidate_direct_miss', handle=handle, reason=state or 'not_found')
+                continue
+            out.append(item)
+            logger.strategy_event('progress', self.name, stage='candidate_direct_hit', handle=handle)
+        return out
+
     @staticmethod
     def _prioritize_by_candidates(items: list[dict], candidate_handles: set[str], max_products: int) -> list[dict]:
         by_candidate: list[dict] = []
@@ -302,6 +397,74 @@ class ShopifyJsonStrategy:
                 continue
             return items, None
         return None, last_state or 'http_other'
+
+    def _fetch_product_by_handle(
+        self,
+        base_url: str,
+        timeout: int,
+        *,
+        handle: str,
+        storefront_currency: str,
+        currency_priority: tuple[str, ...],
+        request_without_currency: bool = False,
+    ) -> tuple[dict | None, str | None]:
+        if not handle:
+            return None, 'data'
+        if request_without_currency:
+            currencies = ['']
+        else:
+            currencies = [x for x in currency_priority if x] or ([storefront_currency] if storefront_currency else [''])
+        last_state: str | None = None
+        for cur in currencies:
+            try:
+                params: dict[str, str] = {}
+                if cur:
+                    params['currency'] = cur
+                response = ShopifyHttpClient.get_json(
+                    f'{base_url}/products/{handle}.js',
+                    params=params,
+                    timeout=timeout,
+                )
+            except Exception:
+                last_state = 'network'
+                continue
+            if response.status_code in {403, 429, 503}:
+                return None, 'antibot'
+            if response.status_code == 404:
+                last_state = 'http_other'
+                continue
+            if response.status_code != 200:
+                last_state = 'http_other'
+                continue
+            if not isinstance(response.payload, dict):
+                last_state = 'data'
+                continue
+            if not response.payload.get('id'):
+                last_state = 'data'
+                continue
+            return self._normalize_js_product_payload(response.payload), None
+        return None, last_state or 'http_other'
+
+    @staticmethod
+    def _normalize_js_product_payload(payload: dict) -> dict:
+        product = dict(payload)
+        raw_variants = product.get('variants') if isinstance(product.get('variants'), list) else []
+        normalized_variants: list[dict] = []
+        for variant in raw_variants:
+            if not isinstance(variant, dict):
+                continue
+            normalized_variant = dict(variant)
+            for field in ('price', 'compare_at_price'):
+                value = normalized_variant.get(field)
+                if isinstance(value, (int, float)):
+                    normalized_variant[field] = f'{(Decimal(str(value)) / Decimal("100")):.2f}'
+                    continue
+                text = str(value or '').strip()
+                if text.isdigit():
+                    normalized_variant[field] = f'{(Decimal(text) / Decimal("100")):.2f}'
+            normalized_variants.append(normalized_variant)
+        product['variants'] = normalized_variants
+        return product
 
     def _fetch_products_page_with_retry(
         self,

@@ -470,3 +470,63 @@ def test_dedup_scoring_filters_title_vendor_price_duplicates() -> None:
     assert report.parsed_visible_products == 1
     assert report.aggregated_unavailable_reasons.get('deduplicated', 0) == 1
     assert any(e.startswith('dedup_candidate:') for e in report.errors)
+
+
+def test_description_html_is_normalized_to_readable_plain_text() -> None:
+    cfg = _base_config()
+    cfg['strategy_payloads']['s1'] = [
+        {
+            'url': 'u1',
+            'price': 10,
+            'currency': 'USD',
+            'weight_grams': 500,
+            'description': (
+                '<p>The Big Baggy Black jeans feature a distinctive wide cut.</p>'
+                '<div><p><strong>Every piece is meticulously made to order.</strong></p>'
+                '<p>Feel free to contact us at '
+                '<a href="mailto:support@paradoxeparis.com">support@paradoxeparis.com</a>.'
+                '</p></div>'
+            ),
+        },
+    ]
+    svc = _build_service(cfg)
+    report = svc.run('jadedldn.com')
+    assert report.total_valid_products == 1
+    description = str(report.valid_products[0].get('description') or '')
+    assert description
+    assert '<p>' not in description and '<div>' not in description
+    assert 'The Big Baggy Black jeans feature a distinctive wide cut.' in description
+    assert 'Every piece is meticulously made to order.' in description
+    assert 'support@paradoxeparis.com' in description
+    assert '\n\n' in description
+
+
+def test_description_markdown_is_normalized_to_plain_text() -> None:
+    cfg = _base_config()
+    cfg['strategy_payloads']['s1'] = [
+        {
+            'url': 'u1',
+            'price': 10,
+            'currency': 'USD',
+            'weight_grams': 500,
+            'description': (
+                '# Title\n\n'
+                'Some **bold** text.\n\n'
+                '- first item\n'
+                '- second item\n\n'
+                '[Size chart](https://example.com/chart.png)'
+            ),
+        },
+    ]
+    svc = _build_service(cfg)
+    report = svc.run('jadedldn.com')
+    assert report.total_valid_products == 1
+    description = str(report.valid_products[0].get('description') or '')
+    assert description
+    assert '# ' not in description
+    assert '**' not in description
+    assert '[Size chart]' not in description
+    assert 'Some bold text.' in description
+    assert '• first item' in description
+    assert '• second item' in description
+    assert 'Size chart' in description

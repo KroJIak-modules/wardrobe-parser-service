@@ -10,6 +10,7 @@ from app.domain.statuses import SourceRunStatus
 from app.repositories.source_repository import SourceRepository
 from app.schemas.run_report import SourceRunReport, StrategyAttempt
 from app.services.config_validation_service import ConfigValidationService
+from app.services.description_text_service import DescriptionTextService
 from app.services.run_logger import RunLogger
 from app.services.run_report_markdown_service import RunReportMarkdownService
 from app.services.weight_enrichment_service import WeightEnrichmentService
@@ -129,6 +130,7 @@ class SourceRunService:
         dry_run: bool = False,
         run_id: str | None = None,
         candidate_urls: list[str] | tuple[str, ...] | None = None,
+        prefer_candidate_urls: bool = False,
     ) -> SourceRunReport:
         logger = RunLogger(run_id)
         started_at = time.perf_counter()
@@ -161,9 +163,13 @@ class SourceRunService:
         sync_mode = str(source.config.get('mode') or 'auto').strip().lower()
         if sync_mode not in {'auto', 'manual'}:
             sync_mode = 'auto'
-        if sync_mode == 'manual':
+        force_candidates = bool(prefer_candidate_urls and candidate_urls)
+        if sync_mode == 'manual' or force_candidates:
             visible_urls = [str(x).strip() for x in (candidate_urls or []) if str(x).strip()]
-            logger.event('discovery_skipped_manual_mode', provided_candidates=len(visible_urls))
+            if force_candidates:
+                logger.event('discovery_skipped_force_candidates', provided_candidates=len(visible_urls))
+            else:
+                logger.event('discovery_skipped_manual_mode', provided_candidates=len(visible_urls))
         else:
             try:
                 visible_urls = adapter.discover_visible_catalog(context)
@@ -206,8 +212,9 @@ class SourceRunService:
                 dry_run=dry_run,
                 run_id=run_id or '',
                 candidate_urls=tuple(sorted(pending_candidate_urls)) if pending_candidate_urls else (),
+                candidate_only=bool(sync_mode == 'manual' or force_candidates),
             )
-            if sync_mode == 'manual' and not strategy_context.candidate_urls:
+            if (sync_mode == 'manual' or force_candidates) and not strategy_context.candidate_urls:
                 logger.event('strategy_skip_manual_no_candidates', name=strategy_name)
                 attempt.success = True
                 report.attempts.append(attempt)
@@ -239,6 +246,7 @@ class SourceRunService:
                     normalized['vendor'] = str(raw.get('vendor') or raw.get('brand') or '').strip()
                 if not str(normalized.get('description') or '').strip():
                     normalized['description'] = str(raw.get('description') or raw.get('body_html') or '').strip() or None
+                normalized['description'] = DescriptionTextService.normalize(normalized.get('description'))
                 if not isinstance(normalized.get('images'), list) or not normalized.get('images'):
                     normalized['images'] = list(raw.get('images')) if isinstance(raw.get('images'), list) else []
                 normalized = WeightEnrichmentService.apply_keyword_weight(normalized, weight_rules)

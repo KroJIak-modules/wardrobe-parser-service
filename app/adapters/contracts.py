@@ -19,6 +19,7 @@ class StrategyContext:
     dry_run: bool = False
     run_id: str = ''
     candidate_urls: tuple[str, ...] = ()
+    candidate_only: bool = False
     diagnostics: dict[str, int | float | str] = field(default_factory=dict)
 
 

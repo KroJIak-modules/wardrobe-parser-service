@@ -35,10 +35,30 @@ class ProbeProductRequest(BaseModel):
 
 
 def _normalize_host(url: str) -> str:
-    host = (urlparse(url).hostname or "").strip().lower()
+    raw = str(url or "").strip()
+    if not raw:
+        return ""
+    parsed = urlparse(raw if "://" in raw else f"https://{raw}")
+    host = (parsed.hostname or parsed.netloc or parsed.path or "").strip().lower()
     if host.startswith("www."):
         return host[4:]
     return host
+
+
+def _source_hosts(source: object) -> set[str]:
+    hosts: set[str] = set()
+    primary = _normalize_host(str(getattr(source, "url", "") or ""))
+    if primary:
+        hosts.add(primary)
+    cfg = getattr(source, "config", None)
+    if isinstance(cfg, dict):
+        raw_domains = cfg.get("source_domains")
+        if isinstance(raw_domains, list):
+            for raw in raw_domains:
+                host = _normalize_host(str(raw or "").strip())
+                if host:
+                    hosts.add(host)
+    return hosts
 
 
 def _normalize_product_url(url: str) -> str:
@@ -186,6 +206,7 @@ def create_sync_job(payload: SyncJobCreateRequest) -> SyncJobCreateResponse:
                 dry_run=dry_run,
                 run_id=run_id,
                 candidate_urls=candidate_urls,
+                prefer_candidate_urls=bool(candidate_urls),
             ),
         )
     except RuntimeError as exc:
@@ -207,8 +228,8 @@ def create_probe_product_job(payload: ProbeProductRequest) -> SyncJobCreateRespo
     target_host = _normalize_host(product_url)
     matched_source_key: str | None = None
     for src in sources:
-        src_host = _normalize_host(src.url)
-        if src_host and src_host == target_host:
+        src_hosts = _source_hosts(src)
+        if target_host and target_host in src_hosts:
             matched_source_key = src.key
             break
     if not matched_source_key:
@@ -219,7 +240,13 @@ def create_probe_product_job(payload: ProbeProductRequest) -> SyncJobCreateRespo
             source_candidate_urls={matched_source_key: [product_url]},
             dry_run=bool(payload.dry_run),
             runner=lambda source_key, dry_run, run_id, candidate_urls: _filter_report_by_product_url(
-                svc.run(source_key=source_key, dry_run=dry_run, run_id=run_id, candidate_urls=candidate_urls),
+                svc.run(
+                    source_key=source_key,
+                    dry_run=dry_run,
+                    run_id=run_id,
+                    candidate_urls=candidate_urls,
+                    prefer_candidate_urls=True,
+                ),
                 product_url,
             ),
         )
@@ -397,6 +424,35 @@ def get_probe_job_events(job_id: str, cursor: int = Query(default=0, ge=0), limi
             )
             for e in events
         ],
+    )
+
+
+@router.post('/probe/jobs/{job_id}/cancel', response_model=SyncJobStatusResponse)
+def cancel_probe_job(job_id: str) -> SyncJobStatusResponse:
+    job = probe_orchestrator.cancel(job_id)
+    total = max(1, len(job.source_keys))
+    progress = float(getattr(job, "current_progress_percent", 0.0) or 0.0)
+    if progress <= 0.0:
+        progress = min(100.0, max(0.0, (job.processed_sources / total) * 100.0))
+    if job.status in {'completed', 'failed', 'cancelled'}:
+        progress = 100.0
+    stage = job.current_stage
+    return SyncJobStatusResponse(
+        job_id=job.job_id,
+        status=job.status,
+        created_at=job.created_at.isoformat(),
+        started_at=job.started_at.isoformat() if job.started_at else None,
+        finished_at=job.finished_at.isoformat() if job.finished_at else None,
+        current_source_name=job.current_source_name,
+        current_source_index=job.current_source_index,
+        total_sources=len(job.source_keys),
+        current_strategy=job.current_strategy,
+        current_stage=stage,
+        products_success=job.products_success,
+        products_error=job.products_error,
+        progress_percent=progress,
+        can_cancel=job.status in {'queued', 'in_progress'},
+        error=job.error,
     )
 
 

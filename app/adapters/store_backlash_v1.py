@@ -51,7 +51,7 @@ class StoreBacklashV1Adapter:
         currency = str(normalized_product.get('currency') or '').strip().upper()
         if not currency or len(currency) != 3:
             reasons.append('missing_currency')
-        allowed = {'USD', 'EUR', 'GBP'}
+        allowed = {'USD', 'EUR', 'GBP', 'JPY'}
         if currency and currency not in allowed:
             reasons.append('unsupported_currency')
         weight_grams = normalized_product.get('weight_grams')

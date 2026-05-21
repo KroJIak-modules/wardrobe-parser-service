@@ -107,12 +107,15 @@ class SyncOrchestratorService:
             if job.status in {"completed", "failed", "cancelled"}:
                 return job
             job.cancel_requested = True
-            if job.status == "queued":
+            # Release active slot immediately even for in-progress job:
+            # long-running source execution can ignore cancel_requested for a while,
+            # and we must not block all next probe/manual launches with 409.
+            if job.status in {"queued", "in_progress"}:
                 job.status = "cancelled"
                 job.finished_at = _utcnow()
                 if self._active_job_id == job.job_id:
                     self._active_job_id = None
-                self._append_event(job, "job_cancelled", {"reason": "cancelled_before_start"})
+                self._append_event(job, "job_cancelled", {"reason": "cancel_requested_immediate"})
             return job
 
     def get_events(self, job_id: str, cursor: int, limit: int) -> tuple[list[RuntimeEvent], int]:
@@ -246,7 +249,7 @@ class SyncOrchestratorService:
                     "title": source_variant_title,
                     "sku": str(variant.get("sku") or "").strip() or None,
                     "price": v_price,
-                    "currency": str(variant.get("currency") or "").strip().upper() or None,
+                    "currency": str(variant.get("currency") or item_currency or "").strip().upper() or None,
                     "available": bool(variant.get("available", True)),
                     # Variant-level source lineage: required for safe cross-source combine/merge.
                     "source_key": source_key,
@@ -270,6 +273,11 @@ class SyncOrchestratorService:
                     "source_variant_title": "Default",
                 }
             )
+        available_variants = [v for v in variants if bool(v.get("available", False))]
+        if status == "available" and not available_variants:
+            status = "out_of_stock"
+        elif status == "out_of_stock" and available_variants:
+            status = "available"
 
         return {
             "source_key": source_key,
