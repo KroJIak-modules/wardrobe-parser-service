@@ -58,7 +58,8 @@
             "EUR",
             "JPY"
           ],
-          "method": "priority_list"
+          "method": "priority_list",
+          "locked_currency": ""
         },
         "mode": "auto"
       }
@@ -106,7 +107,8 @@
             "GBP",
             "JPY"
           ],
-          "method": "priority_list"
+          "method": "priority_list",
+          "locked_currency": ""
         },
         "shopify_js_workers": 14,
         "shopify_js_quality": {
@@ -165,7 +167,8 @@
             "GBP",
             "JPY"
           ],
-          "method": "priority_list"
+          "method": "priority_list",
+          "locked_currency": ""
         },
         "shopify_js_workers": 14,
         "shopify_js_quality": {
@@ -224,7 +227,8 @@
             "GBP",
             "JPY"
           ],
-          "method": "priority_list"
+          "method": "priority_list",
+          "locked_currency": ""
         },
         "shopify_js_workers": 14,
         "shopify_js_quality": {
@@ -282,7 +286,8 @@
             "GBP",
             "JPY"
           ],
-          "method": "priority_list"
+          "method": "priority_list",
+          "locked_currency": ""
         },
         "shopify_js_workers": 14,
         "shopify_js_quality": {
@@ -340,7 +345,8 @@
             "GBP",
             "JPY"
           ],
-          "method": "priority_list"
+          "method": "priority_list",
+          "locked_currency": ""
         },
         "shopify_js_workers": 14,
         "shopify_js_quality": {
@@ -399,7 +405,8 @@
             "GBP",
             "JPY"
           ],
-          "method": "priority_list"
+          "method": "priority_list",
+          "locked_currency": ""
         },
         "shopify_js_workers": 14,
         "shopify_js_quality": {
@@ -578,7 +585,8 @@
             "GBP",
             "JPY"
           ],
-          "method": "priority_list"
+          "method": "priority_list",
+          "locked_currency": ""
         },
         "shopify_js_workers": 14,
         "shopify_js_quality": {
@@ -637,7 +645,8 @@
             "GBP",
             "JPY"
           ],
-          "method": "priority_list"
+          "method": "priority_list",
+          "locked_currency": ""
         },
         "shopify_js_workers": 14,
         "shopify_js_quality": {
@@ -696,7 +705,8 @@
             "GBP",
             "JPY"
           ],
-          "method": "priority_list"
+          "method": "priority_list",
+          "locked_currency": ""
         },
         "shopify_js_workers": 14,
         "shopify_js_quality": {
@@ -755,7 +765,8 @@
             "GBP",
             "JPY"
           ],
-          "method": "priority_list"
+          "method": "priority_list",
+          "locked_currency": ""
         },
         "shopify_js_workers": 14,
         "shopify_js_quality": {
@@ -813,7 +824,8 @@
             "GBP",
             "JPY"
           ],
-          "method": "priority_list"
+          "method": "priority_list",
+          "locked_currency": ""
         },
         "shopify_js_workers": 7,
         "shopify_js_quality": {
@@ -992,7 +1004,8 @@
             "GBP",
             "JPY"
           ],
-          "method": "priority_list"
+          "method": "priority_list",
+          "locked_currency": ""
         },
         "shopify_js_workers": 14,
         "shopify_js_quality": {
@@ -1051,7 +1064,8 @@
             "GBP",
             "JPY"
           ],
-          "method": "priority_list"
+          "method": "priority_list",
+          "locked_currency": ""
         },
         "shopify_js_workers": 14,
         "shopify_js_quality": {
@@ -1109,7 +1123,8 @@
             "EUR",
             "GBP"
           ],
-          "method": "priority_list"
+          "method": "priority_list",
+          "locked_currency": ""
         },
         "shopify_js_workers": 14,
         "shopify_js_quality": {
@@ -1168,7 +1183,8 @@
             "GBP",
             "JPY"
           ],
-          "method": "priority_list"
+          "method": "priority_list",
+          "locked_currency": ""
         },
         "shopify_js_workers": 14,
         "shopify_js_quality": {
@@ -1215,7 +1231,8 @@
             "EUR",
             "GBP"
           ],
-          "method": "priority_list"
+          "method": "priority_list",
+          "locked_currency": ""
         },
         "shopify_browser_extension_quality": {
           "progress_every": 25,
@@ -1262,7 +1279,16 @@
           "product_sec": 20,
           "source_run_sec": 420
         },
-        "mode": "auto"
+        "mode": "auto",
+        "shopify_currency": {
+          "requested_currency_priority": [
+            "USD",
+            "EUR",
+            "GBP"
+          ],
+          "method": "priority_list",
+          "locked_currency": ""
+        }
       }
     },
     {
@@ -1362,7 +1388,8 @@
             "GBP",
             "JPY"
           ],
-          "method": "priority_list"
+          "method": "priority_list",
+          "locked_currency": ""
         },
         "shopify_js_workers": 14,
         "shopify_js_quality": {
@@ -1475,7 +1502,8 @@
           "requested_currency_priority": [
             "USD"
           ],
-          "method": "priority_list"
+          "method": "priority_list",
+          "locked_currency": ""
         },
         "intl_protocol_index_workers": 6,
         "mode": "auto",

@@ -32,7 +32,19 @@ class FakeAdapter(SiteAdapter):
         return [str(x) for x in raw]
 
     def normalize_product(self, raw_product: dict) -> dict:
-        return dict(raw_product)
+        normalized = dict(raw_product)
+        if not bool(normalized.get('force_no_variants')):
+            variants = normalized.get('variants') if isinstance(normalized.get('variants'), list) else []
+            if not variants:
+                normalized['variants'] = [
+                    {
+                        'title': 'Default',
+                        'price': normalized.get('price'),
+                        'currency': normalized.get('currency') or 'USD',
+                        'available': True,
+                    }
+                ]
+        return normalized
 
     def validate_product(self, normalized_product: dict) -> tuple[bool, list[str]]:
         reasons: list[str] = []
@@ -44,6 +56,9 @@ class FakeAdapter(SiteAdapter):
             reasons.append('missing_currency')
         if normalized_product.get('weight_grams') is None:
             reasons.append('missing_weight')
+        variants = normalized_product.get('variants') if isinstance(normalized_product.get('variants'), list) else []
+        if not variants:
+            reasons.append('missing_variants')
         return (len(reasons) == 0, reasons)
 
 
@@ -53,7 +68,23 @@ class PayloadStrategy(Strategy):
 
     def run(self, context: StrategyContext) -> list[dict]:
         payloads = context.source.source_config['strategy_payloads']
-        return list(payloads.get(self.name, []))
+        out: list[dict] = []
+        for item in list(payloads.get(self.name, [])):
+            raw = dict(item)
+            if not bool(raw.get('force_no_variants')):
+                variants = raw.get('variants') if isinstance(raw.get('variants'), list) else []
+                if not variants:
+                    raw['variants'] = [
+                        {
+                            'id': 'v1',
+                            'title': 'Default',
+                            'price': raw.get('price'),
+                            'currency': raw.get('currency') or 'USD',
+                            'available': True,
+                        }
+                    ]
+            out.append(raw)
+        return out
 
 
 class ErrorStrategy(Strategy):
@@ -530,3 +561,35 @@ def test_description_markdown_is_normalized_to_plain_text() -> None:
     assert '• first item' in description
     assert '• second item' in description
     assert 'Size chart' in description
+
+
+def test_product_without_variants_is_marked_unavailable() -> None:
+    cfg = _base_config()
+    cfg['strategy_payloads']['s1'] = [
+        {
+            'url': 'u1',
+            'price': 10,
+            'currency': 'USD',
+            'weight_grams': 500,
+            'variants': [],
+            'force_no_variants': True,
+        },
+    ]
+    svc = _build_service(cfg)
+    report = svc.run('jadedldn.com')
+    assert report.total_valid_products == 0
+    assert len(report.unavailable_products) == 1
+    reasons = set(report.unavailable_products[0].get('unavailable_reasons') or [])
+    assert 'missing_variants' in reasons
+
+
+def test_manual_mode_without_candidates_is_success_noop() -> None:
+    cfg = _base_config()
+    cfg['mode'] = 'manual'
+    svc = _build_service(cfg)
+    report = svc.run('jadedldn.com')
+    assert report.status.value == 'success'
+    assert report.visible_catalog_products == 0
+    assert report.parsed_visible_products == 0
+    assert report.visible_coverage == 1.0
+    assert report.total_valid_products == 0

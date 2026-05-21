@@ -258,25 +258,10 @@ class SyncOrchestratorService:
                     "source_variant_title": source_variant_title,
                 }
             )
-        if not variants:
-            variants.append(
-                {
-                    "id": None,
-                    "title": "Default",
-                    "sku": None,
-                    "price": price,
-                    "currency": item_currency,
-                    "available": status != "out_of_stock",
-                    "source_key": source_key,
-                    "source_product_url": url or None,
-                    "source_variant_id": None,
-                    "source_variant_title": "Default",
-                }
-            )
         available_variants = [v for v in variants if bool(v.get("available", False))]
-        if status == "available" and not available_variants:
+        if variants and status == "available" and not available_variants:
             status = "out_of_stock"
-        elif status == "out_of_stock" and available_variants:
+        elif variants and status == "out_of_stock" and available_variants:
             status = "available"
 
         return {
@@ -309,6 +294,8 @@ class SyncOrchestratorService:
             normalized = self._normalize_product_batch_item(item, source_key=source_key)
             if not normalized.get("source_product_url"):
                 continue
+            if not isinstance(normalized.get("variants"), list) or not normalized.get("variants"):
+                continue
             out.append(normalized)
         for raw in unavailable_products:
             if not isinstance(raw, dict):
@@ -330,6 +317,8 @@ class SyncOrchestratorService:
                 continue
             normalized = self._normalize_product_batch_item(item, source_key=source_key)
             if not normalized.get("source_product_url"):
+                continue
+            if not isinstance(normalized.get("variants"), list) or not normalized.get("variants"):
                 continue
             out.append(normalized)
         return out

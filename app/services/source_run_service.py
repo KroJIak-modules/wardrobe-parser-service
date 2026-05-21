@@ -240,6 +240,8 @@ class SourceRunService:
 
             next_pending_candidate_urls: set[str] = set()
             for raw in raw_items:
+                raw_variants = raw.get('variants') if isinstance(raw.get('variants'), list) else []
+                raw_has_variants = bool(raw_variants)
                 normalized = adapter.normalize_product(raw)
                 # Preserve critical fields from strategy payload if adapter omitted them.
                 if not str(normalized.get('vendor') or '').strip():
@@ -319,6 +321,9 @@ class SourceRunService:
                 ok, reasons = adapter.validate_product(normalized)
                 variant_currency = self._derive_currency_from_variants(normalized)
                 reasons_set = {str(x).strip().lower() for x in reasons if str(x).strip()}
+                normalized_variants = normalized.get('variants') if isinstance(normalized.get('variants'), list) else []
+                if not raw_has_variants or not normalized_variants:
+                    reasons_set.add('missing_variants')
                 if variant_currency:
                     reasons_set.discard('missing_currency')
                 else:
@@ -374,7 +379,16 @@ class SourceRunService:
             report.parsed_visible_products = len(parsed_urls)
             report.visible_coverage = 1.0 if parsed_urls else 0.0
 
-        if report.visible_coverage == 1.0:
+        manual_no_candidates = (
+            sync_mode == 'manual'
+            and report.visible_catalog_products == 0
+            and not force_candidates
+        )
+        if manual_no_candidates:
+            report.visible_coverage = 1.0
+            report.status = SourceRunStatus.SUCCESS
+            logger.event('manual_no_candidates_noop', status=report.status, visible='0/0')
+        elif report.visible_coverage == 1.0:
             report.status = SourceRunStatus.SUCCESS
         elif report.visible_coverage == 0.0:
             report.status = SourceRunStatus.FAILED
