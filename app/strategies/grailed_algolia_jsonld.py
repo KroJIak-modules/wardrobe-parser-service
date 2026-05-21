@@ -128,6 +128,11 @@ class GrailedAlgoliaJsonLdStrategy:
         final_url = response.url
         payload = self._extract_product_ld_json(response.text)
         next_data_images = self._extract_images_from_next_data(response.text)
+        size_hint, color_hint = self._extract_size_color_from_next_data(response.text)
+        if not size_hint or not color_hint:
+            title_size, title_color = self._extract_size_color_from_title(str(payload.get('name') or ''))
+            size_hint = size_hint or title_size
+            color_hint = color_hint or title_color
 
         offers = payload.get('offers') if isinstance(payload.get('offers'), dict) else {}
         currency = str(offers.get('priceCurrency') or '').strip().upper()
@@ -142,7 +147,7 @@ class GrailedAlgoliaJsonLdStrategy:
         logger.strategy_event('progress', self.name, stage='item_parsed', handle=handle, images=len(image_urls))
         variant = {
             'id': handle,
-            'title': payload.get('name'),
+            'title': self._build_variant_title(size=size_hint, color=color_hint),
             'option1': None,
             'option2': None,
             'option3': None,
@@ -154,7 +159,8 @@ class GrailedAlgoliaJsonLdStrategy:
             'currency_code': currency or None,
         }
         return {
-            'url': final_url,
+            # Keep original requested URL for strict probe candidate matching/coverage.
+            'url': item_url,
             'handle': handle,
             'title': payload.get('name'),
             'description': payload.get('description'),
@@ -166,6 +172,7 @@ class GrailedAlgoliaJsonLdStrategy:
             'images': image_urls,
             'variants': [variant],
             'tags': [],
+            'status': 'available' if bool(available) else 'out_of_stock',
         }
 
     @staticmethod
@@ -226,3 +233,68 @@ class GrailedAlgoliaJsonLdStrategy:
             seen.add(url)
             out.append(url)
         return out
+
+    @staticmethod
+    def _extract_size_color_from_next_data(html: str) -> tuple[str, str]:
+        match = re.search(r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', html, flags=re.S)
+        if not match:
+            return "", ""
+        try:
+            payload = json.loads(match.group(1))
+        except json.JSONDecodeError:
+            return "", ""
+        listing = ((payload.get('props') or {}).get('pageProps') or {}).get('listing')
+        if not isinstance(listing, dict):
+            return "", ""
+        size_candidates = [
+            "size", "size_label", "sizeLabel", "tagged_size", "taggedSize", "waist_size", "waistSize",
+        ]
+        color_candidates = [
+            "color", "colour", "color_name", "colorName", "colour_name", "colourName",
+        ]
+        size_text = ""
+        color_text = ""
+        for key in size_candidates:
+            value = str(listing.get(key) or "").strip()
+            if value:
+                size_text = value
+                break
+        for key in color_candidates:
+            value = str(listing.get(key) or "").strip()
+            if value:
+                color_text = value
+                break
+        return size_text, color_text
+
+    @staticmethod
+    def _build_variant_title(*, size: str, color: str) -> str:
+        size_text = str(size or "").strip()
+        color_text = str(color or "").strip()
+        if size_text and color_text:
+            return f"{size_text} / {color_text}"
+        if size_text:
+            return size_text
+        if color_text:
+            return color_text
+        return "Default"
+
+    @staticmethod
+    def _extract_size_color_from_title(title: str) -> tuple[str, str]:
+        text = str(title or "").strip()
+        if not text:
+            return "", ""
+        low = text.lower()
+        size_text = ""
+        color_text = ""
+        size_match = re.search(r'\bsize\s*([a-z0-9\-./]+)\b', low, flags=re.I)
+        if size_match:
+            size_text = str(size_match.group(1) or "").strip().upper()
+        color_candidates = (
+            "black", "white", "gray", "grey", "brown", "beige", "red", "blue", "green",
+            "pink", "purple", "orange", "yellow", "silver", "gold", "tan", "navy",
+        )
+        for candidate in color_candidates:
+            if re.search(rf'\b{re.escape(candidate)}\b', low):
+                color_text = candidate.capitalize()
+                break
+        return size_text, color_text

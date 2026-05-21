@@ -100,6 +100,9 @@ class ConfigValidationService:
                 locked = 'GBP'
             if locked not in ALLOWED_CURRENCY_CODES:
                 raise ConfigError('Invalid source.config.shopify_currency.locked_currency')
+        locked_country = str(raw.get('locked_country') or '').strip().upper()
+        if locked_country and (len(locked_country) != 2 or not locked_country.isalpha()):
+            raise ConfigError('Invalid source.config.shopify_currency.locked_country')
     @staticmethod
     def _require_shopify_json_quality(config: dict) -> None:
         raw = config.get('shopify_json_quality')

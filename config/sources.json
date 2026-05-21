@@ -1388,8 +1388,9 @@
             "GBP",
             "JPY"
           ],
-          "method": "priority_list",
-          "locked_currency": ""
+          "method": "locked_param_currency",
+          "locked_currency": "EUR",
+          "locked_country": "DE"
         },
         "shopify_js_workers": 14,
         "shopify_js_quality": {

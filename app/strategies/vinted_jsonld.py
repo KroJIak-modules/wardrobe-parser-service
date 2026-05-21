@@ -72,9 +72,18 @@ class VintedJsonLdStrategy:
         response = requests.get(item_url, timeout=timeout, headers={'User-Agent': self._ua})
         response.raise_for_status()
         html = response.text
-        payload = self._extract_product_ld_json(html)
+        soup = BeautifulSoup(html, 'html.parser')
         item_id = self._extract_item_id(item_url)
         runtime_meta = self._extract_runtime_item_meta(html, item_id=item_id)
+        try:
+            payload = self._extract_product_ld_json(html)
+        except Exception:
+            payload = self._build_fallback_payload(soup, runtime_meta)
+        dom_size, dom_color = self._extract_size_color_from_dom(soup)
+        variant_title = self._build_variant_title(
+            size=(runtime_meta.get('size') if isinstance(runtime_meta, dict) else None) or dom_size,
+            color=(runtime_meta.get('color') if isinstance(runtime_meta, dict) else None) or dom_color,
+        )
         product_type = self._extract_product_type(html)
         offers = payload.get('offers') if isinstance(payload.get('offers'), dict) else {}
         currency = str(offers.get('priceCurrency') or '').strip().upper()
@@ -90,12 +99,15 @@ class VintedJsonLdStrategy:
         runtime_total_price = runtime_meta.get('total_item_price')
         runtime_fee = runtime_meta.get('service_fee')
         runtime_currency = str(runtime_meta.get('currency') or '').strip().upper()
+        runtime_available = runtime_meta.get('available')
         if runtime_currency and runtime_currency == currency:
             if runtime_price is not None:
                 price = runtime_price
+        if isinstance(runtime_available, bool):
+            available = runtime_available
         variant = {
             'id': handle,
-            'title': payload.get('name'),
+            'title': variant_title,
             'option1': None,
             'option2': None,
             'option3': None,
@@ -119,6 +131,7 @@ class VintedJsonLdStrategy:
             'images': image_urls,
             'variants': [variant],
             'tags': [],
+            'status': 'available' if bool(available) else 'out_of_stock',
         }
         if runtime_total_price is not None:
             out['buyer_total_price'] = runtime_total_price
@@ -213,7 +226,68 @@ class VintedJsonLdStrategy:
             out['service_fee'] = service_fee
         # Prefer item/base currency if present.
         out['currency'] = currency or total_currency or fee_currency
+        size_match = re.search(r'\\"size_title\\":\\"([^"]*)\\"', chunk)
+        color_match = re.search(r'\\"color1\\":\\"([^"]*)\\"', chunk)
+        if size_match:
+            out['size'] = str(size_match.group(1) or '').replace('\\/', '/').strip()
+        if color_match:
+            out['color'] = str(color_match.group(1) or '').replace('\\/', '/').strip()
+        title_match = re.search(r'\\"title\\":\\"([^"]+)\\"', chunk)
+        if title_match:
+            out['title'] = str(title_match.group(1) or '').replace('\\/', '/').strip()
+        # sold/hidden/closed item should be treated as unavailable.
+        closing_match = re.search(r'\\"item_closing_action\\":\\"([^"]*)\\"', chunk)
+        if closing_match:
+            closing = str(closing_match.group(1) or '').strip().lower()
+            if closing:
+                out['available'] = closing not in {'sold', 'hidden', 'deleted', 'removed'}
         return out
+
+    @staticmethod
+    def _build_fallback_payload(soup: BeautifulSoup, runtime_meta: dict) -> dict:
+        def _meta_value(*keys: str) -> str:
+            for key in keys:
+                node = soup.find('meta', attrs={'property': key}) or soup.find('meta', attrs={'name': key})
+                if node is None:
+                    continue
+                value = str(node.get('content') or '').strip()
+                if value:
+                    return value
+            return ''
+
+        title = (
+            str(runtime_meta.get('title') or '').strip()
+            or _meta_value('og:title', 'twitter:title')
+            or (soup.find('h1').get_text(' ', strip=True) if soup.find('h1') else '')
+        )
+        description = _meta_value('og:description', 'description', 'twitter:description')
+        currency = str(runtime_meta.get('currency') or '').strip().upper()
+        price = runtime_meta.get('price')
+        availability = "InStock" if bool(runtime_meta.get('available', True)) else "OutOfStock"
+        return {
+            '@type': 'Product',
+            'name': title,
+            'description': description,
+            'brand': {'name': ''},
+            'offers': {
+                'priceCurrency': currency,
+                'price': price,
+                'availability': availability,
+            },
+            'image': list(runtime_meta.get('images') or []),
+        }
+
+    @staticmethod
+    def _build_variant_title(*, size: object, color: object) -> str:
+        size_text = str(size or '').strip()
+        color_text = str(color or '').strip()
+        if size_text and color_text:
+            return f"{size_text} / {color_text}"
+        if size_text:
+            return size_text
+        if color_text:
+            return color_text
+        return "Default"
 
     @staticmethod
     def _extract_product_ld_json(html: str) -> dict:
@@ -244,6 +318,23 @@ class VintedJsonLdStrategy:
                 continue
             catalog_crumbs.append(text)
         return catalog_crumbs[-1] if catalog_crumbs else None
+
+    @staticmethod
+    def _extract_size_color_from_dom(soup: BeautifulSoup) -> tuple[str, str]:
+        size_text = ""
+        color_text = ""
+        for row in soup.select('[class*="details"] [class*="item"]'):
+            text = row.get_text(' ', strip=True)
+            if not text:
+                continue
+            low = text.lower()
+            if not size_text and low.startswith('size'):
+                size_text = text[4:].strip(" :.-")
+            elif not color_text and (low.startswith('color') or low.startswith('colour')):
+                color_text = text[5:].strip(" :.-") if low.startswith('color') else text[6:].strip(" :.-")
+            if size_text and color_text:
+                break
+        return size_text, color_text
 
     @staticmethod
     def _to_list_images(value: object) -> list[str]:

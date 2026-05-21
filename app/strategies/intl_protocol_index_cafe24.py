@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import json
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import urljoin, urlparse
@@ -185,6 +186,7 @@ class IntlProtocolIndexCafe24Strategy:
         price = self._extract_price(soup)
         images = self._extract_images(soup, url)
         variants = self._extract_variants(soup, price)
+        has_available_variant = any(bool(v.get("available")) for v in variants if isinstance(v, dict))
         handle = self._extract_handle(url)
 
         return {
@@ -199,6 +201,7 @@ class IntlProtocolIndexCafe24Strategy:
             "image_url": images[0] if images else "",
             "images": images,
             "variants": variants,
+            "raw_availability": "available" if has_available_variant else "out_of_stock",
             "tags": [],
         }
 
@@ -269,6 +272,9 @@ class IntlProtocolIndexCafe24Strategy:
     @staticmethod
     def _extract_variants(soup: BeautifulSoup, price: float | None) -> list[dict]:
         variants: list[dict] = []
+        stock_map = IntlProtocolIndexCafe24Strategy._extract_option_stock_map(soup)
+        globally_sold_out = IntlProtocolIndexCafe24Strategy._is_globally_sold_out(soup)
+        seen_titles: set[str] = set()
         for opt in soup.select("select option"):
             text = opt.get_text(" ", strip=True)
             if not text:
@@ -278,15 +284,38 @@ class IntlProtocolIndexCafe24Strategy:
                 continue
             if text.startswith("---") or text.startswith("- "):
                 continue
+            # Cafe24 often marks sold-out options either with disabled attr
+            # or by text markers (e.g. sold out / 품절 / out of stock).
+            disabled_attr = opt.has_attr("disabled")
+            soldout_marker = any(
+                marker in lowered
+                for marker in ("sold out", "out of stock", "품절", "soldout")
+            )
+            # Normalize visible option title so marker text does not pollute identity.
+            clean_title = re.sub(r"\s*[\[\(]?\s*(sold out|out of stock|품절)\s*[\]\)]?\s*", "", text, flags=re.I).strip()
+            if not clean_title:
+                continue
+            dedup_key = clean_title.lower()
+            if dedup_key in seen_titles:
+                continue
+            seen_titles.add(dedup_key)
+            available_from_stock = IntlProtocolIndexCafe24Strategy._variant_available_from_stock(
+                option_title=clean_title,
+                stock_map=stock_map,
+            )
+            if available_from_stock is None:
+                available = not (disabled_attr or soldout_marker or globally_sold_out)
+            else:
+                available = bool(available_from_stock) and not globally_sold_out
             variants.append(
                 {
                     "id": None,
-                    "title": text,
-                    "option1": text,
+                    "title": clean_title,
+                    "option1": clean_title,
                     "option2": None,
                     "option3": None,
                     "sku": None,
-                    "available": True,
+                    "available": available,
                     "inventory_quantity": None,
                     "price": price,
                     "compare_at_price": None,
@@ -310,3 +339,48 @@ class IntlProtocolIndexCafe24Strategy:
                 }
             )
         return variants
+
+    @staticmethod
+    def _is_globally_sold_out(soup: BeautifulSoup) -> bool:
+        text = soup.get_text(" ", strip=True).lower()
+        # Cafe24 injects this phrase for fully sold-out product pages.
+        return "item is out of stock" in text
+
+    @staticmethod
+    def _extract_option_stock_map(soup: BeautifulSoup) -> dict[str, dict]:
+        html = str(soup)
+        match = re.search(r"var\s+option_stock_data\s*=\s*'(?P<data>\{.*?\})';", html, flags=re.S)
+        if not match:
+            return {}
+        raw = match.group("data")
+        try:
+            decoded = raw.encode("utf-8").decode("unicode_escape")
+            parsed = json.loads(decoded)
+        except Exception:
+            return {}
+        out: dict[str, dict] = {}
+        for item in parsed.values() if isinstance(parsed, dict) else []:
+            if not isinstance(item, dict):
+                continue
+            option_value = str(item.get("option_value") or "").strip()
+            if option_value:
+                out[option_value] = item
+        return out
+
+    @staticmethod
+    def _variant_available_from_stock(*, option_title: str, stock_map: dict[str, dict]) -> bool | None:
+        item = stock_map.get(str(option_title).strip())
+        if not isinstance(item, dict):
+            return None
+        is_selling = str(item.get("is_selling") or "").strip().upper()
+        use_stock = bool(item.get("use_stock"))
+        stock_num_raw = item.get("stock_number")
+        try:
+            stock_num = int(str(stock_num_raw).strip())
+        except Exception:
+            stock_num = 0
+        if is_selling == "F":
+            return False
+        if use_stock:
+            return stock_num > 0
+        return True

@@ -69,8 +69,44 @@ def _normalize_product_url(url: str) -> str:
     return f"{host}{path}?{query}" if query else f"{host}{path}"
 
 
+def _extract_product_handle(url: str) -> str:
+    try:
+        parts = [p for p in urlparse(str(url or "").strip()).path.split("/") if p]
+    except Exception:
+        return ""
+    lowered = [p.lower() for p in parts]
+    if "products" not in lowered:
+        return ""
+    idx = lowered.index("products")
+    if idx + 1 >= len(parts):
+        return ""
+    return str(parts[idx + 1] or "").strip().lower()
+
+
+def _extract_vinted_item_id(url: str) -> str:
+    try:
+        parts = [p for p in urlparse(str(url or "").strip()).path.split("/") if p]
+    except Exception:
+        return ""
+    lowered = [p.lower() for p in parts]
+    if "items" not in lowered:
+        return ""
+    idx = lowered.index("items")
+    if idx + 1 >= len(parts):
+        return ""
+    raw = str(parts[idx + 1] or "").strip().lower()
+    if not raw:
+        return ""
+    # vinted format: /items/{id}-{slug}
+    head = raw.split("-", 1)[0].strip()
+    return head if head.isdigit() else ""
+
+
 def _filter_report_by_product_url(report: SourceRunReport, product_url: str) -> SourceRunReport:
     target = _normalize_product_url(product_url)
+    target_host = _normalize_host(product_url)
+    target_handle = _extract_product_handle(product_url)
+    target_vinted_item_id = _extract_vinted_item_id(product_url)
 
     def match(item: dict) -> bool:
         if not isinstance(item, dict):
@@ -78,7 +114,16 @@ def _filter_report_by_product_url(report: SourceRunReport, product_url: str) -> 
         raw_url = str(item.get("url") or "").strip()
         if not raw_url:
             return False
-        return _normalize_product_url(raw_url) == target
+        normalized = _normalize_product_url(raw_url)
+        if normalized == target:
+            return True
+        if target_host and _normalize_host(raw_url) != target_host:
+            return False
+        if target_handle:
+            return _extract_product_handle(raw_url) == target_handle
+        if target_vinted_item_id:
+            return _extract_vinted_item_id(raw_url) == target_vinted_item_id
+        return False
 
     valid = [x for x in (report.valid_products or []) if match(x)]
     unavailable = [x for x in (report.unavailable_products or []) if match(x)]

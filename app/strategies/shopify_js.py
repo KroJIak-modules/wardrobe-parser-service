@@ -31,6 +31,7 @@ class ShopifyJsStrategy:
         requested_priority = list(currency_policy.requested_currency_priority)
         currency_method = str(currency_policy.method or 'priority_list').strip().lower()
         locked_currency = str(currency_policy.locked_currency or '').strip().upper()
+        locked_country = str(currency_policy.locked_country or '').strip().upper()
         if currency_method == 'locked_param_currency' and locked_currency:
             effective_currency_priority = tuple([locked_currency])
             storefront_currency = locked_currency
@@ -92,6 +93,7 @@ class ShopifyJsStrategy:
                 allowed_currencies=('EUR', 'USD', 'GBP', 'JPY'),
                 currency_priority=effective_currency_priority,
                 storefront_currency=storefront_currency,
+                locked_country=locked_country,
             )
             return url, item, fail_type
 
@@ -149,6 +151,7 @@ class ShopifyJsStrategy:
                     allowed_currencies=('EUR', 'USD', 'GBP', 'JPY'),
                     currency_priority=effective_currency_priority,
                     storefront_currency=storefront_currency,
+                    locked_country=locked_country,
                 )
                 if item is not None:
                     out.append(item)
@@ -171,6 +174,7 @@ class ShopifyJsStrategy:
                 'storefront_currency_source': storefront_currency_source,
                 'currency_method': currency_method,
                 'locked_currency': locked_currency,
+                'locked_country': locked_country,
             })
         else:
             context.diagnostics.update({
@@ -190,6 +194,7 @@ class ShopifyJsStrategy:
                 'storefront_currency_source': storefront_currency_source,
                 'currency_method': currency_method,
                 'locked_currency': locked_currency,
+                'locked_country': locked_country,
             })
         logger.strategy_event('done', self.name, parsed=len(out), total=total)
         return out
@@ -224,6 +229,7 @@ class ShopifyJsStrategy:
         allowed_currencies: tuple[str, ...],
         currency_priority: tuple[str, ...],
         storefront_currency: str,
+        locked_country: str,
     ) -> dict | None:
         handle = ShopifyJsStrategy._extract_handle(product_url)
         if not handle:
@@ -233,7 +239,7 @@ class ShopifyJsStrategy:
         currencies = [x for x in currency_priority if x] or ([storefront_currency] if storefront_currency else [''])
         for js_url in ShopifyJsStrategy._build_js_urls(base_url, product_url, handle):
             for cur in currencies:
-                params = {'currency': cur} if cur else None
+                params = ShopifyJsStrategy._shopify_market_params(currency=cur, locked_country=locked_country)
                 response = ShopifyHttpClient.get_json(js_url, timeout, params=params)
                 if response.status_code != 200:
                     continue
@@ -281,6 +287,7 @@ class ShopifyJsStrategy:
         allowed_currencies: tuple[str, ...],
         currency_priority: tuple[str, ...],
         storefront_currency: str,
+        locked_country: str,
     ) -> tuple[dict | None, str | None]:
         backoffs = quality.retry_backoff_sec
         result, fail_type = ShopifyJsStrategy._parse_with_classification(
@@ -290,6 +297,7 @@ class ShopifyJsStrategy:
             allowed_currencies=allowed_currencies,
             currency_priority=currency_priority,
             storefront_currency=storefront_currency,
+            locked_country=locked_country,
         )
         if result is not None:
             return result, None
@@ -305,6 +313,7 @@ class ShopifyJsStrategy:
                 allowed_currencies=allowed_currencies,
                 currency_priority=currency_priority,
                 storefront_currency=storefront_currency,
+                locked_country=locked_country,
             )
             if result is not None:
                 return result, None
@@ -322,6 +331,7 @@ class ShopifyJsStrategy:
         allowed_currencies: tuple[str, ...],
         currency_priority: tuple[str, ...],
         storefront_currency: str,
+        locked_country: str,
     ) -> tuple[dict | None, str | None]:
         handle = ShopifyJsStrategy._extract_handle(product_url)
         if not handle:
@@ -332,7 +342,7 @@ class ShopifyJsStrategy:
         for js_url in ShopifyJsStrategy._build_js_urls(base_url, product_url, handle):
             for cur in currencies:
                 try:
-                    params = {'currency': cur} if cur else None
+                    params = ShopifyJsStrategy._shopify_market_params(currency=cur, locked_country=locked_country)
                     response = ShopifyHttpClient.get_json(js_url, timeout, params=params)
                 except Exception:
                     last_fail = 'network'
@@ -444,6 +454,15 @@ class ShopifyJsStrategy:
         if raw.startswith('/'):
             return base_url.rstrip('/') + raw
         return raw
+
+    @staticmethod
+    def _shopify_market_params(*, currency: str, locked_country: str) -> dict[str, str] | None:
+        params: dict[str, str] = {}
+        if currency:
+            params['currency'] = currency
+        if locked_country:
+            params['country'] = locked_country
+        return params or None
 
     @staticmethod
     def _currency_scale(currency: str) -> int:

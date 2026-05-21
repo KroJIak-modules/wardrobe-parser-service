@@ -21,6 +21,7 @@ class ShopifyCurrencyPolicy:
     requested_currency_priority: tuple[str, ...]
     method: str
     locked_currency: str
+    locked_country: str
 
 
 @dataclass(frozen=True)
@@ -68,10 +69,13 @@ class ShopifyPolicyFactory:
                 locked_currency = candidate
             elif normalized_priority:
                 locked_currency = normalized_priority[0]
+        raw_country = str(raw.get('locked_country') or '').strip().upper()
+        locked_country = raw_country if len(raw_country) == 2 and raw_country.isalpha() else ''
         return ShopifyCurrencyPolicy(
             requested_currency_priority=normalized_priority,
             method=method,
             locked_currency=locked_currency,
+            locked_country=locked_country,
         )
 
     @staticmethod

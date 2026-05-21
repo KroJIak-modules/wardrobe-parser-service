@@ -9,8 +9,27 @@ from app.services.shopify_policies import ShopifySitemapPolicy
 
 class ShopifySitemapDiscovery:
     @staticmethod
-    def _ensure_storefront_not_blocked(base_url: str, timeout: int) -> None:
-        response = requests.get(base_url.rstrip('/') + '/', timeout=timeout, headers=ShopifyHttpClient.HEADERS, allow_redirects=True)
+    def _ensure_storefront_not_blocked(base_url: str, timeout: int, *, request_retries: int) -> None:
+        last_exc: Exception | None = None
+        attempts = max(0, int(request_retries)) + 1
+        response = None
+        for attempt in range(attempts):
+            try:
+                response = requests.get(
+                    base_url.rstrip('/') + '/',
+                    timeout=timeout,
+                    headers=ShopifyHttpClient.HEADERS,
+                    allow_redirects=True,
+                )
+                break
+            except requests.RequestException as exc:
+                last_exc = exc
+                if attempt >= attempts - 1:
+                    raise
+        if response is None:
+            if last_exc is not None:
+                raise last_exc
+            raise requests.RequestException("storefront preflight request failed")
         final_url = str(response.url or '').lower()
         body = (response.text or '').lower()
         is_password_gate = final_url.endswith('/password') or '/password' in final_url
@@ -38,7 +57,11 @@ class ShopifySitemapDiscovery:
     @staticmethod
     def discover_product_urls(base_url: str, timeout: int, policy: ShopifySitemapPolicy) -> list[str]:
         normalized_base_url = base_url.rstrip('/')
-        ShopifySitemapDiscovery._ensure_storefront_not_blocked(normalized_base_url, timeout)
+        ShopifySitemapDiscovery._ensure_storefront_not_blocked(
+            normalized_base_url,
+            timeout,
+            request_retries=policy.request_retries,
+        )
         base_host = (urlparse(normalized_base_url).netloc or '').lower()
         index_root = ShopifyHttpClient.get_xml_root(f'{normalized_base_url}/sitemap.xml', timeout, request_retries=policy.request_retries)
 
