@@ -15,12 +15,36 @@ class ShopifyHttpResult:
 
 
 class ShopifyHttpClient:
-    HEADERS = {'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json,text/plain,*/*'}
-    XML_HEADERS = {'User-Agent': 'Mozilla/5.0'}
+    # A realistic browser profile significantly reduces false 403/anti-bot responses
+    # on storefront endpoints such as /sitemap.xml and /products/*.js.
+    HEADERS = {
+        "User-Agent": (
+            "Mozilla/5.0 (X11; Linux x86_64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Safari/537.36"
+        ),
+        "Accept": "application/json,text/plain,*/*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+    }
+    XML_HEADERS = {
+        "User-Agent": HEADERS["User-Agent"],
+        "Accept": "application/xml,text/xml,application/xhtml+xml,text/html;q=0.9,*/*;q=0.8",
+        "Accept-Language": HEADERS["Accept-Language"],
+        "Cache-Control": HEADERS["Cache-Control"],
+        "Pragma": HEADERS["Pragma"],
+    }
 
     @staticmethod
     def get_json(url: str, timeout: int, *, params: dict[str, object] | None = None) -> ShopifyHttpResult:
-        response = requests.get(url, params=params, timeout=timeout, headers=ShopifyHttpClient.HEADERS)
+        response = requests.get(
+            url,
+            params=params,
+            timeout=timeout,
+            headers=ShopifyHttpClient.HEADERS,
+            allow_redirects=True,
+        )
         payload: Any | None = None
         try:
             payload = response.json()
@@ -30,7 +54,12 @@ class ShopifyHttpClient:
 
     @staticmethod
     def get_text(url: str, timeout: int) -> ShopifyHttpResult:
-        response = requests.get(url, timeout=timeout, headers=ShopifyHttpClient.HEADERS)
+        response = requests.get(
+            url,
+            timeout=timeout,
+            headers=ShopifyHttpClient.HEADERS,
+            allow_redirects=True,
+        )
         return ShopifyHttpResult(status_code=response.status_code, text=response.text, payload=None)
 
     @staticmethod
@@ -39,7 +68,12 @@ class ShopifyHttpClient:
         attempts = max(1, request_retries + 1)
         for _ in range(attempts):
             try:
-                response = requests.get(url, timeout=timeout, headers=ShopifyHttpClient.XML_HEADERS)
+                response = requests.get(
+                    url,
+                    timeout=timeout,
+                    headers=ShopifyHttpClient.XML_HEADERS,
+                    allow_redirects=True,
+                )
                 response.raise_for_status()
                 return ElementTree.fromstring(response.text)
             except Exception as exc:  # noqa: BLE001
