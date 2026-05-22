@@ -48,8 +48,8 @@
           "shopify_browser_extension": 0
         },
         "timeouts": {
-          "product_sec": 12,
-          "source_run_sec": 300
+          "product_sec": 30,
+          "source_run_sec": 1800
         },
         "shopify_currency": {
           "requested_currency_priority": [
@@ -97,8 +97,8 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 12,
-          "source_run_sec": 300
+          "product_sec": 30,
+          "source_run_sec": 1800
         },
         "shopify_currency": {
           "requested_currency_priority": [
@@ -157,8 +157,8 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 12,
-          "source_run_sec": 300
+          "product_sec": 30,
+          "source_run_sec": 1800
         },
         "shopify_currency": {
           "requested_currency_priority": [
@@ -217,8 +217,8 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 12,
-          "source_run_sec": 300
+          "product_sec": 30,
+          "source_run_sec": 1800
         },
         "shopify_currency": {
           "requested_currency_priority": [
@@ -276,8 +276,8 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 12,
-          "source_run_sec": 300
+          "product_sec": 30,
+          "source_run_sec": 1800
         },
         "shopify_currency": {
           "requested_currency_priority": [
@@ -335,8 +335,8 @@
           "shopify_json": 1
         },
         "timeouts": {
-          "product_sec": 12,
-          "source_run_sec": 300
+          "product_sec": 30,
+          "source_run_sec": 1800
         },
         "shopify_currency": {
           "requested_currency_priority": [
@@ -395,8 +395,8 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 12,
-          "source_run_sec": 300
+          "product_sec": 30,
+          "source_run_sec": 1800
         },
         "shopify_currency": {
           "requested_currency_priority": [
@@ -455,8 +455,8 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 12,
-          "source_run_sec": 300
+          "product_sec": 30,
+          "source_run_sec": 1800
         },
         "shopify_currency": {
           "requested_currency_priority": [
@@ -515,8 +515,8 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 12,
-          "source_run_sec": 300
+          "product_sec": 30,
+          "source_run_sec": 1800
         },
         "shopify_currency": {
           "requested_currency_priority": [
@@ -575,8 +575,8 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 12,
-          "source_run_sec": 300
+          "product_sec": 30,
+          "source_run_sec": 1800
         },
         "shopify_currency": {
           "requested_currency_priority": [
@@ -635,8 +635,8 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 12,
-          "source_run_sec": 300
+          "product_sec": 30,
+          "source_run_sec": 1800
         },
         "shopify_currency": {
           "requested_currency_priority": [
@@ -695,8 +695,8 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 12,
-          "source_run_sec": 300
+          "product_sec": 30,
+          "source_run_sec": 1800
         },
         "shopify_currency": {
           "requested_currency_priority": [
@@ -755,8 +755,8 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 12,
-          "source_run_sec": 300
+          "product_sec": 30,
+          "source_run_sec": 1800
         },
         "shopify_currency": {
           "requested_currency_priority": [
@@ -814,8 +814,8 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 12,
-          "source_run_sec": 300
+          "product_sec": 30,
+          "source_run_sec": 1800
         },
         "shopify_currency": {
           "requested_currency_priority": [
@@ -874,8 +874,8 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 12,
-          "source_run_sec": 300
+          "product_sec": 30,
+          "source_run_sec": 1800
         },
         "shopify_currency": {
           "requested_currency_priority": [
@@ -934,8 +934,8 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 12,
-          "source_run_sec": 300
+          "product_sec": 30,
+          "source_run_sec": 1800
         },
         "shopify_currency": {
           "requested_currency_priority": [
@@ -994,8 +994,8 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 12,
-          "source_run_sec": 300
+          "product_sec": 30,
+          "source_run_sec": 1800
         },
         "shopify_currency": {
           "requested_currency_priority": [
@@ -1054,8 +1054,8 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 12,
-          "source_run_sec": 300
+          "product_sec": 30,
+          "source_run_sec": 1800
         },
         "shopify_currency": {
           "requested_currency_priority": [
@@ -1114,8 +1114,8 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 12,
-          "source_run_sec": 300
+          "product_sec": 30,
+          "source_run_sec": 1800
         },
         "shopify_currency": {
           "requested_currency_priority": [
@@ -1173,8 +1173,8 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 12,
-          "source_run_sec": 300
+          "product_sec": 30,
+          "source_run_sec": 1800
         },
         "shopify_currency": {
           "requested_currency_priority": [
@@ -1222,8 +1222,8 @@
           "shopify_browser_extension": 0
         },
         "timeouts": {
-          "product_sec": 15,
-          "source_run_sec": 420
+          "product_sec": 30,
+          "source_run_sec": 1800
         },
         "shopify_currency": {
           "requested_currency_priority": [
@@ -1276,8 +1276,8 @@
           "store_backlash_colorme": 0
         },
         "timeouts": {
-          "product_sec": 20,
-          "source_run_sec": 420
+          "product_sec": 30,
+          "source_run_sec": 1800
         },
         "mode": "auto",
         "shopify_currency": {
@@ -1308,8 +1308,8 @@
           "vinted_jsonld": 0
         },
         "timeouts": {
-          "product_sec": 20,
-          "source_run_sec": 420
+          "product_sec": 30,
+          "source_run_sec": 1800
         },
         "vinted": {
           "search_text": "nike"
@@ -1335,8 +1335,8 @@
           "grailed_algolia_jsonld": 0
         },
         "timeouts": {
-          "product_sec": 20,
-          "source_run_sec": 420
+          "product_sec": 30,
+          "source_run_sec": 1800
         },
         "grailed": {
           "search_text": "leather jacket"
@@ -1378,8 +1378,8 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 12,
-          "source_run_sec": 300
+          "product_sec": 30,
+          "source_run_sec": 1800
         },
         "shopify_currency": {
           "requested_currency_priority": [
@@ -1439,8 +1439,8 @@
           "shopify_js": 1
         },
         "timeouts": {
-          "product_sec": 12,
-          "source_run_sec": 300
+          "product_sec": 30,
+          "source_run_sec": 1800
         },
         "shopify_currency": {
           "requested_currency_priority": [
@@ -1496,8 +1496,8 @@
           "intl_protocol_index_cafe24": 0
         },
         "timeouts": {
-          "product_sec": 10,
-          "source_run_sec": 300
+          "product_sec": 30,
+          "source_run_sec": 1800
         },
         "shopify_currency": {
           "requested_currency_priority": [
