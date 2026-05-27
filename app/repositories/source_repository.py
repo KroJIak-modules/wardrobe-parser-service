@@ -23,24 +23,7 @@ class SourceRepository:
     def __init__(self, config_path: str = 'config/sources.json') -> None:
         explicit_env = str(os.getenv("SOURCES_CONFIG_PATH") or "").strip()
         candidate_raw = explicit_env or config_path
-        candidate = Path(candidate_raw)
-        if candidate.exists():
-            self.config_path = candidate
-            return
-
-        app_root = Path(__file__).resolve().parents[2]  # /app in container
-        fallbacks = [
-            app_root / "config" / "sources.json",
-            Path("/app/config/sources.json"),
-            Path.cwd() / "config" / "sources.json",
-        ]
-        for path in fallbacks:
-            if path.exists():
-                self.config_path = path
-                return
-
-        # Keep the original candidate for clear error text in callers.
-        self.config_path = candidate
+        self.config_path = Path(candidate_raw)
 
     def get_by_key(self, source_key: str) -> SourceRecord:
         if not self.config_path.exists():
