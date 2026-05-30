@@ -339,8 +339,15 @@ class SyncOrchestratorService:
             job.started_at = _utcnow()
             self._append_event(job, "job_started", {"total_sources": len(job.source_keys)})
 
+        max_source_requeues = 1
+        source_attempts: dict[str, int] = {}
+        pending_sources: list[str] = list(job.source_keys)
         failed_sources = 0
-        for index, source_key in enumerate(job.source_keys, start=1):
+
+        while pending_sources:
+            source_key = pending_sources.pop(0)
+            source_attempt = source_attempts.get(source_key, 0) + 1
+            source_attempts[source_key] = source_attempt
             with self._lock:
                 job = self._jobs[job_id]
                 if job.cancel_requested:
@@ -350,8 +357,9 @@ class SyncOrchestratorService:
                     if self._active_job_id == job.job_id:
                         self._active_job_id = None
                     return
+                source_index = min(len(job.source_keys), max(job.processed_sources + 1, 1))
                 job.current_source_name = source_key
-                job.current_source_index = index
+                job.current_source_index = source_index
                 job.current_stage = "source_started"
                 progress_percent = 0.0
                 total = max(1, len(job.source_keys))
@@ -362,15 +370,16 @@ class SyncOrchestratorService:
                     "source_started",
                     {
                         "source_key": source_key,
-                        "source_index": index,
+                        "source_index": source_index,
                         "total_sources": len(job.source_keys),
+                        "attempt": source_attempt,
                         "stage_code": SyncStageCode.SOURCE_PREPARE.value,
                         "stage_label": self._stage_label(SyncStageCode.SOURCE_PREPARE),
                         "progress_percent": round(max(job.current_progress_percent, progress_percent), 2),
                     },
                 )
 
-            progress_run_id = f"sync:{job.job_id}:{source_key}:{index}"
+            progress_run_id = f"sync:{job.job_id}:{source_key}:{source_index}:try{source_attempt}"
             candidate_urls = list(job.source_candidate_urls.get(source_key, []))
 
             def _on_strategy_progress(event_payload: dict) -> None:
@@ -405,7 +414,7 @@ class SyncOrchestratorService:
                     live_job.current_strategy = strategy or live_job.current_strategy
                     stage_text = stage_label
                     total = max(1, len(live_job.source_keys))
-                    source_completed_base = ((max(index - 1, 0)) / total) * 100.0
+                    source_completed_base = ((max(live_job.processed_sources, 0)) / total) * 100.0
                     source_share = 100.0 / total
                     stage_share = (strategy_percent or 0.0) / 100.0
                     progress_percent = source_completed_base + (source_share * stage_share)
@@ -422,7 +431,7 @@ class SyncOrchestratorService:
                         "source_progress",
                         {
                             "source_key": source_key,
-                            "source_index": index,
+                            "source_index": live_job.current_source_index,
                             "total_sources": len(live_job.source_keys),
                             "strategy": strategy,
                             "stage": raw_stage,
@@ -452,80 +461,127 @@ class SyncOrchestratorService:
                 if str(report.status.value).lower() == "failed":
                     stage = "failed"
                 stage_code = SyncStageCode.SOURCE_DONE if stage == "source_done" else SyncStageCode.SOURCE_FAILED
+                status_value = str(report.status.value).lower()
+                should_requeue = status_value == "failed" and source_attempt <= max_source_requeues
+
                 with self._lock:
                     job = self._jobs[job_id]
                     job.current_strategy = strategy
                     job.current_stage = stage
-                    completed_sources_progress = max(0.0, min(100.0, (index / max(1, len(job.source_keys))) * 100.0))
-                    job.current_progress_percent = max(float(job.current_progress_percent or 0.0), completed_sources_progress)
                     job.products_success += len(valid_products)
                     job.products_error += len(unavailable_products)
-                    progress_percent = 0.0
-                    total = max(1, len(job.source_keys))
-                    if total > 0:
-                        progress_percent = (index / total) * 100.0
-                    progress_percent = max(float(job.current_progress_percent or 0.0), progress_percent)
-                    self._append_event(
-                        job,
-                        "source_progress",
-                        {
-                            "source_key": source_key,
-                            "source_index": index,
-                            "total_sources": len(job.source_keys),
-                            "strategy": strategy,
-                            "stage": stage,
-                            "stage_code": stage_code.value,
-                            "stage_label": self._stage_label(stage_code),
-                            "products_success": job.products_success,
-                            "products_error": job.products_error,
-                            "progress_percent": round(progress_percent, 2),
-                        },
-                    )
-                    self._append_event(
-                        job,
-                        "product_batch",
-                        {
-                            "batch_id": f"batch_{source_key}_{index}",
-                            "source_key": source_key,
-                            "strategy": strategy,
-                            "stage": stage,
-                            "items": all_products,
-                        },
-                    )
-                    self._append_event(
-                        job,
-                        "source_finished",
-                        {
-                            "source_key": source_key,
-                            "status": str(report.status.value),
-                            "strategy": strategy,
-                            "stage": stage,
-                            "stage_code": stage_code.value,
-                            "stage_label": self._stage_label(stage_code),
-                            "valid_products": len(valid_products),
-                            "unavailable_products": len(unavailable_products),
-                        },
-                    )
-                    job.processed_sources = max(job.processed_sources, index)
-                if str(report.status.value).lower() == "failed":
+                    if should_requeue:
+                        self._append_event(
+                            job,
+                            "source_progress",
+                            {
+                                "source_key": source_key,
+                                "source_index": job.current_source_index,
+                                "total_sources": len(job.source_keys),
+                                "strategy": strategy,
+                                "stage": "source_requeued",
+                                "stage_code": SyncStageCode.SOURCE_PREPARE.value,
+                                "stage_label": "Временная ошибка, повтор в конце очереди",
+                                "attempt": source_attempt,
+                                "max_attempts": max_source_requeues + 1,
+                                "products_success": job.products_success,
+                                "products_error": job.products_error,
+                                "progress_percent": round(job.current_progress_percent, 2),
+                            },
+                        )
+                    else:
+                        job.processed_sources = min(len(job.source_keys), job.processed_sources + 1)
+                        completed_sources_progress = max(0.0, min(100.0, (job.processed_sources / max(1, len(job.source_keys))) * 100.0))
+                        job.current_progress_percent = max(float(job.current_progress_percent or 0.0), completed_sources_progress)
+                        self._append_event(
+                            job,
+                            "source_progress",
+                            {
+                                "source_key": source_key,
+                                "source_index": job.current_source_index,
+                                "total_sources": len(job.source_keys),
+                                "strategy": strategy,
+                                "stage": stage,
+                                "stage_code": stage_code.value,
+                                "stage_label": self._stage_label(stage_code),
+                                "products_success": job.products_success,
+                                "products_error": job.products_error,
+                                "progress_percent": round(job.current_progress_percent, 2),
+                            },
+                        )
+                        self._append_event(
+                            job,
+                            "product_batch",
+                            {
+                                "batch_id": f"batch_{source_key}_{job.current_source_index}_try{source_attempt}",
+                                "source_key": source_key,
+                                "strategy": strategy,
+                                "stage": stage,
+                                "items": all_products,
+                            },
+                        )
+                        self._append_event(
+                            job,
+                            "source_finished",
+                            {
+                                "source_key": source_key,
+                                "status": str(report.status.value),
+                                "strategy": strategy,
+                                "stage": stage,
+                                "stage_code": stage_code.value,
+                                "stage_label": self._stage_label(stage_code),
+                                "valid_products": len(valid_products),
+                                "unavailable_products": len(unavailable_products),
+                                "attempt": source_attempt,
+                            },
+                        )
+                if should_requeue:
+                    pending_sources.append(source_key)
+                elif status_value == "failed":
                     failed_sources += 1
             except Exception as exc:  # noqa: BLE001
-                failed_sources += 1
+                should_requeue = source_attempt <= max_source_requeues
                 with self._lock:
                     job = self._jobs[job_id]
                     job.products_error += 1
-                    self._append_event(
-                        job,
-                        "source_finished",
-                        {
-                            "source_key": source_key,
-                            "status": "failed",
-                            "stage": "failed",
-                            "stage_code": SyncStageCode.SOURCE_FAILED.value,
-                            "stage_label": self._stage_label(SyncStageCode.SOURCE_FAILED),
-                            "error": str(exc),
-                        },
-                    )
+                    if should_requeue:
+                        self._append_event(
+                            job,
+                            "source_progress",
+                            {
+                                "source_key": source_key,
+                                "source_index": job.current_source_index,
+                                "total_sources": len(job.source_keys),
+                                "stage": "source_requeued",
+                                "stage_code": SyncStageCode.SOURCE_PREPARE.value,
+                                "stage_label": "Временная ошибка, повтор в конце очереди",
+                                "attempt": source_attempt,
+                                "max_attempts": max_source_requeues + 1,
+                                "error": str(exc),
+                                "progress_percent": round(job.current_progress_percent, 2),
+                            },
+                        )
+                    else:
+                        job.processed_sources = min(len(job.source_keys), job.processed_sources + 1)
+                        completed_sources_progress = max(0.0, min(100.0, (job.processed_sources / max(1, len(job.source_keys))) * 100.0))
+                        job.current_progress_percent = max(float(job.current_progress_percent or 0.0), completed_sources_progress)
+                        self._append_event(
+                            job,
+                            "source_finished",
+                            {
+                                "source_key": source_key,
+                                "status": "failed",
+                                "stage": "failed",
+                                "stage_code": SyncStageCode.SOURCE_FAILED.value,
+                                "stage_label": self._stage_label(SyncStageCode.SOURCE_FAILED),
+                                "attempt": source_attempt,
+                                "error": str(exc),
+                            },
+                        )
+                if should_requeue:
+                    pending_sources.append(source_key)
+                else:
+                    failed_sources += 1
             finally:
                 unsubscribe_run_events(progress_run_id, _on_strategy_progress)
 
