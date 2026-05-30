@@ -1,12 +1,8 @@
 from dataclasses import dataclass
-from pathlib import Path
-from tempfile import TemporaryDirectory
-
 from app.adapters.contracts import SiteAdapter, SourceContext, Strategy, StrategyContext
 from app.adapters.registry import AdapterRegistry
 from app.core.exceptions import ConfigError
 from app.repositories.source_repository import SourceRecord
-from app.schemas.run_report import SourceRunReport
 from app.services.config_validation_service import ConfigValidationService
 from app.services.source_run_service import SourceRunService
 from app.services.weight_rules_client import WeightRule, WeightRulesPayload
@@ -120,16 +116,6 @@ class FakeBackendContractWeightRulesClient:
         return WeightRulesPayload(revision=revision, rules=out)
 
 
-class FakeReportService:
-    def __init__(self) -> None:
-        self._tmp = TemporaryDirectory()
-        self.path = Path(self._tmp.name) / 'report.md'
-
-    def write(self, report: SourceRunReport) -> Path:
-        self.path.write_text('test report\n', encoding='utf-8')
-        return self.path
-
-
 def _build_service(config: dict, *, error_strategies: set[str] | None = None) -> SourceRunService:
     record = SourceRecord(
         id=1,
@@ -153,7 +139,7 @@ def _build_service(config: dict, *, error_strategies: set[str] | None = None) ->
         else:
             strategies.register(PayloadStrategy(name))
 
-    return SourceRunService(repo, adapters, strategies, markdown_report_service=FakeReportService())
+    return SourceRunService(repo, adapters, strategies)
 
 
 def _build_service_with_rules(config: dict, rules: list[WeightRule]) -> SourceRunService:
@@ -176,7 +162,6 @@ def _build_service_with_rules(config: dict, rules: list[WeightRule]) -> SourceRu
         repo,
         adapters,
         strategies,
-        markdown_report_service=FakeReportService(),
         weight_rules_client=FakeWeightRulesClient(rules),
     )
 
@@ -201,7 +186,6 @@ def _build_service_with_backend_contract(config: dict, payload: dict) -> SourceR
         repo,
         adapters,
         strategies,
-        markdown_report_service=FakeReportService(),
         weight_rules_client=FakeBackendContractWeightRulesClient(payload),
     )
 

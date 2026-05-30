@@ -33,5 +33,3 @@ class SourceRunReport(BaseModel):
     top_valid_products: list[dict] = Field(default_factory=list)
     missing_weight_products: list[dict] = Field(default_factory=list)
     weight_source_stats: dict[str, int] = Field(default_factory=dict)
-    report_path: str | None = None
-

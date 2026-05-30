@@ -12,7 +12,6 @@ from app.schemas.run_report import SourceRunReport, StrategyAttempt
 from app.services.config_validation_service import ConfigValidationService
 from app.services.description_text_service import DescriptionTextService
 from app.services.run_logger import RunLogger
-from app.services.run_report_markdown_service import RunReportMarkdownService
 from app.services.weight_enrichment_service import WeightEnrichmentService
 from app.services.weight_rules_client import WeightRulesClient
 from app.strategies.registry import StrategyRegistry
@@ -77,13 +76,11 @@ class SourceRunService:
         source_repo: SourceRepository,
         adapter_registry: AdapterRegistry,
         strategy_registry: StrategyRegistry,
-        markdown_report_service: RunReportMarkdownService | None = None,
         weight_rules_client: WeightRulesClient | None = None,
     ) -> None:
         self.source_repo = source_repo
         self.adapter_registry = adapter_registry
         self.strategy_registry = strategy_registry
-        self.markdown_report_service = markdown_report_service or RunReportMarkdownService()
         self.weight_rules_client = weight_rules_client
 
     @staticmethod
@@ -407,7 +404,6 @@ class SourceRunService:
             visible=f'{report.parsed_visible_products}/{report.visible_catalog_products}',
             valid=report.total_valid_products,
         )
-        report.report_path = str(self.markdown_report_service.write(report))
 
         return report
 
