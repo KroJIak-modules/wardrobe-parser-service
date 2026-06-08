@@ -9,6 +9,5 @@ browser_runner/node_modules/
 old/
 
 # Service runtime artifacts
-reports/
 service/
 scripts/
