@@ -65,8 +65,7 @@ def _normalize_product_url(url: str) -> str:
     parsed = urlparse(url.strip())
     host = _normalize_host(url)
     path = (parsed.path or "/").rstrip("/") or "/"
-    query = parsed.query.strip()
-    return f"{host}{path}?{query}" if query else f"{host}{path}"
+    return f"{host}{path}"
 
 
 def _extract_product_handle(url: str) -> str:
@@ -138,7 +137,6 @@ def _filter_report_by_product_url(report: SourceRunReport, product_url: str) -> 
             "status": status_value,
             "valid_products": valid,
             "unavailable_products": unavailable,
-            "top_valid_products": valid[:10],
             "total_found_products": len(combined),
             "total_valid_products": len(valid),
             "parsed_visible_products": len(valid),

@@ -22,7 +22,7 @@ class WeightEnrichmentService:
                 [
                     str(product.get('title') or ''),
                     str(product.get('handle') or ''),
-                    str(product.get('product_type') or ''),
+                    str(product.get('category') or ''),
                     WeightEnrichmentService._join_tags(product.get('tags')),
                 ]
             )

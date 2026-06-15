@@ -23,6 +23,15 @@ RUN npm config set fetch-retries 5 \
     && npm config set fetch-retry-mintimeout 20000 \
     && npm config set fetch-retry-maxtimeout 120000 \
     && cd /app/browser_runner \
-    && npm ci --omit=dev --prefer-offline --no-audit --no-fund
+    && if [ -d node_modules ]; then \
+        echo "Using browser_runner/node_modules from build context"; \
+    else \
+        for attempt in 1 2 3; do \
+            npm ci --omit=dev --prefer-offline --no-audit --no-fund && exit 0; \
+            if [ "$attempt" -eq 3 ]; then exit 1; fi; \
+            npm cache clean --force; \
+            sleep 5; \
+        done; \
+    fi
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

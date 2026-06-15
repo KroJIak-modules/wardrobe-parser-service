@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Protocol, Sequence
+from decimal import Decimal
+from typing import NotRequired, Protocol, Sequence, TypedDict
 
 
 @dataclass(frozen=True)
 class SourceContext:
-    source_id: int
     source_key: str
     source_url: str
     adapter_key: str
@@ -23,6 +23,34 @@ class StrategyContext:
     diagnostics: dict[str, int | float | str] = field(default_factory=dict)
 
 
+class AdapterVariantDraft(TypedDict):
+    id: str | None
+    title: str | None
+    sku: str | None
+    price_amount: Decimal | None
+    currency_code: str | None
+    available: bool
+    option1: NotRequired[str | None]
+    option2: NotRequired[str | None]
+    option3: NotRequired[str | None]
+    compare_at_price_amount: NotRequired[Decimal | None]
+
+
+class AdapterProductDraft(TypedDict):
+    url: str
+    handle: str
+    title: str
+    description_html: str | None
+    vendor: str | None
+    product_type: str | None
+    tags: list[str]
+    weight_grams: Decimal | None
+    images: list[str]
+    variants: list[AdapterVariantDraft]
+    buyer_total_price_amount: NotRequired[Decimal | None]
+    buyer_service_fee_amount: NotRequired[Decimal | None]
+
+
 class Strategy(Protocol):
     name: str
 
@@ -37,8 +65,8 @@ class SiteAdapter(Protocol):
     def discover_visible_catalog(self, context: SourceContext) -> list[str]:
         """Return visible catalog urls for baseline coverage."""
 
-    def normalize_product(self, raw_product: dict) -> dict:
-        """Normalize raw record into unified source product shape."""
+    def normalize_product(self, raw_product: dict) -> AdapterProductDraft:
+        """Normalize raw record into strict adapter draft contract."""
 
-    def validate_product(self, normalized_product: dict) -> tuple[bool, list[str]]:
+    def validate_product(self, normalized_product: AdapterProductDraft) -> tuple[bool, list[str]]:
         """Return validation result and machine-readable reasons."""

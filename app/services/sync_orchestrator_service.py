@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from app.schemas.run_report import SourceRunReport
 from app.schemas.sync_stages import STAGE_LABEL_RU, SyncStageCode
+from app.services.product_gender_service import ProductGenderService
 from app.services.run_logger import subscribe_run_events, unsubscribe_run_events
 
 
@@ -199,34 +200,23 @@ class SyncOrchestratorService:
             return None
 
     @staticmethod
-    def _normalize_product_batch_item(item: dict, *, source_key: str) -> dict:
+    def _normalize_product_batch_item(item: dict) -> dict:
+        product_source_ref = item.get("source_ref") if isinstance(item.get("source_ref"), dict) else {}
         url = str(item.get("url") or "").strip()
         handle = str(item.get("handle") or "").strip()
-        external_id = str(item.get("external_id") or "").strip() or None
-        canonical_url = str(item.get("canonical_url") or "").strip() or url or None
+        external_id = str(product_source_ref.get("external_id") or "").strip() or None
         title = str(item.get("title") or "").strip() or None
+        description_html = str(item.get("description_html") or "").strip() or None
         description = str(item.get("description") or "").strip() or None
-        vendor = str(item.get("vendor") or item.get("brand") or "").strip() or None
-        product_type = str(item.get("product_type") or item.get("category") or "").strip() or None
-        item_currency = str(item.get("currency") or "").strip().upper() or None
-        price = SyncOrchestratorService._to_float(item.get("price"))
+        designer = str(item.get("designer") or "").strip() or None
+        category = str(item.get("category") or "").strip() or None
+        gender = ProductGenderService.normalize(item.get("gender"))
         weight_grams = SyncOrchestratorService._to_int(item.get("weight_grams"))
         status = str(item.get("status") or "").strip().lower() or "unavailable"
-        unavailable_reason = str(item.get("unavailable_reason") or "").strip() or None
+        status_reason = str(item.get("status_reason") or "").strip() or None
 
         images_raw = item.get("images") if isinstance(item.get("images"), list) else []
-        images: list[str] = []
-        primary_image_url = str(item.get("image_url") or "").strip()
-        if primary_image_url:
-            images.append(primary_image_url)
-        for image in images_raw:
-            image_url = ""
-            if isinstance(image, dict):
-                image_url = str(image.get("src") or image.get("url") or "").strip()
-            else:
-                image_url = str(image or "").strip()
-            if image_url:
-                images.append(image_url)
+        images = [str(image or "").strip() for image in images_raw if str(image or "").strip()]
         dedup_images: list[str] = []
         seen_images: set[str] = set()
         for image_url in images:
@@ -240,59 +230,63 @@ class SyncOrchestratorService:
         for variant in variants_raw:
             if not isinstance(variant, dict):
                 continue
-            v_price = SyncOrchestratorService._to_float(variant.get("price"))
+            v_price = SyncOrchestratorService._to_float(variant.get("price_amount"))
             source_variant_id = str(variant.get("id") or "").strip() or None
-            source_variant_title = str(variant.get("title") or "").strip() or None
-            variants.append(
-                {
+            source_variant_sku = str(variant.get("sku") or "").strip() or None
+            normalized_variant = {
+                "title": str(variant.get("title") or "").strip() or None,
+                "price": v_price,
+                "currency": str(variant.get("currency_code") or "").strip().upper() or None,
+                "available": bool(variant.get("available", True)),
+                "source_ref": {
                     "id": source_variant_id,
-                    "title": source_variant_title,
-                    "sku": str(variant.get("sku") or "").strip() or None,
-                    "price": v_price,
-                    "currency": str(variant.get("currency") or item_currency or "").strip().upper() or None,
-                    "available": bool(variant.get("available", True)),
-                    # Variant-level source lineage: required for safe cross-source combine/merge.
-                    "source_key": source_key,
-                    "source_product_url": url or None,
-                    "source_variant_id": source_variant_id,
-                    "source_variant_title": source_variant_title,
-                }
-            )
+                    "sku": source_variant_sku,
+                },
+            }
+            for optional_key in ("option1", "option2", "option3"):
+                if optional_key in variant:
+                    normalized_variant[optional_key] = str(variant.get(optional_key) or "").strip() or None
+            compare_at_price = SyncOrchestratorService._to_float(variant.get("compare_at_price_amount"))
+            if compare_at_price is not None:
+                normalized_variant["compare_at_price"] = compare_at_price
+            variants.append(normalized_variant)
         available_variants = [v for v in variants if bool(v.get("available", False))]
         if variants and status == "available" and not available_variants:
             status = "out_of_stock"
         elif variants and status == "out_of_stock" and available_variants:
             status = "available"
 
-        return {
-            "source_key": source_key,
-            "source_product_url": url or None,
-            "canonical_url": canonical_url,
-            "external_id": external_id,
+        payload = {
+            "url": url or None,
+            "source_ref": {
+                "external_id": external_id,
+            },
             "handle": handle or None,
             "title": title,
             "description": description,
-            "vendor": vendor,
-            "product_type": product_type,
-            "price": price,
+            "description_html": description_html,
+            "designer": designer,
+            "category": category,
+            "gender": gender,
             "weight_grams": weight_grams,
             "status": status,
-            "unavailable_reason": unavailable_reason,
+            "status_reason": status_reason,
             "images": dedup_images,
-            "buyer_total_price": SyncOrchestratorService._to_float(item.get("buyer_total_price")),
-            "buyer_service_fee": SyncOrchestratorService._to_float(item.get("buyer_service_fee")),
+            "buyer_total_price": SyncOrchestratorService._to_float(item.get("buyer_total_price_amount")),
+            "buyer_service_fee": SyncOrchestratorService._to_float(item.get("buyer_service_fee_amount")),
             "variants": variants,
         }
+        return payload
 
-    def _build_product_batch_items(self, *, source_key: str, valid_products: list[dict], unavailable_products: list[dict]) -> list[dict]:
+    def _build_product_batch_items(self, *, valid_products: list[dict], unavailable_products: list[dict]) -> list[dict]:
         out: list[dict] = []
         for raw in valid_products:
             if not isinstance(raw, dict):
                 continue
             item = dict(raw)
             item.setdefault("status", "available")
-            normalized = self._normalize_product_batch_item(item, source_key=source_key)
-            if not normalized.get("source_product_url"):
+            normalized = self._normalize_product_batch_item(item)
+            if not normalized.get("url"):
                 continue
             if not isinstance(normalized.get("variants"), list) or not normalized.get("variants"):
                 continue
@@ -302,9 +296,9 @@ class SyncOrchestratorService:
                 continue
             item = dict(raw)
             item.setdefault("status", "unavailable")
-            reasons_list = item.get("unavailable_reasons") if isinstance(item.get("unavailable_reasons"), list) else []
+            reasons_list = item.get("status_reasons") if isinstance(item.get("status_reasons"), list) else []
             normalized_reasons = [str(x).strip().lower() for x in reasons_list if str(x).strip()]
-            reason_text = str(item.get("unavailable_reason") or "").strip().lower()
+            reason_text = str(item.get("status_reason") or "").strip().lower()
             # Business rule: only missing_weight-only unavailable products may reach backend.
             # Any missing_currency (or any other unavailable reason) must be dropped.
             allow_unavailable = False
@@ -315,8 +309,8 @@ class SyncOrchestratorService:
                 allow_unavailable = ("missing_weight" in reason_text) and ("missing_currency" not in reason_text)
             if not allow_unavailable:
                 continue
-            normalized = self._normalize_product_batch_item(item, source_key=source_key)
-            if not normalized.get("source_product_url"):
+            normalized = self._normalize_product_batch_item(item)
+            if not normalized.get("url"):
                 continue
             if not isinstance(normalized.get("variants"), list) or not normalized.get("variants"):
                 continue
@@ -450,7 +444,6 @@ class SyncOrchestratorService:
                 valid_products = list(report.valid_products or [])
                 unavailable_products = list(report.unavailable_products or [])
                 all_products = self._build_product_batch_items(
-                    source_key=source_key,
                     valid_products=valid_products,
                     unavailable_products=unavailable_products,
                 )

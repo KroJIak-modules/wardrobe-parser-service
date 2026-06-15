@@ -85,6 +85,7 @@ class VintedJsonLdStrategy:
             color=(runtime_meta.get('color') if isinstance(runtime_meta, dict) else None) or dom_color,
         )
         product_type = self._extract_product_type(html)
+        root_breadcrumb = self._extract_root_breadcrumb(soup)
         offers = payload.get('offers') if isinstance(payload.get('offers'), dict) else {}
         currency = str(offers.get('priceCurrency') or '').strip().upper()
         price = offers.get('price')
@@ -133,6 +134,8 @@ class VintedJsonLdStrategy:
             'tags': [],
             'status': 'available' if bool(available) else 'out_of_stock',
         }
+        if root_breadcrumb:
+            out['source_gender_hints'] = root_breadcrumb
         if runtime_total_price is not None:
             out['buyer_total_price'] = runtime_total_price
         if runtime_fee is not None:
@@ -318,6 +321,19 @@ class VintedJsonLdStrategy:
                 continue
             catalog_crumbs.append(text)
         return catalog_crumbs[-1] if catalog_crumbs else None
+
+    @staticmethod
+    def _extract_root_breadcrumb(soup: BeautifulSoup) -> dict:
+        for anchor in soup.select('a[href*="/catalog/"]'):
+            title = anchor.get_text(' ', strip=True)
+            href = str(anchor.get('href') or '').strip()
+            if not title or not href:
+                continue
+            return {
+                'root_breadcrumb_title': title,
+                'root_breadcrumb_href': href,
+            }
+        return {}
 
     @staticmethod
     def _extract_size_color_from_dom(soup: BeautifulSoup) -> tuple[str, str]:

@@ -11,6 +11,7 @@ from app.repositories.source_repository import SourceRepository
 from app.schemas.run_report import SourceRunReport, StrategyAttempt
 from app.services.config_validation_service import ConfigValidationService
 from app.services.description_text_service import DescriptionTextService
+from app.services.product_gender_service import ProductGenderService
 from app.services.run_logger import RunLogger
 from app.services.weight_enrichment_service import WeightEnrichmentService
 from app.services.weight_rules_client import WeightRulesClient
@@ -23,8 +24,8 @@ class SourceRunService:
         return ' '.join(str(title or '').strip().lower().split())
 
     @staticmethod
-    def _normalize_vendor(vendor: str | None) -> str:
-        return str(vendor or '').strip().lower()
+    def _normalize_designer(designer: str | None) -> str:
+        return str(designer or '').strip().lower()
 
     @staticmethod
     def _to_float(value: object) -> float | None:
@@ -40,7 +41,7 @@ class SourceRunService:
         reasons: list[str] = []
         score = 0.0
         title_w = float(cfg.get('title_match_weight', 0.45))
-        vendor_w = float(cfg.get('vendor_match_weight', 0.2))
+        designer_w = float(cfg.get('vendor_match_weight', 0.2))
         price_w = float(cfg.get('price_close_weight', 0.2))
         handle_w = float(cfg.get('handle_match_weight', 0.35))
         price_ratio_limit = float(cfg.get('price_diff_ratio_limit', 0.05))
@@ -50,14 +51,14 @@ class SourceRunService:
             score += title_w
             reasons.append('title_match')
 
-        left_vendor = cls._normalize_vendor(left.get('vendor'))
-        right_vendor = cls._normalize_vendor(right.get('vendor'))
-        if left_vendor and left_vendor == right_vendor:
-            score += vendor_w
-            reasons.append('vendor_match')
+        left_designer = cls._normalize_designer(left.get('designer'))
+        right_designer = cls._normalize_designer(right.get('designer'))
+        if left_designer and left_designer == right_designer:
+            score += designer_w
+            reasons.append('designer_match')
 
-        lp = cls._to_float(left.get('price'))
-        rp = cls._to_float(right.get('price'))
+        lp = cls._derive_product_price(left)
+        rp = cls._derive_product_price(right)
         if lp is not None and rp is not None:
             mx = max(lp, rp)
             diff = abs(lp - rp)
@@ -84,24 +85,14 @@ class SourceRunService:
         self.weight_rules_client = weight_rules_client
 
     @staticmethod
-    def _canonical_product_url(url: str) -> str:
+    def _normalize_product_url(url: str) -> str:
         raw = str(url or '').strip()
         if not raw:
             return ''
         parsed = urlparse(raw)
         if not parsed.scheme or not parsed.netloc:
             return raw
-        parts = [p for p in (parsed.path or '').split('/') if p]
-        handle = ''
-        for i, p in enumerate(parts):
-            if p == 'products' and i + 1 < len(parts):
-                handle = unquote(parts[i + 1])
-        if not handle:
-            return raw
-        host = (parsed.netloc or '').strip().lower()
-        if host.startswith('www.'):
-            host = host[4:]
-        return f'{parsed.scheme}://{host}/products/{handle}'
+        return parsed._replace(query='', fragment='').geturl()
 
     @staticmethod
     def _extract_handle(url: str) -> str:
@@ -142,7 +133,6 @@ class SourceRunService:
         ConfigValidationService.require_strategy_settings(source.config, strategy_sequence)
 
         context = SourceContext(
-            source_id=source.id,
             source_key=source.key,
             source_url=source.url,
             adapter_key=source.adapter_key,
@@ -150,7 +140,6 @@ class SourceRunService:
         )
 
         report = SourceRunReport(
-            source_id=source.id,
             source_key=source.key,
             adapter_key=source.adapter_key,
             dry_run=dry_run,
@@ -172,7 +161,7 @@ class SourceRunService:
                 visible_urls = adapter.discover_visible_catalog(context)
             except StorefrontBlockedError as exc:
                 raise ConfigError(f'storefront_blocked:{exc}') from exc
-        visible_set = {self._canonical_product_url(x) for x in visible_urls if str(x).strip()}
+        visible_set = {self._normalize_product_url(x) for x in visible_urls if str(x).strip()}
         visible_handles = {self._extract_handle(x) for x in visible_urls if str(x).strip()}
         visible_handles.discard('')
         report.visible_catalog_products = len(visible_set)
@@ -240,20 +229,22 @@ class SourceRunService:
                 raw_variants = raw.get('variants') if isinstance(raw.get('variants'), list) else []
                 raw_has_variants = bool(raw_variants)
                 normalized = adapter.normalize_product(raw)
-                # Preserve critical fields from strategy payload if adapter omitted them.
-                if not str(normalized.get('vendor') or '').strip():
-                    normalized['vendor'] = str(raw.get('vendor') or raw.get('brand') or '').strip()
-                if not str(normalized.get('description') or '').strip():
-                    normalized['description'] = str(raw.get('description') or raw.get('body_html') or '').strip() or None
-                normalized['description'] = DescriptionTextService.normalize(normalized.get('description'))
-                if not isinstance(normalized.get('images'), list) or not normalized.get('images'):
-                    normalized['images'] = list(raw.get('images')) if isinstance(raw.get('images'), list) else []
+                normalized['designer'] = str(normalized.get('vendor') or '').strip() or None
+                normalized['category'] = str(normalized.get('product_type') or '').strip() or None
+                normalized.pop('vendor', None)
+                normalized.pop('product_type', None)
+                normalized['description'] = DescriptionTextService.normalize(normalized.get('description_html'))
+                normalized['gender'] = ProductGenderService.infer(
+                    normalized_product=normalized,
+                    raw_product=raw,
+                    source_key=context.source_key,
+                )
                 normalized = WeightEnrichmentService.apply_keyword_weight(normalized, weight_rules)
                 source = str(normalized.get('weight_source') or 'missing').strip().lower()
                 if source not in weight_source_stats:
                     weight_source_stats[source] = 0
                 weight_source_stats[source] += 1
-                url = self._canonical_product_url(str(normalized.get('url') or '').strip())
+                url = self._normalize_product_url(str(normalized.get('url') or '').strip())
                 normalized['url'] = url
                 handle = str(normalized.get('handle') or '').strip()
 
@@ -296,7 +287,7 @@ class SourceRunService:
                             best_reasons = pair_reasons
                             best_url = str(prev.get('url') or '').strip()
                     if best_score >= dedup_threshold:
-                        report.aggregated_unavailable_reasons['deduplicated'] = report.aggregated_unavailable_reasons.get('deduplicated', 0) + 1
+                        report.aggregated_status_reasons['deduplicated'] = report.aggregated_status_reasons.get('deduplicated', 0) + 1
                         report.errors.append(
                             f'dedup_candidate:score={best_score:.3f}:url={url or "-"}:dup_of={best_url or "-"}:reasons={",".join(best_reasons)}'
                         )
@@ -327,19 +318,15 @@ class SourceRunService:
                     reasons_set.add('missing_currency')
                 reasons = sorted(reasons_set)
                 ok = len(reasons) == 0
-                # Currency is variant-level only in service output contract.
-                normalized.pop('currency', None)
                 accepted_for_dedup.append(normalized)
                 if ok:
                     valid_products.append(normalized)
                 else:
                     unavailable_snapshot = dict(normalized)
-                    unavailable_snapshot['unavailable_reasons'] = list(reasons)
+                    unavailable_snapshot['status_reasons'] = list(reasons)
                     unavailable_products.append(unavailable_snapshot)
                     for reason in reasons:
-                        report.aggregated_unavailable_reasons[reason] = report.aggregated_unavailable_reasons.get(reason, 0) + 1
-                    if 'missing_weight' in reasons:
-                        report.missing_weight_products.append(self._missing_weight_product_snapshot(normalized))
+                        report.aggregated_status_reasons[reason] = report.aggregated_status_reasons.get(reason, 0) + 1
 
             attempt.success = True
             report.attempts.append(attempt)
@@ -395,7 +382,6 @@ class SourceRunService:
         report.total_valid_products = len(valid_products)
         report.valid_products = valid_products
         report.unavailable_products = unavailable_products
-        report.top_valid_products = valid_products[:10]
         report.weight_source_stats = weight_source_stats
         report.duration_sec = time.perf_counter() - started_at
         logger.event(
@@ -413,7 +399,7 @@ class SourceRunService:
         for variant in variants:
             if not isinstance(variant, dict):
                 continue
-            cur = str(variant.get('currency') or '').strip().upper()
+            cur = str(variant.get('currency_code') or '').strip().upper()
             if len(cur) == 3:
                 return cur
         return ''
@@ -423,31 +409,14 @@ class SourceRunService:
         variants = product.get('variants') if isinstance(product.get('variants'), list) else []
         if not variants:
             return
-        fallback = str(product.get('currency') or '').strip().upper()
-        fallback_currency = fallback if len(fallback) == 3 else ''
         for variant in variants:
             if not isinstance(variant, dict):
                 continue
-            current = str(variant.get('currency') or '').strip().upper()
+            current = str(variant.get('currency_code') or '').strip().upper()
             if len(current) == 3:
-                variant['currency'] = current
-                continue
-            if fallback_currency:
-                variant['currency'] = fallback_currency
-
-    @staticmethod
-    def _missing_weight_product_snapshot(product: dict) -> dict:
-        tags = product.get('tags')
-        return {
-            'url': str(product.get('url') or '').strip(),
-            'handle': str(product.get('handle') or '').strip(),
-            'title': str(product.get('title') or '').strip(),
-            'product_type': str(product.get('product_type') or '').strip(),
-            'tags': tags if isinstance(tags, list) else [],
-            'price': SourceRunService._jsonable_value(product.get('price')),
-            'currency': SourceRunService._derive_currency_from_variants(product),
-            'weight_source': str(product.get('weight_source') or '').strip(),
-        }
+                variant['currency_code'] = current
+            else:
+                variant['currency_code'] = None
 
     @staticmethod
     def _jsonable_value(value):

@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from app.adapters.contracts import SiteAdapter, SourceContext, Strategy, StrategyContext
+from app.adapters.contracts import AdapterProductDraft, SiteAdapter, SourceContext, Strategy, StrategyContext
 from app.adapters.registry import AdapterRegistry
 from app.core.exceptions import ConfigError
 from app.repositories.source_repository import SourceRecord
@@ -27,32 +27,54 @@ class FakeAdapter(SiteAdapter):
         raw = context.source_config.get('visible_catalog_set', [])
         return [str(x) for x in raw]
 
-    def normalize_product(self, raw_product: dict) -> dict:
-        normalized = dict(raw_product)
-        if not bool(normalized.get('force_no_variants')):
-            variants = normalized.get('variants') if isinstance(normalized.get('variants'), list) else []
+    def normalize_product(self, raw_product: dict) -> AdapterProductDraft:
+        variants = raw_product.get('variants') if isinstance(raw_product.get('variants'), list) else []
+        normalized_variants: list[dict] = []
+        if not bool(raw_product.get('force_no_variants')):
             if not variants:
-                normalized['variants'] = [
+                variants = [
                     {
                         'title': 'Default',
-                        'price': normalized.get('price'),
-                        'currency': normalized.get('currency') or 'USD',
+                        'price': raw_product.get('price'),
+                        'currency': raw_product.get('currency') or 'USD',
                         'available': True,
                     }
                 ]
-        return normalized
+            for variant in variants:
+                normalized_variants.append(
+                    {
+                        'id': str(variant.get('id') or '').strip() or None,
+                        'title': str(variant.get('title') or '').strip() or None,
+                        'sku': str(variant.get('sku') or '').strip() or None,
+                        'price_amount': variant.get('price_amount', variant.get('price')),
+                        'currency_code': str(variant.get('currency_code') or variant.get('currency') or raw_product.get('currency') or 'USD').strip() or None,
+                        'available': bool(variant.get('available', True)),
+                    }
+                )
+        return {
+            'url': str(raw_product.get('url') or '').strip(),
+            'handle': str(raw_product.get('handle') or '').strip() or str(raw_product.get('url') or '').strip(),
+            'title': str(raw_product.get('title') or '').strip() or 'Untitled',
+            'description_html': str(raw_product.get('description_html') or raw_product.get('description') or '').strip() or None,
+            'vendor': str(raw_product.get('vendor') or '').strip() or None,
+            'product_type': str(raw_product.get('product_type') or '').strip() or None,
+            'tags': raw_product.get('tags') if isinstance(raw_product.get('tags'), list) else [],
+            'weight_grams': raw_product.get('weight_grams'),
+            'images': [str(x).strip() for x in (raw_product.get('images') or []) if str(x).strip()],
+            'variants': normalized_variants,
+        }
 
-    def validate_product(self, normalized_product: dict) -> tuple[bool, list[str]]:
+    def validate_product(self, normalized_product: AdapterProductDraft) -> tuple[bool, list[str]]:
         reasons: list[str] = []
         if not normalized_product.get('url'):
             reasons.append('missing_url')
-        if not normalized_product.get('price'):
+        variants = normalized_product.get('variants') if isinstance(normalized_product.get('variants'), list) else []
+        if not any(variant.get('price_amount') for variant in variants):
             reasons.append('missing_price')
-        if not normalized_product.get('currency'):
+        if not any(variant.get('currency_code') for variant in variants):
             reasons.append('missing_currency')
         if normalized_product.get('weight_grams') is None:
             reasons.append('missing_weight')
-        variants = normalized_product.get('variants') if isinstance(normalized_product.get('variants'), list) else []
         if not variants:
             reasons.append('missing_variants')
         return (len(reasons) == 0, reasons)
@@ -483,7 +505,7 @@ def test_dedup_scoring_filters_title_vendor_price_duplicates() -> None:
     report = svc.run('jadedldn.com')
     assert report.total_found_products == 2
     assert report.parsed_visible_products == 1
-    assert report.aggregated_unavailable_reasons.get('deduplicated', 0) == 1
+    assert report.aggregated_status_reasons.get('deduplicated', 0) == 1
     assert any(e.startswith('dedup_candidate:') for e in report.errors)
 
 
@@ -508,6 +530,7 @@ def test_description_html_is_normalized_to_readable_plain_text() -> None:
     report = svc.run('jadedldn.com')
     assert report.total_valid_products == 1
     description = str(report.valid_products[0].get('description') or '')
+    assert report.valid_products[0].get('description_html')
     assert description
     assert '<p>' not in description and '<div>' not in description
     assert 'The Big Baggy Black jeans feature a distinctive wide cut.' in description
@@ -537,6 +560,7 @@ def test_description_markdown_is_normalized_to_plain_text() -> None:
     report = svc.run('jadedldn.com')
     assert report.total_valid_products == 1
     description = str(report.valid_products[0].get('description') or '')
+    assert report.valid_products[0].get('description_html')
     assert description
     assert '# ' not in description
     assert '**' not in description
@@ -563,7 +587,7 @@ def test_product_without_variants_is_marked_unavailable() -> None:
     report = svc.run('jadedldn.com')
     assert report.total_valid_products == 0
     assert len(report.unavailable_products) == 1
-    reasons = set(report.unavailable_products[0].get('unavailable_reasons') or [])
+    reasons = set(report.unavailable_products[0].get('status_reasons') or [])
     assert 'missing_variants' in reasons
 
 
@@ -577,3 +601,20 @@ def test_manual_mode_without_candidates_is_success_noop() -> None:
     assert report.parsed_visible_products == 0
     assert report.visible_coverage == 1.0
     assert report.total_valid_products == 0
+
+
+def test_run_enriches_product_gender_before_report() -> None:
+    cfg = _base_config()
+    cfg['strategy_payloads']['s1'] = [
+        {
+            'url': 'u1',
+            'price': 10,
+            'currency': 'USD',
+            'weight_grams': 500,
+            'tags': ['women'],
+        },
+    ]
+    svc = _build_service(cfg)
+    report = svc.run('jadedldn.com')
+    assert report.total_valid_products == 1
+    assert report.valid_products[0]['gender'] == 'female'

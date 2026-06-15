@@ -129,6 +129,7 @@ class GrailedAlgoliaJsonLdStrategy:
         payload = self._extract_product_ld_json(response.text)
         next_data_images = self._extract_images_from_next_data(response.text)
         size_hint, color_hint = self._extract_size_color_from_next_data(response.text)
+        gender_hints = self._extract_gender_hints_from_next_data(response.text)
         if not size_hint or not color_hint:
             title_size, title_color = self._extract_size_color_from_title(str(payload.get('name') or ''))
             size_hint = size_hint or title_size
@@ -158,7 +159,7 @@ class GrailedAlgoliaJsonLdStrategy:
             'compare_at_price': None,
             'currency_code': currency or None,
         }
-        return {
+        out = {
             # Keep original requested URL for strict probe candidate matching/coverage.
             'url': item_url,
             'handle': handle,
@@ -174,6 +175,9 @@ class GrailedAlgoliaJsonLdStrategy:
             'tags': [],
             'status': 'available' if bool(available) else 'out_of_stock',
         }
+        if gender_hints:
+            out['source_gender_hints'] = gender_hints
+        return out
 
     @staticmethod
     def _extract_product_ld_json(html: str) -> dict:
@@ -265,6 +269,27 @@ class GrailedAlgoliaJsonLdStrategy:
                 color_text = value
                 break
         return size_text, color_text
+
+    @staticmethod
+    def _extract_gender_hints_from_next_data(html: str) -> dict:
+        match = re.search(r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', html, flags=re.S)
+        if not match:
+            return {}
+        try:
+            payload = json.loads(match.group(1))
+        except json.JSONDecodeError:
+            return {}
+        listing = ((payload.get('props') or {}).get('pageProps') or {}).get('listing')
+        if not isinstance(listing, dict):
+            return {}
+        out: dict[str, str] = {}
+        department = str(listing.get('department') or '').strip()
+        category_path = str(listing.get('category_path') or '').strip()
+        if department:
+            out['department'] = department
+        if category_path:
+            out['category_path'] = category_path
+        return out
 
     @staticmethod
     def _build_variant_title(*, size: str, color: str) -> str:

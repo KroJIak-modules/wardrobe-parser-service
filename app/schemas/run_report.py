@@ -13,7 +13,6 @@ class StrategyAttempt(BaseModel):
 
 
 class SourceRunReport(BaseModel):
-    source_id: int
     source_key: str
     adapter_key: str
     dry_run: bool = False
@@ -23,13 +22,11 @@ class SourceRunReport(BaseModel):
     status: SourceRunStatus = SourceRunStatus.PENDING
     attempts: list[StrategyAttempt] = Field(default_factory=list)
     quarantined_urls: list[str] = Field(default_factory=list)
-    aggregated_unavailable_reasons: dict[str, int] = Field(default_factory=dict)
+    aggregated_status_reasons: dict[str, int] = Field(default_factory=dict)
     errors: list[str] = Field(default_factory=list)
     total_found_products: int = 0
     total_valid_products: int = 0
     valid_products: list[dict] = Field(default_factory=list)
     unavailable_products: list[dict] = Field(default_factory=list)
     duration_sec: float = 0.0
-    top_valid_products: list[dict] = Field(default_factory=list)
-    missing_weight_products: list[dict] = Field(default_factory=list)
     weight_source_stats: dict[str, int] = Field(default_factory=dict)
