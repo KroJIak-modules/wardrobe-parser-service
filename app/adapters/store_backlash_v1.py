@@ -8,7 +8,8 @@ class StoreBacklashV1Adapter(PassiveCatalogAdapter):
     allowed_strategies = ("store_backlash_colorme",)
     allowed_currencies = frozenset({"USD", "EUR", "GBP", "JPY"})
 
-    def _extract_handle(self, url: str) -> str:
+    @staticmethod
+    def _extract_handle(url: str) -> str:
         parsed = urlparse(str(url or "").strip())
         pid = (parse_qs(parsed.query).get("pid") or [""])[0].strip()
         return f"pid-{pid}" if pid else ""

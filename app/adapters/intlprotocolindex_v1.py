@@ -25,7 +25,8 @@ class IntlprotocolindexV1Adapter(BaseProductAdapter):
         urls = [node.text.strip() for node in root.findall(".//sm:loc", ns) if node.text]
         return [url for url in urls if "/product/" in url]
 
-    def _extract_handle(self, url: str) -> str:
+    @staticmethod
+    def _extract_handle(url: str) -> str:
         parsed = urlparse(url)
         parts = [part for part in parsed.path.split("/") if part]
         if "product" in parts:

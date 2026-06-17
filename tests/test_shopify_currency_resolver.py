@@ -37,7 +37,7 @@ def test_currency_policy_filters_unsupported_codes() -> None:
             'requested_currency_priority': ['JPY', 'usd', 'ZZZ', 'gbr'],
         }
     })
-    assert policy.requested_currency_priority == ('USD', 'GBP')
+    assert policy.requested_currency_priority == ('JPY', 'USD', 'GBP')
 
 
 def test_currency_policy_locked_no_currency_mode() -> None:

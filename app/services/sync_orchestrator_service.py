@@ -211,7 +211,10 @@ class SyncOrchestratorService:
         designer = str(item.get("designer") or "").strip() or None
         category = str(item.get("category") or "").strip() or None
         gender = ProductGenderService.normalize(item.get("gender"))
-        weight_grams = SyncOrchestratorService._to_int(item.get("weight_grams"))
+        resolved_weight_grams = SyncOrchestratorService._to_int(item.get("resolved_weight_grams"))
+        weight_grams = resolved_weight_grams
+        if weight_grams is None:
+            weight_grams = SyncOrchestratorService._to_int(item.get("weight_grams"))
         status = str(item.get("status") or "").strip().lower() or "unavailable"
         status_reason = str(item.get("status_reason") or "").strip() or None
 

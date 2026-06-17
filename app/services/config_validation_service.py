@@ -90,7 +90,7 @@ class ConfigValidationService:
                 code = 'GBP'
             if code in ALLOWED_CURRENCY_CODES:
                 valid_codes.append(code)
-        # Ignore unknown currencies (for example JPY in legacy configs),
+        # Ignore unknown currencies from legacy configs,
         # but require at least one supported code so runtime selection remains deterministic.
         if not valid_codes:
             raise ConfigError('Invalid source.config.shopify_currency.requested_currency_priority')

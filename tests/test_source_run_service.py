@@ -373,6 +373,11 @@ def test_config_validation_ignores_unsupported_currency_codes_if_any_valid_left(
     cfg['shopify_currency'] = {
         'requested_currency_priority': ['JPY', 'USD', 'ABC'],
     }
+    cfg['shopify_json_quality'] = {
+        'antibot_pause_sec': 3,
+        'retry_backoff_sec': [1, 3],
+        'enrich_from_js_fields': ['price'],
+    }
     ConfigValidationService.require_strategy_settings(cfg, ['shopify_json'])
 
 
@@ -435,6 +440,11 @@ def test_keyword_weight_rule_makes_product_valid() -> None:
     report = svc.run('jadedldn.com')
     assert report.status.value in {'partial', 'success'}
     assert report.total_valid_products >= 1
+    enriched = report.valid_products[0]
+    assert enriched.get('source_weight_grams') is None
+    assert enriched.get('resolved_weight_grams') == 700
+    assert enriched.get('weight_grams') == 700
+    assert enriched.get('weight_source') == 'keyword_rule'
 
 
 def test_backend_contract_rules_are_applied_in_service_pipeline() -> None:
@@ -453,6 +463,25 @@ def test_backend_contract_rules_are_applied_in_service_pipeline() -> None:
     report = svc.run('jadedldn.com')
     assert report.total_valid_products == 1
     assert report.weight_source_stats.get('keyword_rule', 0) >= 1
+    assert report.valid_products[0].get('resolved_weight_grams') == 700
+
+
+def test_source_weight_is_preserved_separately_from_resolved_weight() -> None:
+    cfg = _base_config()
+    cfg['strategy_payloads']['s1'] = [
+        {'url': 'u1', 'title': 'Heavy hoodie', 'price': 10, 'currency': 'USD', 'weight_grams': 820},
+    ]
+    rules = [WeightRule(weight_grams=700, keywords=['hoodie'])]
+    svc = _build_service_with_rules(cfg, rules)
+
+    report = svc.run('jadedldn.com')
+
+    assert report.total_valid_products == 1
+    product = report.valid_products[0]
+    assert product.get('source_weight_grams') == 820
+    assert product.get('resolved_weight_grams') == 820
+    assert product.get('weight_grams') == 820
+    assert product.get('weight_source') == 'source'
 
 
 def test_visible_coverage_uses_handle_when_hosts_differ() -> None:

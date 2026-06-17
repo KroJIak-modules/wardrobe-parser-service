@@ -9,6 +9,7 @@ from app.core.exceptions import ConfigError, StorefrontBlockedError
 from app.domain.statuses import SourceRunStatus
 from app.repositories.source_repository import SourceRepository
 from app.schemas.run_report import SourceRunReport, StrategyAttempt
+from app.schemas.source_product import SourceProductDraft
 from app.services.config_validation_service import ConfigValidationService
 from app.services.description_text_service import DescriptionTextService
 from app.services.product_gender_service import ProductGenderService
@@ -35,6 +36,23 @@ class SourceRunService:
             return float(value)
         except (TypeError, ValueError):
             return None
+
+    @classmethod
+    def _derive_product_price(cls, product: dict) -> float | None:
+        direct_price = cls._to_float(product.get('buyer_total_price_amount'))
+        if direct_price is not None and direct_price > 0:
+            return direct_price
+        variants = product.get('variants') if isinstance(product.get('variants'), list) else []
+        prices: list[float] = []
+        for variant in variants:
+            if not isinstance(variant, dict):
+                continue
+            price = cls._to_float(variant.get('price_amount'))
+            if price is not None and price > 0:
+                prices.append(price)
+        if prices:
+            return min(prices)
+        return None
 
     @classmethod
     def _dedup_score(cls, left: dict, right: dict, cfg: dict) -> tuple[float, list[str]]:
@@ -110,6 +128,66 @@ class SourceRunService:
         source = self.source_repo.get_by_key(source_key)
         if not source.enabled or not source.sync_enabled:
             raise ConfigError(f'source disabled: {source_key}')
+
+    def _normalize_service_product(
+        self,
+        *,
+        adapter,
+        raw_product: dict,
+        context: SourceContext,
+        weight_rules: list,
+    ) -> SourceProductDraft:
+        normalized = dict(adapter.normalize_product(raw_product))
+        resolution = WeightEnrichmentService.resolve(normalized, weight_rules)
+
+        product: SourceProductDraft = {
+            'url': self._normalize_product_url(str(normalized.get('url') or '').strip()),
+            'handle': str(normalized.get('handle') or '').strip(),
+            'title': str(normalized.get('title') or '').strip(),
+            'description_html': str(normalized.get('description_html') or '').strip() or None,
+            'description': DescriptionTextService.normalize(normalized.get('description_html')),
+            'designer': str(normalized.get('vendor') or '').strip() or None,
+            'category': str(normalized.get('product_type') or '').strip() or None,
+            'tags': normalized.get('tags') if isinstance(normalized.get('tags'), list) else [],
+            'source_weight_grams': resolution.source_weight_grams,
+            'resolved_weight_grams': resolution.resolved_weight_grams,
+            'weight_grams': resolution.resolved_weight_grams,
+            'weight_source': resolution.weight_source,
+            'images': normalized.get('images') if isinstance(normalized.get('images'), list) else [],
+            'variants': normalized.get('variants') if isinstance(normalized.get('variants'), list) else [],
+            'gender': ProductGenderService.infer(
+                normalized_product=normalized,
+                raw_product=raw_product,
+                source_key=context.source_key,
+            ),
+        }
+        if 'buyer_total_price_amount' in normalized:
+            product['buyer_total_price_amount'] = normalized.get('buyer_total_price_amount')
+        if 'buyer_service_fee_amount' in normalized:
+            product['buyer_service_fee_amount'] = normalized.get('buyer_service_fee_amount')
+        if isinstance(raw_product.get('source_ref'), dict):
+            product['source_ref'] = dict(raw_product.get('source_ref') or {})
+        return product
+
+    @staticmethod
+    def _validation_reasons(*, adapter, product: SourceProductDraft, raw_has_variants: bool) -> list[str]:
+        SourceRunService._normalize_variant_currencies(product)
+        _, reasons = adapter.validate_product(product)
+        reasons_set = {str(x).strip().lower() for x in reasons if str(x).strip()}
+        variant_currency = SourceRunService._derive_currency_from_variants(product)
+        normalized_variants = product.get('variants') if isinstance(product.get('variants'), list) else []
+
+        if not raw_has_variants or not normalized_variants:
+            reasons_set.add('missing_variants')
+        if variant_currency:
+            reasons_set.discard('missing_currency')
+        else:
+            reasons_set.add('missing_currency')
+        if product.get('resolved_weight_grams') is None:
+            reasons_set.add('missing_weight')
+        else:
+            reasons_set.discard('missing_weight')
+        return sorted(reasons_set)
 
     def run(
         self,
@@ -228,23 +306,17 @@ class SourceRunService:
             for raw in raw_items:
                 raw_variants = raw.get('variants') if isinstance(raw.get('variants'), list) else []
                 raw_has_variants = bool(raw_variants)
-                normalized = adapter.normalize_product(raw)
-                normalized['designer'] = str(normalized.get('vendor') or '').strip() or None
-                normalized['category'] = str(normalized.get('product_type') or '').strip() or None
-                normalized.pop('vendor', None)
-                normalized.pop('product_type', None)
-                normalized['description'] = DescriptionTextService.normalize(normalized.get('description_html'))
-                normalized['gender'] = ProductGenderService.infer(
-                    normalized_product=normalized,
+                normalized = self._normalize_service_product(
+                    adapter=adapter,
                     raw_product=raw,
-                    source_key=context.source_key,
+                    context=context,
+                    weight_rules=weight_rules,
                 )
-                normalized = WeightEnrichmentService.apply_keyword_weight(normalized, weight_rules)
                 source = str(normalized.get('weight_source') or 'missing').strip().lower()
                 if source not in weight_source_stats:
                     weight_source_stats[source] = 0
                 weight_source_stats[source] += 1
-                url = self._normalize_product_url(str(normalized.get('url') or '').strip())
+                url = str(normalized.get('url') or '').strip()
                 normalized['url'] = url
                 handle = str(normalized.get('handle') or '').strip()
 
@@ -305,18 +377,11 @@ class SourceRunService:
                     parsed_handles.add(handle)
                 attempt.parsed_count += 1
 
-                self._normalize_variant_currencies(normalized)
-                ok, reasons = adapter.validate_product(normalized)
-                variant_currency = self._derive_currency_from_variants(normalized)
-                reasons_set = {str(x).strip().lower() for x in reasons if str(x).strip()}
-                normalized_variants = normalized.get('variants') if isinstance(normalized.get('variants'), list) else []
-                if not raw_has_variants or not normalized_variants:
-                    reasons_set.add('missing_variants')
-                if variant_currency:
-                    reasons_set.discard('missing_currency')
-                else:
-                    reasons_set.add('missing_currency')
-                reasons = sorted(reasons_set)
+                reasons = self._validation_reasons(
+                    adapter=adapter,
+                    product=normalized,
+                    raw_has_variants=raw_has_variants,
+                )
                 ok = len(reasons) == 0
                 accepted_for_dedup.append(normalized)
                 if ok:

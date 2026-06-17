@@ -130,6 +130,30 @@ def test_build_product_batch_items_emits_designer_category_and_nullable_status_r
     assert items[0]["status_reason"] == "missing_weight"
 
 
+def test_build_product_batch_items_prefers_resolved_weight_for_legacy_payload() -> None:
+    svc = SyncOrchestratorService(max_workers=1)
+    items = svc._build_product_batch_items(
+        valid_products=[
+            {
+                "url": "https://demo.com/products/a",
+                "handle": "a",
+                "title": "A",
+                "description": "A",
+                "source_weight_grams": 820,
+                "resolved_weight_grams": 700,
+                "weight_grams": 820,
+                "variants": [
+                    {"id": "v1", "title": "One", "price_amount": 100, "currency_code": "USD", "available": True}
+                ],
+                "status": "available",
+            }
+        ],
+        unavailable_products=[],
+    )
+    assert len(items) == 1
+    assert items[0]["weight_grams"] == 700
+
+
 def test_build_product_batch_items_sets_null_status_reason_when_absent() -> None:
     svc = SyncOrchestratorService(max_workers=1)
     items = svc._build_product_batch_items(

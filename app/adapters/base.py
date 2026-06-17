@@ -68,11 +68,6 @@ class BaseProductAdapter(SiteAdapter):
         elif self.allowed_currencies and not any(code in self.allowed_currencies for code in variant_currencies):
             reasons.append("unsupported_currency")
 
-        weight_grams = normalized_product.get("weight_grams")
-        weight_source = str(normalized_product.get("weight_source") or "").strip().lower()
-        if weight_source == "missing" or weight_grams is None or weight_grams <= Decimal("0"):
-            reasons.append("missing_weight")
-
         return (len(reasons) == 0, reasons)
 
     def _derive_handle(self, *, raw_product: dict, url: str) -> str:
@@ -81,7 +76,8 @@ class BaseProductAdapter(SiteAdapter):
             return handle
         return self._extract_handle(url)
 
-    def _extract_handle(self, url: str) -> str:
+    @staticmethod
+    def _extract_handle(url: str) -> str:
         return ""
 
     def _normalize_variants(self, raw_product: dict) -> list[AdapterVariantDraft]:
@@ -250,5 +246,6 @@ class ShopifyCatalogAdapter(BaseProductAdapter):
         policy = ShopifyPolicyFactory.sitemap(context.source_config)
         return sorted(ShopifySitemapDiscovery.discover_product_urls(base_url, timeout, policy))
 
-    def _extract_handle(self, url: str) -> str:
+    @staticmethod
+    def _extract_handle(url: str) -> str:
         return ShopifySitemapDiscovery.extract_handle(url)
