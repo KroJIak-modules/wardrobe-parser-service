@@ -211,12 +211,11 @@ class SyncOrchestratorService:
         designer = str(item.get("designer") or "").strip() or None
         category = str(item.get("category") or "").strip() or None
         gender = ProductGenderService.normalize(item.get("gender"))
-        resolved_weight_grams = SyncOrchestratorService._to_int(item.get("resolved_weight_grams"))
-        weight_grams = resolved_weight_grams
-        if weight_grams is None:
-            weight_grams = SyncOrchestratorService._to_int(item.get("weight_grams"))
+        source_weight_grams = SyncOrchestratorService._to_int(item.get("source_weight_grams"))
         status = str(item.get("status") or "").strip().lower() or "unavailable"
         status_reason = str(item.get("status_reason") or "").strip() or None
+        status_reasons_raw = item.get("status_reasons") if isinstance(item.get("status_reasons"), list) else []
+        status_reasons = [str(reason).strip().lower() for reason in status_reasons_raw if str(reason).strip()]
 
         images_raw = item.get("images") if isinstance(item.get("images"), list) else []
         images = [str(image or "").strip() for image in images_raw if str(image or "").strip()]
@@ -271,9 +270,10 @@ class SyncOrchestratorService:
             "designer": designer,
             "category": category,
             "gender": gender,
-            "weight_grams": weight_grams,
+            "source_weight_grams": source_weight_grams,
             "status": status,
             "status_reason": status_reason,
+            "status_reasons": status_reasons,
             "images": dedup_images,
             "buyer_total_price": SyncOrchestratorService._to_float(item.get("buyer_total_price_amount")),
             "buyer_service_fee": SyncOrchestratorService._to_float(item.get("buyer_service_fee_amount")),
@@ -291,31 +291,14 @@ class SyncOrchestratorService:
             normalized = self._normalize_product_batch_item(item)
             if not normalized.get("url"):
                 continue
-            if not isinstance(normalized.get("variants"), list) or not normalized.get("variants"):
-                continue
             out.append(normalized)
         for raw in unavailable_products:
             if not isinstance(raw, dict):
                 continue
             item = dict(raw)
             item.setdefault("status", "unavailable")
-            reasons_list = item.get("status_reasons") if isinstance(item.get("status_reasons"), list) else []
-            normalized_reasons = [str(x).strip().lower() for x in reasons_list if str(x).strip()]
-            reason_text = str(item.get("status_reason") or "").strip().lower()
-            # Business rule: only missing_weight-only unavailable products may reach backend.
-            # Any missing_currency (or any other unavailable reason) must be dropped.
-            allow_unavailable = False
-            if normalized_reasons:
-                unique_reasons = {x for x in normalized_reasons}
-                allow_unavailable = unique_reasons == {"missing_weight"}
-            elif reason_text:
-                allow_unavailable = ("missing_weight" in reason_text) and ("missing_currency" not in reason_text)
-            if not allow_unavailable:
-                continue
             normalized = self._normalize_product_batch_item(item)
             if not normalized.get("url"):
-                continue
-            if not isinstance(normalized.get("variants"), list) or not normalized.get("variants"):
                 continue
             out.append(normalized)
         return out

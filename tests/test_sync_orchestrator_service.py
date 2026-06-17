@@ -1,7 +1,7 @@
 from app.services.sync_orchestrator_service import SyncOrchestratorService
 
 
-def test_build_product_batch_items_skips_valid_products_without_variants() -> None:
+def test_build_product_batch_items_keeps_valid_products_without_variants() -> None:
     svc = SyncOrchestratorService(max_workers=1)
     items = svc._build_product_batch_items(
         valid_products=[
@@ -16,7 +16,8 @@ def test_build_product_batch_items_skips_valid_products_without_variants() -> No
         ],
         unavailable_products=[],
     )
-    assert items == []
+    assert len(items) == 1
+    assert items[0]["variants"] == []
 
 
 def test_build_product_batch_items_keeps_valid_products_with_variants() -> None:
@@ -41,7 +42,7 @@ def test_build_product_batch_items_keeps_valid_products_with_variants() -> None:
     assert items[0]["gender"] == "unisex"
 
 
-def test_build_product_batch_items_skips_unavailable_missing_weight_without_variants() -> None:
+def test_build_product_batch_items_keeps_unavailable_missing_weight_without_variants() -> None:
     svc = SyncOrchestratorService(max_workers=1)
     items = svc._build_product_batch_items(
         valid_products=[],
@@ -57,7 +58,8 @@ def test_build_product_batch_items_skips_unavailable_missing_weight_without_vari
             }
         ],
     )
-    assert items == []
+    assert len(items) == 1
+    assert items[0]["status_reasons"] == ["missing_weight"]
 
 
 def test_build_product_batch_items_keeps_unavailable_missing_weight_with_variants() -> None:
@@ -130,7 +132,7 @@ def test_build_product_batch_items_emits_designer_category_and_nullable_status_r
     assert items[0]["status_reason"] == "missing_weight"
 
 
-def test_build_product_batch_items_prefers_resolved_weight_for_legacy_payload() -> None:
+def test_build_product_batch_items_emits_source_weight_only() -> None:
     svc = SyncOrchestratorService(max_workers=1)
     items = svc._build_product_batch_items(
         valid_products=[
@@ -140,8 +142,6 @@ def test_build_product_batch_items_prefers_resolved_weight_for_legacy_payload() 
                 "title": "A",
                 "description": "A",
                 "source_weight_grams": 820,
-                "resolved_weight_grams": 700,
-                "weight_grams": 820,
                 "variants": [
                     {"id": "v1", "title": "One", "price_amount": 100, "currency_code": "USD", "available": True}
                 ],
@@ -151,7 +151,8 @@ def test_build_product_batch_items_prefers_resolved_weight_for_legacy_payload() 
         unavailable_products=[],
     )
     assert len(items) == 1
-    assert items[0]["weight_grams"] == 700
+    assert items[0]["source_weight_grams"] == 820
+    assert "weight_grams" not in items[0]
 
 
 def test_build_product_batch_items_sets_null_status_reason_when_absent() -> None:

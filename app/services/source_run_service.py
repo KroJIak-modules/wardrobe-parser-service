@@ -1,5 +1,4 @@
 from __future__ import annotations
-from decimal import Decimal
 import time
 from urllib.parse import unquote, urlparse
 
@@ -15,92 +14,19 @@ from app.services.description_text_service import DescriptionTextService
 from app.services.product_gender_service import ProductGenderService
 from app.services.run_logger import RunLogger
 from app.services.weight_enrichment_service import WeightEnrichmentService
-from app.services.weight_rules_client import WeightRulesClient
 from app.strategies.registry import StrategyRegistry
 
 
 class SourceRunService:
-    @staticmethod
-    def _normalize_title(title: str) -> str:
-        return ' '.join(str(title or '').strip().lower().split())
-
-    @staticmethod
-    def _normalize_designer(designer: str | None) -> str:
-        return str(designer or '').strip().lower()
-
-    @staticmethod
-    def _to_float(value: object) -> float | None:
-        try:
-            if value is None:
-                return None
-            return float(value)
-        except (TypeError, ValueError):
-            return None
-
-    @classmethod
-    def _derive_product_price(cls, product: dict) -> float | None:
-        direct_price = cls._to_float(product.get('buyer_total_price_amount'))
-        if direct_price is not None and direct_price > 0:
-            return direct_price
-        variants = product.get('variants') if isinstance(product.get('variants'), list) else []
-        prices: list[float] = []
-        for variant in variants:
-            if not isinstance(variant, dict):
-                continue
-            price = cls._to_float(variant.get('price_amount'))
-            if price is not None and price > 0:
-                prices.append(price)
-        if prices:
-            return min(prices)
-        return None
-
-    @classmethod
-    def _dedup_score(cls, left: dict, right: dict, cfg: dict) -> tuple[float, list[str]]:
-        reasons: list[str] = []
-        score = 0.0
-        title_w = float(cfg.get('title_match_weight', 0.45))
-        designer_w = float(cfg.get('vendor_match_weight', 0.2))
-        price_w = float(cfg.get('price_close_weight', 0.2))
-        handle_w = float(cfg.get('handle_match_weight', 0.35))
-        price_ratio_limit = float(cfg.get('price_diff_ratio_limit', 0.05))
-        score_cap = float(cfg.get('score_cap', 1.0))
-
-        if cls._normalize_title(str(left.get('title') or '')) == cls._normalize_title(str(right.get('title') or '')):
-            score += title_w
-            reasons.append('title_match')
-
-        left_designer = cls._normalize_designer(left.get('designer'))
-        right_designer = cls._normalize_designer(right.get('designer'))
-        if left_designer and left_designer == right_designer:
-            score += designer_w
-            reasons.append('designer_match')
-
-        lp = cls._derive_product_price(left)
-        rp = cls._derive_product_price(right)
-        if lp is not None and rp is not None:
-            mx = max(lp, rp)
-            diff = abs(lp - rp)
-            if mx > 0 and diff / mx <= price_ratio_limit:
-                score += price_w
-                reasons.append('price_close')
-
-        if str(left.get('handle') or '').strip() and str(left.get('handle') or '').strip() == str(right.get('handle') or '').strip():
-            score += handle_w
-            reasons.append('handle_match')
-
-        return min(score, score_cap), reasons
-
     def __init__(
         self,
         source_repo: SourceRepository,
         adapter_registry: AdapterRegistry,
         strategy_registry: StrategyRegistry,
-        weight_rules_client: WeightRulesClient | None = None,
     ) -> None:
         self.source_repo = source_repo
         self.adapter_registry = adapter_registry
         self.strategy_registry = strategy_registry
-        self.weight_rules_client = weight_rules_client
 
     @staticmethod
     def _normalize_product_url(url: str) -> str:
@@ -135,10 +61,9 @@ class SourceRunService:
         adapter,
         raw_product: dict,
         context: SourceContext,
-        weight_rules: list,
     ) -> SourceProductDraft:
         normalized = dict(adapter.normalize_product(raw_product))
-        resolution = WeightEnrichmentService.resolve(normalized, weight_rules)
+        resolution = WeightEnrichmentService.resolve(normalized)
 
         product: SourceProductDraft = {
             'url': self._normalize_product_url(str(normalized.get('url') or '').strip()),
@@ -150,8 +75,6 @@ class SourceRunService:
             'category': str(normalized.get('product_type') or '').strip() or None,
             'tags': normalized.get('tags') if isinstance(normalized.get('tags'), list) else [],
             'source_weight_grams': resolution.source_weight_grams,
-            'resolved_weight_grams': resolution.resolved_weight_grams,
-            'weight_grams': resolution.resolved_weight_grams,
             'weight_source': resolution.weight_source,
             'images': normalized.get('images') if isinstance(normalized.get('images'), list) else [],
             'variants': normalized.get('variants') if isinstance(normalized.get('variants'), list) else [],
@@ -183,7 +106,7 @@ class SourceRunService:
             reasons_set.discard('missing_currency')
         else:
             reasons_set.add('missing_currency')
-        if product.get('resolved_weight_grams') is None:
+        if product.get('source_weight_grams') is None:
             reasons_set.add('missing_weight')
         else:
             reasons_set.discard('missing_weight')
@@ -244,21 +167,14 @@ class SourceRunService:
         visible_handles.discard('')
         report.visible_catalog_products = len(visible_set)
         logger.event('discovery_done', visible_catalog_products=report.visible_catalog_products)
-        weight_rules = self.weight_rules_client.fetch().rules if self.weight_rules_client else []
-        logger.event('weight_rules_loaded', count=len(weight_rules))
-
         parsed_urls: set[str] = set()
         parsed_handles: set[str] = set()
         seen_handles: set[str] = set()
         seen_urls: set[str] = set()
         valid_products: list[dict] = []
         unavailable_products: list[dict] = []
-        weight_source_stats: dict[str, int] = {'source': 0, 'keyword_rule': 0, 'missing': 0}
+        weight_source_stats: dict[str, int] = {'source': 0, 'missing': 0}
         pending_candidate_urls: set[str] = set(visible_set)
-        dedup_cfg = source.config.get('dedup') if isinstance(source.config.get('dedup'), dict) else {}
-        dedup_enabled = bool(dedup_cfg.get('enabled', True))
-        dedup_threshold = float(dedup_cfg.get('score_threshold', 0.75))
-        accepted_for_dedup: list[dict] = []
 
         for strategy_name in strategy_sequence:
             strategy = self.strategy_registry.get(strategy_name)
@@ -310,7 +226,6 @@ class SourceRunService:
                     adapter=adapter,
                     raw_product=raw,
                     context=context,
-                    weight_rules=weight_rules,
                 )
                 source = str(normalized.get('weight_source') or 'missing').strip().lower()
                 if source not in weight_source_stats:
@@ -348,25 +263,6 @@ class SourceRunService:
                 if handle and handle in seen_handles:
                     continue
 
-                if dedup_enabled and accepted_for_dedup:
-                    best_score = 0.0
-                    best_reasons: list[str] = []
-                    best_url = ''
-                    for prev in accepted_for_dedup:
-                        pair_score, pair_reasons = self._dedup_score(prev, normalized, dedup_cfg)
-                        if pair_score > best_score:
-                            best_score = pair_score
-                            best_reasons = pair_reasons
-                            best_url = str(prev.get('url') or '').strip()
-                    if best_score >= dedup_threshold:
-                        report.aggregated_status_reasons['deduplicated'] = report.aggregated_status_reasons.get('deduplicated', 0) + 1
-                        report.errors.append(
-                            f'dedup_candidate:score={best_score:.3f}:url={url or "-"}:dup_of={best_url or "-"}:reasons={",".join(best_reasons)}'
-                        )
-                        if url:
-                            report.quarantined_urls.append(url)
-                        continue
-
                 # Any successfully normalized unique product is considered delivered
                 # for coverage/fallback semantics; validation controls availability.
                 if url:
@@ -383,7 +279,6 @@ class SourceRunService:
                     raw_has_variants=raw_has_variants,
                 )
                 ok = len(reasons) == 0
-                accepted_for_dedup.append(normalized)
                 if ok:
                     valid_products.append(normalized)
                 else:

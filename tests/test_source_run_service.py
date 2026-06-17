@@ -5,7 +5,6 @@ from app.core.exceptions import ConfigError
 from app.repositories.source_repository import SourceRecord
 from app.services.config_validation_service import ConfigValidationService
 from app.services.source_run_service import SourceRunService
-from app.services.weight_rules_client import WeightRule, WeightRulesPayload
 from app.strategies.registry import StrategyRegistry
 
 
@@ -113,31 +112,6 @@ class ErrorStrategy(Strategy):
         raise RuntimeError(f'boom-{self.name}')
 
 
-class FakeWeightRulesClient:
-    def __init__(self, rules: list[WeightRule]) -> None:
-        self._rules = rules
-
-    def fetch(self) -> WeightRulesPayload:
-        return WeightRulesPayload(revision='test', rules=self._rules)
-
-
-class FakeBackendContractWeightRulesClient:
-    """Imitates backend contract payload conversion path."""
-
-    def __init__(self, payload: dict) -> None:
-        self.payload = payload
-
-    def fetch(self) -> WeightRulesPayload:
-        revision = str(self.payload.get('revision') or 'unknown')
-        out: list[WeightRule] = []
-        for item in self.payload.get('rules') or []:
-            weight = int(item.get('weight_grams') or 0)
-            keywords = [str(x).strip().lower() for x in (item.get('keywords') or []) if str(x).strip()]
-            if weight > 0:
-                out.append(WeightRule(weight_grams=weight, keywords=keywords))
-        return WeightRulesPayload(revision=revision, rules=out)
-
-
 def _build_service(config: dict, *, error_strategies: set[str] | None = None) -> SourceRunService:
     record = SourceRecord(
         id=1,
@@ -162,54 +136,6 @@ def _build_service(config: dict, *, error_strategies: set[str] | None = None) ->
             strategies.register(PayloadStrategy(name))
 
     return SourceRunService(repo, adapters, strategies)
-
-
-def _build_service_with_rules(config: dict, rules: list[WeightRule]) -> SourceRunService:
-    record = SourceRecord(
-        id=1,
-        key='jadedldn.com',
-        url='https://jadedldn.com/',
-        adapter_key='jadedldn__v1',
-        enabled=True,
-        sync_enabled=True,
-        config=config,
-    )
-    repo = FakeSourceRepo(record)
-    adapters = AdapterRegistry()
-    adapters.register(FakeAdapter())
-    strategies = StrategyRegistry()
-    for name in ('s1', 's2', 's3'):
-        strategies.register(PayloadStrategy(name))
-    return SourceRunService(
-        repo,
-        adapters,
-        strategies,
-        weight_rules_client=FakeWeightRulesClient(rules),
-    )
-
-
-def _build_service_with_backend_contract(config: dict, payload: dict) -> SourceRunService:
-    record = SourceRecord(
-        id=1,
-        key='jadedldn.com',
-        url='https://jadedldn.com/',
-        adapter_key='jadedldn__v1',
-        enabled=True,
-        sync_enabled=True,
-        config=config,
-    )
-    repo = FakeSourceRepo(record)
-    adapters = AdapterRegistry()
-    adapters.register(FakeAdapter())
-    strategies = StrategyRegistry()
-    for name in ('s1', 's2', 's3'):
-        strategies.register(PayloadStrategy(name))
-    return SourceRunService(
-        repo,
-        adapters,
-        strategies,
-        weight_rules_client=FakeBackendContractWeightRulesClient(payload),
-    )
 
 
 def _base_config() -> dict:
@@ -429,58 +355,32 @@ def test_baseline_visible_coverage_uses_visible_set_only() -> None:
     assert report.visible_coverage == 1.0
 
 
-def test_keyword_weight_rule_makes_product_valid() -> None:
+def test_missing_source_weight_keeps_product_unavailable() -> None:
     cfg = _base_config()
     cfg['strategy_payloads']['s1'] = [
         {'url': 'u1', 'title': 'Black hoodie', 'price': 10, 'currency': 'USD', 'weight_grams': 0},
         {'url': 'u2', 'title': 'Blue tee', 'price': 20, 'currency': 'USD', 'weight_grams': 0},
     ]
-    rules = [WeightRule(weight_grams=700, keywords=['hoodie'])]
-    svc = _build_service_with_rules(cfg, rules)
+    svc = _build_service(cfg)
     report = svc.run('jadedldn.com')
-    assert report.status.value in {'partial', 'success'}
-    assert report.total_valid_products >= 1
-    enriched = report.valid_products[0]
-    assert enriched.get('source_weight_grams') is None
-    assert enriched.get('resolved_weight_grams') == 700
-    assert enriched.get('weight_grams') == 700
-    assert enriched.get('weight_source') == 'keyword_rule'
+    assert report.total_valid_products == 0
+    assert len(report.unavailable_products) == 2
+    reasons = set(report.unavailable_products[0].get('status_reasons') or [])
+    assert 'missing_weight' in reasons
 
 
-def test_backend_contract_rules_are_applied_in_service_pipeline() -> None:
-    cfg = _base_config()
-    cfg['strategy_payloads']['s1'] = [
-        {'url': 'u1', 'title': 'Black hoodie', 'price': 10, 'currency': 'USD', 'weight_grams': 0},
-    ]
-    payload = {
-        'revision': 'abc123',
-        'rules': [
-            {'weight_grams': 700, 'keywords': ['hoodie']},
-            {'weight_grams': 0, 'keywords': ['bad']},
-        ],
-    }
-    svc = _build_service_with_backend_contract(cfg, payload)
-    report = svc.run('jadedldn.com')
-    assert report.total_valid_products == 1
-    assert report.weight_source_stats.get('keyword_rule', 0) >= 1
-    assert report.valid_products[0].get('resolved_weight_grams') == 700
-
-
-def test_source_weight_is_preserved_separately_from_resolved_weight() -> None:
+def test_source_weight_is_preserved_separately_from_service_status() -> None:
     cfg = _base_config()
     cfg['strategy_payloads']['s1'] = [
         {'url': 'u1', 'title': 'Heavy hoodie', 'price': 10, 'currency': 'USD', 'weight_grams': 820},
     ]
-    rules = [WeightRule(weight_grams=700, keywords=['hoodie'])]
-    svc = _build_service_with_rules(cfg, rules)
+    svc = _build_service(cfg)
 
     report = svc.run('jadedldn.com')
 
     assert report.total_valid_products == 1
     product = report.valid_products[0]
     assert product.get('source_weight_grams') == 820
-    assert product.get('resolved_weight_grams') == 820
-    assert product.get('weight_grams') == 820
     assert product.get('weight_source') == 'source'
 
 
@@ -522,10 +422,9 @@ def test_visible_coverage_decodes_percent_encoded_handles() -> None:
     assert report.status.value == 'success'
 
 
-def test_dedup_scoring_filters_title_vendor_price_duplicates() -> None:
+def test_cross_strategy_duplicates_are_ignored_without_parser_side_dedup() -> None:
     cfg = _base_config()
     cfg['visible_catalog_set'] = ['u1', 'u2']
-    cfg['dedup'] = {'enabled': True, 'score_threshold': 0.75}
     cfg['strategy_payloads']['s1'] = [
         {'url': 'u1', 'title': 'Black Hoodie', 'vendor': 'BrandX', 'price': 100, 'currency': 'USD', 'weight_grams': 500},
         {'url': 'u2', 'title': ' black   hoodie ', 'vendor': 'brandx', 'price': 101, 'currency': 'USD', 'weight_grams': 500},
@@ -533,9 +432,8 @@ def test_dedup_scoring_filters_title_vendor_price_duplicates() -> None:
     svc = _build_service(cfg)
     report = svc.run('jadedldn.com')
     assert report.total_found_products == 2
-    assert report.parsed_visible_products == 1
-    assert report.aggregated_status_reasons.get('deduplicated', 0) == 1
-    assert any(e.startswith('dedup_candidate:') for e in report.errors)
+    assert report.parsed_visible_products == 2
+    assert report.aggregated_status_reasons.get('deduplicated', 0) == 0
 
 
 def test_description_html_is_normalized_to_readable_plain_text() -> None:

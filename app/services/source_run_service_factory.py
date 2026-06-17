@@ -29,10 +29,8 @@ from app.adapters.rickowens_v1 import RickowensV1Adapter
 from app.adapters.goat_v1 import GoatV1Adapter
 from app.adapters.intlprotocolindex_v1 import IntlprotocolindexV1Adapter
 from app.adapters.registry import AdapterRegistry
-from app.core.config import settings
 from app.repositories.source_repository import SourceRepository
 from app.services.source_run_service import SourceRunService
-from app.services.weight_rules_client import WeightRulesClient
 from app.strategies.registry import StrategyRegistry
 from app.strategies.shopify_browser_extension import ShopifyBrowserExtensionStrategy
 from app.strategies.shopify_js import ShopifyJsStrategy
@@ -86,10 +84,8 @@ class SourceRunServiceFactory:
         strategy_registry.register(GoatBrowserExtensionStrategy())
         strategy_registry.register(IntlProtocolIndexCafe24Strategy())
 
-        weight_rules_client = WeightRulesClient(backend_base_url=settings.backend_base_url)
         return SourceRunService(
             SourceRepository(),
             adapter_registry,
             strategy_registry,
-            weight_rules_client=weight_rules_client,
         )

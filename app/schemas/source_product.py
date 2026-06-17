@@ -5,7 +5,7 @@ from typing import Literal, NotRequired, TypedDict
 from app.adapters.contracts import AdapterVariantDraft
 
 
-WeightSource = Literal["source", "keyword_rule", "missing"]
+WeightSource = Literal["source", "missing"]
 
 
 class SourceProductDraft(TypedDict):
@@ -18,9 +18,6 @@ class SourceProductDraft(TypedDict):
     category: str | None
     tags: list[str]
     source_weight_grams: int | None
-    resolved_weight_grams: int | None
-    # Backward-compatible alias for downstream legacy payload builders.
-    weight_grams: int | None
     weight_source: WeightSource
     images: list[str]
     variants: list[AdapterVariantDraft]

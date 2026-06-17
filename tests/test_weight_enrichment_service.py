@@ -1,59 +1,22 @@
 from decimal import Decimal
 
 from app.services.weight_enrichment_service import WeightEnrichmentService
-from app.services.weight_rules_client import WeightRule
 
 
-def test_keyword_weight_uses_category_when_source_weight_missing() -> None:
-    product = {
-        'title': 'Brand Model Name',
-        'handle': 'brand-model-name',
-        'category': 'Jeans',
-        'tags': [],
-        'weight_grams': 0,
-    }
-
-    out = WeightEnrichmentService.apply_keyword_weight(product, [WeightRule(weight_grams=680, keywords=['jeans'])])
-
-    assert out['source_weight_grams'] is None
-    assert out['resolved_weight_grams'] == 680
-    assert out['weight_grams'] == 680
-    assert out['weight_source'] == 'keyword_rule'
+def test_missing_or_zero_weight_is_marked_missing() -> None:
+    assert WeightEnrichmentService.resolve({"weight_grams": None}).source_weight_grams is None
+    assert WeightEnrichmentService.resolve({"weight_grams": 0}).weight_source == "missing"
 
 
-def test_source_weight_wins_over_keyword_rule() -> None:
-    product = {
-        'title': 'Heavy Jeans',
-        'handle': 'heavy-jeans',
-        'category': 'Jeans',
-        'tags': ['denim'],
-        'weight_grams': Decimal('910'),
-    }
+def test_positive_source_weight_is_preserved() -> None:
+    resolution = WeightEnrichmentService.resolve({"weight_grams": Decimal("910")})
 
-    out = WeightEnrichmentService.apply_keyword_weight(product, [WeightRule(weight_grams=680, keywords=['jeans'])])
-
-    assert out['source_weight_grams'] == 910
-    assert out['resolved_weight_grams'] == 910
-    assert out['weight_grams'] == 910
-    assert out['weight_source'] == 'source'
+    assert resolution.source_weight_grams == 910
+    assert resolution.weight_source == "source"
 
 
-def test_rule_with_more_keyword_matches_wins() -> None:
-    product = {
-        'title': 'Black cargo pants',
-        'handle': 'black-cargo-pants',
-        'category': 'Pants',
-        'tags': ['cargo', 'black'],
-        'weight_grams': 0,
-    }
+def test_non_numeric_weight_is_ignored() -> None:
+    resolution = WeightEnrichmentService.resolve({"weight_grams": "oops"})
 
-    out = WeightEnrichmentService.apply_keyword_weight(
-        product,
-        [
-            WeightRule(weight_grams=500, keywords=['pants']),
-            WeightRule(weight_grams=740, keywords=['cargo', 'pants']),
-        ],
-    )
-
-    assert out['resolved_weight_grams'] == 740
-    assert out['weight_source'] == 'keyword_rule'
+    assert resolution.source_weight_grams is None
+    assert resolution.weight_source == "missing"
