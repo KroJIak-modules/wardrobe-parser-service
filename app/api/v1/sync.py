@@ -24,9 +24,6 @@ probe_orchestrator = SyncOrchestratorService(max_workers=2)
 class SourceFlagPatch(BaseModel):
     enabled: bool | None = None
     sync_enabled: bool | None = None
-    requested_currency_priority: list[str] | None = None
-    currency_method: str | None = None
-    locked_currency: str | None = None
 
 
 class ProbeProductRequest(BaseModel):
@@ -174,9 +171,6 @@ def patch_source(source_key: str, payload: SourceFlagPatch) -> dict:
             source_key,
             enabled=payload.enabled,
             sync_enabled=payload.sync_enabled,
-            requested_currency_priority=payload.requested_currency_priority,
-            currency_method=payload.currency_method,
-            locked_currency=payload.locked_currency,
         )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
