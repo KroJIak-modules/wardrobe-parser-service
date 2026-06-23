@@ -41,10 +41,10 @@ class AdapterProductDraft(TypedDict):
     handle: str
     title: str
     description_html: str | None
-    vendor: str | None
-    product_type: str | None
+    designer: str | None
+    category: str | None
     tags: list[str]
-    weight_grams: Decimal | None
+    source_weight_grams: Decimal | None
     images: list[str]
     variants: list[AdapterVariantDraft]
     buyer_total_price_amount: NotRequired[Decimal | None]

@@ -28,10 +28,10 @@ class BaseProductAdapter(SiteAdapter):
             "handle": self._derive_handle(raw_product=raw_product, url=url),
             "title": str(raw_product.get("title") or "").strip(),
             "description_html": description_html,
-            "vendor": self._coerce_optional_text(raw_product.get("vendor")),
-            "product_type": self._coerce_optional_text(raw_product.get("product_type")),
+            "designer": self._coerce_optional_text(raw_product.get("designer")),
+            "category": self._coerce_optional_text(raw_product.get("category")),
             "tags": self._normalize_tags(raw_product.get("tags")),
-            "weight_grams": self._to_decimal(raw_product.get("weight_grams")),
+            "source_weight_grams": self._to_decimal(raw_product.get("source_weight_grams")),
             "images": self._normalize_images(raw_product=raw_product, product_url=url),
             "variants": self._normalize_variants(raw_product),
         }
@@ -146,12 +146,23 @@ class BaseProductAdapter(SiteAdapter):
 
     @staticmethod
     def _normalize_tags(raw_tags: object) -> list[str]:
-        if not isinstance(raw_tags, list):
+        if isinstance(raw_tags, str):
+            candidates = raw_tags.split(",")
+        elif isinstance(raw_tags, (list, tuple, set, frozenset)):
+            candidates = raw_tags
+        elif raw_tags in (None, ""):
             return []
+        else:
+            candidates = [raw_tags]
+
         out: list[str] = []
-        for item in raw_tags:
+        seen: set[str] = set()
+        for item in candidates:
             text = str(item or "").strip()
             if text:
+                if text in seen:
+                    continue
+                seen.add(text)
                 out.append(text)
         return out
 

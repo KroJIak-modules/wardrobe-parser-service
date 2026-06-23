@@ -6,7 +6,7 @@ from dataclasses import dataclass
 MAX_PRODUCTS_LIMIT = 50000
 MAX_REQUEST_RETRIES = 5
 ALLOWED_CURRENCY_CODES = {'EUR', 'USD', 'GBP', 'JPY'}
-ALLOWED_CURRENCY_METHODS = {'priority_list', 'locked_param_currency', 'locked_no_currency'}
+ALLOWED_REQUEST_MODES = {'prefer_list', 'fixed_param', 'fixed_ambient'}
 
 
 @dataclass(frozen=True)
@@ -18,10 +18,10 @@ class ShopifySitemapPolicy:
 
 @dataclass(frozen=True)
 class ShopifyCurrencyPolicy:
-    requested_currency_priority: tuple[str, ...]
-    method: str
-    locked_currency: str
-    locked_country: str
+    preferred_currencies: tuple[str, ...]
+    request_mode: str
+    fixed_currency: str
+    fixed_country: str
 
 
 @dataclass(frozen=True)
@@ -48,34 +48,34 @@ class ShopifyBrowserExtensionQualityPolicy:
 class ShopifyPolicyFactory:
     @staticmethod
     def currency(config: dict) -> ShopifyCurrencyPolicy:
-        raw = config.get('shopify_currency') if isinstance(config.get('shopify_currency'), dict) else {}
-        normalized_priority = tuple(
+        raw = config.get('shopify_market') if isinstance(config.get('shopify_market'), dict) else {}
+        preferred_currencies = tuple(
             code
             for code in (
                 'GBP' if str(x).strip().upper() == 'GBR' else str(x).strip().upper()
-                for x in (raw.get('requested_currency_priority') or [])
+                for x in (raw.get('preferred_currencies') or [])
                 if str(x).strip()
             )
             if code in ALLOWED_CURRENCY_CODES
         )
-        raw_method = str(raw.get('method') or '').strip().lower()
-        method = raw_method if raw_method in ALLOWED_CURRENCY_METHODS else 'priority_list'
-        locked_currency = ''
-        if method in {'locked_param_currency', 'locked_no_currency'}:
-            candidate = str(raw.get('locked_currency') or '').strip().upper()
+        raw_request_mode = str(raw.get('request_mode') or '').strip().lower()
+        request_mode = raw_request_mode if raw_request_mode in ALLOWED_REQUEST_MODES else 'prefer_list'
+        fixed_currency = ''
+        if request_mode in {'fixed_param', 'fixed_ambient'}:
+            candidate = str(raw.get('fixed_currency') or '').strip().upper()
             if candidate == 'GBR':
                 candidate = 'GBP'
             if candidate in ALLOWED_CURRENCY_CODES:
-                locked_currency = candidate
-            elif normalized_priority:
-                locked_currency = normalized_priority[0]
-        raw_country = str(raw.get('locked_country') or '').strip().upper()
-        locked_country = raw_country if len(raw_country) == 2 and raw_country.isalpha() else ''
+                fixed_currency = candidate
+            elif preferred_currencies:
+                fixed_currency = preferred_currencies[0]
+        raw_country = str(raw.get('fixed_country') or '').strip().upper()
+        fixed_country = raw_country if len(raw_country) == 2 and raw_country.isalpha() else ''
         return ShopifyCurrencyPolicy(
-            requested_currency_priority=normalized_priority,
-            method=method,
-            locked_currency=locked_currency,
-            locked_country=locked_country,
+            preferred_currencies=preferred_currencies,
+            request_mode=request_mode,
+            fixed_currency=fixed_currency,
+            fixed_country=fixed_country,
         )
 
     @staticmethod

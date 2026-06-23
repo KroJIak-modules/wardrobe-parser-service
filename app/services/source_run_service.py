@@ -71,8 +71,8 @@ class SourceRunService:
             'title': str(normalized.get('title') or '').strip(),
             'description_html': str(normalized.get('description_html') or '').strip() or None,
             'description': DescriptionTextService.normalize(normalized.get('description_html')),
-            'designer': str(normalized.get('vendor') or '').strip() or None,
-            'category': str(normalized.get('product_type') or '').strip() or None,
+            'designer': str(normalized.get('designer') or '').strip() or None,
+            'category': str(normalized.get('category') or '').strip() or None,
             'tags': normalized.get('tags') if isinstance(normalized.get('tags'), list) else [],
             'source_weight_grams': resolution.source_weight_grams,
             'weight_source': resolution.weight_source,
@@ -106,10 +106,6 @@ class SourceRunService:
             reasons_set.discard('missing_currency')
         else:
             reasons_set.add('missing_currency')
-        if product.get('source_weight_grams') is None:
-            reasons_set.add('missing_weight')
-        else:
-            reasons_set.discard('missing_weight')
         return sorted(reasons_set)
 
     def run(
@@ -144,7 +140,7 @@ class SourceRunService:
             source_key=source.key,
             adapter_key=source.adapter_key,
             dry_run=dry_run,
-            status=SourceRunStatus.IN_PROGRESS,
+            status=SourceRunStatus.RUNNING,
         )
 
         sync_mode = str(source.config.get('mode') or 'auto').strip().lower()
@@ -235,23 +231,11 @@ class SourceRunService:
                 normalized['url'] = url
                 handle = str(normalized.get('handle') or '').strip()
 
-                if url and url in report.quarantined_urls:
-                    if url:
-                        next_pending_candidate_urls.add(url)
-                    continue
-
-                # Duplicate policy should flag duplicates inside a single strategy pass.
-                # Cross-strategy repeats are expected during fallback and must be ignored.
+                # Exact repeats inside one source run are transport noise, not business dedup.
+                # Keep the first normalized delivery and silently ignore the rest.
                 if url and url in strategy_seen_urls:
-                    report.errors.append(f'duplicate_url:{url}')
-                    report.quarantined_urls.append(url)
-                    next_pending_candidate_urls.add(url)
                     continue
                 if handle and handle in strategy_seen_handles:
-                    report.errors.append(f'duplicate_handle:{handle}')
-                    if url:
-                        report.quarantined_urls.append(url)
-                        next_pending_candidate_urls.add(url)
                     continue
                 if url:
                     strategy_seen_urls.add(url)

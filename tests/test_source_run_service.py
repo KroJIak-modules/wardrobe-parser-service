@@ -72,8 +72,6 @@ class FakeAdapter(SiteAdapter):
             reasons.append('missing_price')
         if not any(variant.get('currency_code') for variant in variants):
             reasons.append('missing_currency')
-        if normalized_product.get('weight_grams') is None:
-            reasons.append('missing_weight')
         if not variants:
             reasons.append('missing_variants')
         return (len(reasons) == 0, reasons)
@@ -274,8 +272,8 @@ def test_config_validation_rejects_invalid_json_js_enrichment_field() -> None:
         'include_locale_sitemaps': False,
         'request_retries': 1,
     }
-    cfg['shopify_currency'] = {
-        'requested_currency_priority': ['USD', 'EUR', 'GBP'],
+    cfg['shopify_market'] = {
+        'preferred_currencies': ['USD', 'EUR', 'GBP'],
     }
     cfg['shopify_json_quality'] = {
         'antibot_pause_sec': 3,
@@ -296,8 +294,8 @@ def test_config_validation_ignores_unsupported_currency_codes_if_any_valid_left(
         'include_locale_sitemaps': False,
         'request_retries': 1,
     }
-    cfg['shopify_currency'] = {
-        'requested_currency_priority': ['JPY', 'USD', 'ABC'],
+    cfg['shopify_market'] = {
+        'preferred_currencies': ['JPY', 'USD', 'ABC'],
     }
     cfg['shopify_json_quality'] = {
         'antibot_pause_sec': 3,
@@ -314,8 +312,8 @@ def test_config_validation_rejects_currency_priority_without_any_supported_code(
         'include_locale_sitemaps': False,
         'request_retries': 1,
     }
-    cfg['shopify_currency'] = {
-        'requested_currency_priority': ['JPY', 'ABC'],
+    cfg['shopify_market'] = {
+        'preferred_currencies': ['JPY', 'ABC'],
     }
     try:
         ConfigValidationService.require_strategy_settings(cfg, ['shopify_json'])
@@ -324,7 +322,7 @@ def test_config_validation_rejects_currency_priority_without_any_supported_code(
         assert True
 
 
-def test_duplicate_policy_marks_error() -> None:
+def test_exact_duplicate_listing_is_ignored_without_quarantine_artifacts() -> None:
     cfg = _base_config()
     cfg['strategy_payloads']['s1'] = [
         {'url': 'u1', 'price': 10, 'currency': 'USD', 'weight_grams': 500, 'handle': 'h1'},
@@ -335,8 +333,9 @@ def test_duplicate_policy_marks_error() -> None:
 
     report = svc.run('jadedldn.com')
 
-    assert any('duplicate_url:u1' in e for e in report.errors)
-    assert 'u1' in report.quarantined_urls
+    assert report.total_found_products == 3
+    assert report.total_valid_products == 2
+    assert report.errors == []
 
 
 def test_baseline_visible_coverage_uses_visible_set_only() -> None:
@@ -355,7 +354,7 @@ def test_baseline_visible_coverage_uses_visible_set_only() -> None:
     assert report.visible_coverage == 1.0
 
 
-def test_missing_source_weight_keeps_product_unavailable() -> None:
+def test_missing_source_weight_does_not_make_product_unavailable() -> None:
     cfg = _base_config()
     cfg['strategy_payloads']['s1'] = [
         {'url': 'u1', 'title': 'Black hoodie', 'price': 10, 'currency': 'USD', 'weight_grams': 0},
@@ -363,10 +362,9 @@ def test_missing_source_weight_keeps_product_unavailable() -> None:
     ]
     svc = _build_service(cfg)
     report = svc.run('jadedldn.com')
-    assert report.total_valid_products == 0
-    assert len(report.unavailable_products) == 2
-    reasons = set(report.unavailable_products[0].get('status_reasons') or [])
-    assert 'missing_weight' in reasons
+    assert report.total_valid_products == 2
+    assert len(report.unavailable_products) == 0
+    assert report.aggregated_status_reasons.get('missing_weight') is None
 
 
 def test_source_weight_is_preserved_separately_from_service_status() -> None:

@@ -22,14 +22,12 @@ class SyncJobStatusResponse(BaseModel):
     created_at: str
     started_at: str | None = None
     finished_at: str | None = None
-    current_source_name: str | None = None
-    current_source_index: int = 0
     total_sources: int = 0
-    current_strategy: str | None = None
-    current_stage: str | None = None
-    products_success: int = 0
-    products_error: int = 0
+    processed_sources: int = 0
     progress_percent: float = 0.0
+    products_seen: int = 0
+    products_applied: int = 0
+    failed_products: int = 0
     can_cancel: bool = False
     error: str | None = None
 

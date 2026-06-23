@@ -143,7 +143,7 @@ class GrailedAlgoliaJsonLdStrategy:
         image_urls = next_data_images or self._to_list_images(payload.get('image'))
         handle = final_url.rstrip('/').split('/')[-1]
         brand = payload.get('brand') if isinstance(payload.get('brand'), dict) else {}
-        vendor = str(brand.get('name') or '').strip()
+        designer = str(brand.get('name') or '').strip()
 
         logger.strategy_event('progress', self.name, stage='item_parsed', handle=handle, images=len(image_urls))
         variant = {
@@ -165,15 +165,14 @@ class GrailedAlgoliaJsonLdStrategy:
             'handle': handle,
             'title': payload.get('name'),
             'description': payload.get('description'),
-            'vendor': vendor,
-            'product_type': self._extract_product_type(response.text),
+            'designer': designer,
+            'category': self._extract_product_type(response.text),
             'price': price,
             'currency': currency or None,
             'image_url': image_urls[0] if image_urls else '',
             'images': image_urls,
             'variants': [variant],
             'tags': [],
-            'status': 'available' if bool(available) else 'out_of_stock',
         }
         if gender_hints:
             out['source_gender_hints'] = gender_hints

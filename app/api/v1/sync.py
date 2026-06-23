@@ -145,6 +145,37 @@ def _filter_report_by_product_url(report: SourceRunReport, product_url: str) -> 
     )
 
 
+def _build_sync_job_status_response(job: object) -> SyncJobStatusResponse:
+    total_sources = max(0, len(getattr(job, "source_keys", []) or []))
+    processed_sources = max(0, int(getattr(job, "processed_sources", 0) or 0))
+    progress = float(getattr(job, "progress_percent", 0.0) or 0.0)
+    if progress <= 0.0 and total_sources > 0:
+        progress = (processed_sources / total_sources) * 100.0
+    if getattr(job, "status", None) in {"completed", "failed", "canceled"}:
+        progress = 100.0
+    progress = round(min(100.0, max(0.0, progress)), 2)
+
+    products_applied = max(0, int(getattr(job, "products_applied", 0) or 0))
+    failed_products = max(0, int(getattr(job, "failed_products", 0) or 0))
+    products_seen = max(products_applied + failed_products, int(getattr(job, "products_seen", 0) or 0))
+
+    return SyncJobStatusResponse(
+        job_id=job.job_id,
+        status=job.status,
+        created_at=job.created_at.isoformat(),
+        started_at=job.started_at.isoformat() if job.started_at else None,
+        finished_at=job.finished_at.isoformat() if job.finished_at else None,
+        total_sources=total_sources,
+        processed_sources=processed_sources,
+        progress_percent=progress,
+        products_seen=products_seen,
+        products_applied=products_applied,
+        failed_products=failed_products,
+        can_cancel=job.status in {'queued', 'running'},
+        error=job.error,
+    )
+
+
 @router.get('/sources')
 def list_sources() -> list[dict]:
     svc = service_factory.build()
@@ -301,30 +332,7 @@ def get_latest_sync_job() -> SyncJobStatusResponse | None:
     job = sync_orchestrator.get_latest()
     if job is None:
         return None
-    total = max(1, len(job.source_keys))
-    progress = float(getattr(job, "current_progress_percent", 0.0) or 0.0)
-    if progress <= 0.0:
-        progress = min(100.0, max(0.0, (job.processed_sources / total) * 100.0))
-    if job.status in {'completed', 'failed', 'cancelled'}:
-        progress = 100.0
-    stage = job.current_stage
-    return SyncJobStatusResponse(
-        job_id=job.job_id,
-        status=job.status,
-        created_at=job.created_at.isoformat(),
-        started_at=job.started_at.isoformat() if job.started_at else None,
-        finished_at=job.finished_at.isoformat() if job.finished_at else None,
-        current_source_name=job.current_source_name,
-        current_source_index=job.current_source_index,
-        total_sources=len(job.source_keys),
-        current_strategy=job.current_strategy,
-        current_stage=stage,
-        products_success=job.products_success,
-        products_error=job.products_error,
-        progress_percent=progress,
-        can_cancel=job.status in {'queued', 'in_progress'},
-        error=job.error,
-    )
+    return _build_sync_job_status_response(job)
 
 
 @router.get('/jobs/{job_id}/events', response_model=SyncEventsResponse)
@@ -355,30 +363,7 @@ def get_sync_job_status(job_id: str) -> SyncJobStatusResponse:
     job = sync_orchestrator.get_job(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail=f'job not found: {job_id}')
-    total = max(1, len(job.source_keys))
-    progress = float(getattr(job, "current_progress_percent", 0.0) or 0.0)
-    if progress <= 0.0:
-        progress = min(100.0, max(0.0, (job.processed_sources / total) * 100.0))
-    if job.status in {'completed', 'failed', 'cancelled'}:
-        progress = 100.0
-    stage = job.current_stage
-    return SyncJobStatusResponse(
-        job_id=job.job_id,
-        status=job.status,
-        created_at=job.created_at.isoformat(),
-        started_at=job.started_at.isoformat() if job.started_at else None,
-        finished_at=job.finished_at.isoformat() if job.finished_at else None,
-        current_source_name=job.current_source_name,
-        current_source_index=job.current_source_index,
-        total_sources=len(job.source_keys),
-        current_strategy=job.current_strategy,
-        current_stage=stage,
-        products_success=job.products_success,
-        products_error=job.products_error,
-        progress_percent=progress,
-        can_cancel=job.status in {'queued', 'in_progress'},
-        error=job.error,
-    )
+    return _build_sync_job_status_response(job)
 
 
 @router.get('/probe/jobs/latest', response_model=SyncJobStatusResponse | None)
@@ -386,29 +371,7 @@ def get_latest_probe_job() -> SyncJobStatusResponse | None:
     job = probe_orchestrator.get_latest()
     if job is None:
         return None
-    total = max(1, len(job.source_keys))
-    progress = float(getattr(job, "current_progress_percent", 0.0) or 0.0)
-    if progress <= 0.0:
-        progress = min(100.0, max(0.0, (job.processed_sources / total) * 100.0))
-    if job.status in {'completed', 'failed', 'cancelled'}:
-        progress = 100.0
-    return SyncJobStatusResponse(
-        job_id=job.job_id,
-        status=job.status,
-        created_at=job.created_at.isoformat(),
-        started_at=job.started_at.isoformat() if job.started_at else None,
-        finished_at=job.finished_at.isoformat() if job.finished_at else None,
-        current_source_name=job.current_source_name,
-        current_source_index=job.current_source_index,
-        total_sources=len(job.source_keys),
-        current_strategy=job.current_strategy,
-        current_stage=job.current_stage,
-        products_success=job.products_success,
-        products_error=job.products_error,
-        progress_percent=progress,
-        can_cancel=job.status in {'queued', 'in_progress'},
-        error=job.error,
-    )
+    return _build_sync_job_status_response(job)
 
 
 @router.get('/probe/jobs/{job_id}', response_model=SyncJobStatusResponse)
@@ -416,29 +379,7 @@ def get_probe_job_status(job_id: str) -> SyncJobStatusResponse:
     job = probe_orchestrator.get_job(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail=f'job not found: {job_id}')
-    total = max(1, len(job.source_keys))
-    progress = float(getattr(job, "current_progress_percent", 0.0) or 0.0)
-    if progress <= 0.0:
-        progress = min(100.0, max(0.0, (job.processed_sources / total) * 100.0))
-    if job.status in {'completed', 'failed', 'cancelled'}:
-        progress = 100.0
-    return SyncJobStatusResponse(
-        job_id=job.job_id,
-        status=job.status,
-        created_at=job.created_at.isoformat(),
-        started_at=job.started_at.isoformat() if job.started_at else None,
-        finished_at=job.finished_at.isoformat() if job.finished_at else None,
-        current_source_name=job.current_source_name,
-        current_source_index=job.current_source_index,
-        total_sources=len(job.source_keys),
-        current_strategy=job.current_strategy,
-        current_stage=job.current_stage,
-        products_success=job.products_success,
-        products_error=job.products_error,
-        progress_percent=progress,
-        can_cancel=job.status in {'queued', 'in_progress'},
-        error=job.error,
-    )
+    return _build_sync_job_status_response(job)
 
 
 @router.get('/probe/jobs/{job_id}/events', response_model=SyncEventsResponse)
@@ -467,30 +408,9 @@ def get_probe_job_events(job_id: str, cursor: int = Query(default=0, ge=0), limi
 @router.post('/probe/jobs/{job_id}/cancel', response_model=SyncJobStatusResponse)
 def cancel_probe_job(job_id: str) -> SyncJobStatusResponse:
     job = probe_orchestrator.cancel(job_id)
-    total = max(1, len(job.source_keys))
-    progress = float(getattr(job, "current_progress_percent", 0.0) or 0.0)
-    if progress <= 0.0:
-        progress = min(100.0, max(0.0, (job.processed_sources / total) * 100.0))
-    if job.status in {'completed', 'failed', 'cancelled'}:
-        progress = 100.0
-    stage = job.current_stage
-    return SyncJobStatusResponse(
-        job_id=job.job_id,
-        status=job.status,
-        created_at=job.created_at.isoformat(),
-        started_at=job.started_at.isoformat() if job.started_at else None,
-        finished_at=job.finished_at.isoformat() if job.finished_at else None,
-        current_source_name=job.current_source_name,
-        current_source_index=job.current_source_index,
-        total_sources=len(job.source_keys),
-        current_strategy=job.current_strategy,
-        current_stage=stage,
-        products_success=job.products_success,
-        products_error=job.products_error,
-        progress_percent=progress,
-        can_cancel=job.status in {'queued', 'in_progress'},
-        error=job.error,
-    )
+    if job is None:
+        raise HTTPException(status_code=404, detail=f'job not found: {job_id}')
+    return _build_sync_job_status_response(job)
 
 
 @router.post('/jobs/{job_id}/cancel', response_model=SyncJobStatusResponse)
@@ -498,24 +418,4 @@ def cancel_sync_job(job_id: str) -> SyncJobStatusResponse:
     job = sync_orchestrator.cancel(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail=f'job not found: {job_id}')
-    total = max(1, len(job.source_keys))
-    progress = min(100.0, max(0.0, (job.current_source_index / total) * 100.0))
-    if job.status in {'completed', 'failed', 'cancelled'}:
-        progress = 100.0
-    return SyncJobStatusResponse(
-        job_id=job.job_id,
-        status=job.status,
-        created_at=job.created_at.isoformat(),
-        started_at=job.started_at.isoformat() if job.started_at else None,
-        finished_at=job.finished_at.isoformat() if job.finished_at else None,
-        current_source_name=job.current_source_name,
-        current_source_index=job.current_source_index,
-        total_sources=len(job.source_keys),
-        current_strategy=job.current_strategy,
-        current_stage=job.current_stage,
-        products_success=job.products_success,
-        products_error=job.products_error,
-        progress_percent=progress,
-        can_cancel=job.status in {'queued', 'in_progress'},
-        error=job.error,
-    )
+    return _build_sync_job_status_response(job)

@@ -11,6 +11,7 @@ from app.schemas.run_report import SourceRunReport
 from app.schemas.sync_stages import STAGE_LABEL_RU, SyncStageCode
 from app.services.product_gender_service import ProductGenderService
 from app.services.run_logger import subscribe_run_events, unsubscribe_run_events
+from app.adapters.base import BaseProductAdapter
 
 
 def _utcnow() -> datetime:
@@ -41,18 +42,16 @@ class RuntimeJob:
     source_candidate_urls: dict[str, list[str]] = field(default_factory=dict)
     started_at: datetime | None = None
     finished_at: datetime | None = None
-    current_source_name: str | None = None
-    current_source_index: int = 0
-    current_strategy: str | None = None
-    current_stage: str | None = None
-    products_success: int = 0
-    products_error: int = 0
+    current_source_key: str | None = None
+    products_seen: int = 0
+    products_applied: int = 0
+    failed_products: int = 0
+    progress_percent: float = 0.0
     error: str | None = None
     cancel_requested: bool = False
     seq_counter: int = 0
     events: list[RuntimeEvent] = field(default_factory=list)
     processed_sources: int = 0
-    current_progress_percent: float = 0.0
 
 
 class SyncOrchestratorService:
@@ -74,7 +73,7 @@ class SyncOrchestratorService:
         with self._lock:
             if self._active_job_id:
                 active = self._jobs.get(self._active_job_id)
-                if active and active.status in {"queued", "in_progress"}:
+                if active and active.status in {"queued", "running"}:
                     raise RuntimeError("sync already in progress")
             job = RuntimeJob(
                 job_id=str(uuid4()),
@@ -105,18 +104,18 @@ class SyncOrchestratorService:
             job = self._jobs.get(job_id)
             if not job:
                 return None
-            if job.status in {"completed", "failed", "cancelled"}:
+            if job.status in {"completed", "failed", "canceled"}:
                 return job
             job.cancel_requested = True
             # Release active slot immediately even for in-progress job:
             # long-running source execution can ignore cancel_requested for a while,
             # and we must not block all next probe/manual launches with 409.
-            if job.status in {"queued", "in_progress"}:
-                job.status = "cancelled"
+            if job.status in {"queued", "running"}:
+                job.status = "canceled"
                 job.finished_at = _utcnow()
                 if self._active_job_id == job.job_id:
                     self._active_job_id = None
-                self._append_event(job, "job_cancelled", {"reason": "cancel_requested_immediate"})
+                self._append_event(job, "job_canceled", {"reason": "cancel_requested_immediate"})
             return job
 
     def get_events(self, job_id: str, cursor: int, limit: int) -> tuple[list[RuntimeEvent], int]:
@@ -210,9 +209,12 @@ class SyncOrchestratorService:
         description = str(item.get("description") or "").strip() or None
         designer = str(item.get("designer") or "").strip() or None
         category = str(item.get("category") or "").strip() or None
+        tags = BaseProductAdapter._normalize_tags(item.get("tags"))
         gender = ProductGenderService.normalize(item.get("gender"))
         source_weight_grams = SyncOrchestratorService._to_int(item.get("source_weight_grams"))
-        status = str(item.get("status") or "").strip().lower() or "unavailable"
+        orderability_status = str(item.get("orderability_status") or "").strip().lower()
+        if not orderability_status:
+            orderability_status = "unavailable"
         status_reason = str(item.get("status_reason") or "").strip() or None
         status_reasons_raw = item.get("status_reasons") if isinstance(item.get("status_reasons"), list) else []
         status_reasons = [str(reason).strip().lower() for reason in status_reasons_raw if str(reason).strip()]
@@ -253,10 +255,10 @@ class SyncOrchestratorService:
                 normalized_variant["compare_at_price"] = compare_at_price
             variants.append(normalized_variant)
         available_variants = [v for v in variants if bool(v.get("available", False))]
-        if variants and status == "available" and not available_variants:
-            status = "out_of_stock"
-        elif variants and status == "out_of_stock" and available_variants:
-            status = "available"
+        if variants and orderability_status == "orderable" and not available_variants:
+            orderability_status = "sold_out"
+        elif variants and orderability_status == "sold_out" and available_variants:
+            orderability_status = "orderable"
 
         payload = {
             "url": url or None,
@@ -269,9 +271,10 @@ class SyncOrchestratorService:
             "description_html": description_html,
             "designer": designer,
             "category": category,
+            "tags": tags,
             "gender": gender,
             "source_weight_grams": source_weight_grams,
-            "status": status,
+            "orderability_status": orderability_status,
             "status_reason": status_reason,
             "status_reasons": status_reasons,
             "images": dedup_images,
@@ -287,7 +290,7 @@ class SyncOrchestratorService:
             if not isinstance(raw, dict):
                 continue
             item = dict(raw)
-            item.setdefault("status", "available")
+            item.setdefault("orderability_status", "orderable")
             normalized = self._normalize_product_batch_item(item)
             if not normalized.get("url"):
                 continue
@@ -296,12 +299,57 @@ class SyncOrchestratorService:
             if not isinstance(raw, dict):
                 continue
             item = dict(raw)
-            item.setdefault("status", "unavailable")
+            item.setdefault("orderability_status", "unavailable")
             normalized = self._normalize_product_batch_item(item)
             if not normalized.get("url"):
                 continue
             out.append(normalized)
         return out
+
+    @staticmethod
+    def _build_report_error_payload(report: SourceRunReport) -> dict:
+        status = str(report.status.value).strip().lower()
+        report_errors = [str(item).strip() for item in (report.errors or []) if str(item).strip()]
+        attempt_errors = [
+            {
+                "strategy": str(attempt.strategy).strip(),
+                "error": str(attempt.error).strip(),
+            }
+            for attempt in (report.attempts or [])
+            if getattr(attempt, "error", None) and str(attempt.error).strip()
+        ]
+        if not report_errors and not attempt_errors and status != "failed":
+            return {}
+
+        error_message = None
+        if attempt_errors:
+            error_message = str(attempt_errors[-1]["error"]).strip() or None
+        if error_message is None and report_errors:
+            error_message = report_errors[-1]
+        if error_message is None and status == "failed":
+            error_message = "source run failed without reported error"
+
+        return {
+            "error_code": "source_failed" if status == "failed" else "source_report_error",
+            "error_message": error_message,
+            "error": {
+                "status": status,
+                "report_errors": report_errors,
+                "attempt_errors": attempt_errors,
+            },
+        }
+
+    @staticmethod
+    def _build_exception_error_payload(exc: Exception) -> dict:
+        message = str(exc).strip() or exc.__class__.__name__
+        return {
+            "error_code": exc.__class__.__name__,
+            "error_message": message,
+            "error": {
+                "type": exc.__class__.__name__,
+                "message": message,
+            },
+        }
 
     def _execute(self, job_id: str, runner: Callable[[str, bool, str, list[str]], SourceRunReport]) -> None:
         with self._lock:
@@ -309,13 +357,13 @@ class SyncOrchestratorService:
             if not job:
                 return
             if job.cancel_requested:
-                job.status = "cancelled"
+                job.status = "canceled"
                 job.finished_at = _utcnow()
                 if self._active_job_id == job.job_id:
                     self._active_job_id = None
-                self._append_event(job, "job_cancelled", {"reason": "cancelled_before_start"})
+                self._append_event(job, "job_canceled", {"reason": "canceled_before_start"})
                 return
-            job.status = "in_progress"
+            job.status = "running"
             job.started_at = _utcnow()
             self._append_event(job, "job_started", {"total_sources": len(job.source_keys)})
 
@@ -331,16 +379,14 @@ class SyncOrchestratorService:
             with self._lock:
                 job = self._jobs[job_id]
                 if job.cancel_requested:
-                    job.status = "cancelled"
+                    job.status = "canceled"
                     job.finished_at = _utcnow()
-                    self._append_event(job, "job_cancelled", {"reason": "cancel_requested"})
+                    self._append_event(job, "job_canceled", {"reason": "cancel_requested"})
                     if self._active_job_id == job.job_id:
                         self._active_job_id = None
                     return
                 source_index = min(len(job.source_keys), max(job.processed_sources + 1, 1))
-                job.current_source_name = source_key
-                job.current_source_index = source_index
-                job.current_stage = "source_started"
+                job.current_source_key = source_key
                 progress_percent = 0.0
                 total = max(1, len(job.source_keys))
                 if total > 0:
@@ -355,7 +401,7 @@ class SyncOrchestratorService:
                         "attempt": source_attempt,
                         "stage_code": SyncStageCode.SOURCE_PREPARE.value,
                         "stage_label": self._stage_label(SyncStageCode.SOURCE_PREPARE),
-                        "progress_percent": round(max(job.current_progress_percent, progress_percent), 2),
+                        "progress_percent": round(max(job.progress_percent, progress_percent), 2),
                     },
                 )
 
@@ -389,9 +435,8 @@ class SyncOrchestratorService:
                             strategy_percent = None
                 with self._lock:
                     live_job = self._jobs.get(job_id)
-                    if not live_job or live_job.status not in {"in_progress", "queued"}:
+                    if not live_job or live_job.status not in {"running", "queued"}:
                         return
-                    live_job.current_strategy = strategy or live_job.current_strategy
                     stage_text = stage_label
                     total = max(1, len(live_job.source_keys))
                     source_completed_base = ((max(live_job.processed_sources, 0)) / total) * 100.0
@@ -401,24 +446,23 @@ class SyncOrchestratorService:
                     progress_percent = max(0.0, min(100.0, progress_percent))
                     # Global progress must be monotonic for UI: strategy internal stage
                     # can reset (for example second pass), but overall job progress must not decrease.
-                    progress_percent = max(float(live_job.current_progress_percent or 0.0), progress_percent)
+                    progress_percent = max(float(live_job.progress_percent or 0.0), progress_percent)
                     if strategy_percent is not None:
                         stage_text = f"{stage_text} | {int(round(strategy_percent))}%"
-                    live_job.current_stage = stage_text
-                    live_job.current_progress_percent = progress_percent
+                    live_job.progress_percent = progress_percent
                     self._append_event(
                         live_job,
                         "source_progress",
                         {
                             "source_key": source_key,
-                            "source_index": live_job.current_source_index,
+                            "source_index": source_index,
                             "total_sources": len(live_job.source_keys),
                             "strategy": strategy,
                             "stage": raw_stage,
                             "stage_code": stage_code.value,
                             "stage_label": stage_label,
-                            "products_success": live_job.products_success,
-                            "products_error": live_job.products_error,
+                            "products_applied": live_job.products_applied,
+                            "failed_products": live_job.failed_products,
                             "fields": fields,
                             "progress_percent": round(progress_percent, 2),
                         },
@@ -442,20 +486,20 @@ class SyncOrchestratorService:
                 stage_code = SyncStageCode.SOURCE_DONE if stage == "source_done" else SyncStageCode.SOURCE_FAILED
                 status_value = str(report.status.value).lower()
                 should_requeue = status_value == "failed" and source_attempt <= max_source_requeues
+                error_payload = self._build_report_error_payload(report)
 
                 with self._lock:
                     job = self._jobs[job_id]
-                    job.current_strategy = strategy
-                    job.current_stage = stage
-                    job.products_success += len(valid_products)
-                    job.products_error += len(unavailable_products)
+                    job.products_applied += len(valid_products)
+                    job.failed_products += len(unavailable_products)
+                    job.products_seen = job.products_applied + job.failed_products
                     if should_requeue:
                         self._append_event(
                             job,
                             "source_progress",
                             {
                                 "source_key": source_key,
-                                "source_index": job.current_source_index,
+                                "source_index": source_index,
                                 "total_sources": len(job.source_keys),
                                 "strategy": strategy,
                                 "stage": "source_requeued",
@@ -463,36 +507,36 @@ class SyncOrchestratorService:
                                 "stage_label": "Временная ошибка, повтор в конце очереди",
                                 "attempt": source_attempt,
                                 "max_attempts": max_source_requeues + 1,
-                                "products_success": job.products_success,
-                                "products_error": job.products_error,
-                                "progress_percent": round(job.current_progress_percent, 2),
+                                "products_applied": job.products_applied,
+                                "failed_products": job.failed_products,
+                                "progress_percent": round(job.progress_percent, 2),
                             },
                         )
                     else:
                         job.processed_sources = min(len(job.source_keys), job.processed_sources + 1)
                         completed_sources_progress = max(0.0, min(100.0, (job.processed_sources / max(1, len(job.source_keys))) * 100.0))
-                        job.current_progress_percent = max(float(job.current_progress_percent or 0.0), completed_sources_progress)
+                        job.progress_percent = max(float(job.progress_percent or 0.0), completed_sources_progress)
                         self._append_event(
                             job,
                             "source_progress",
                             {
                                 "source_key": source_key,
-                                "source_index": job.current_source_index,
+                                "source_index": source_index,
                                 "total_sources": len(job.source_keys),
                                 "strategy": strategy,
                                 "stage": stage,
                                 "stage_code": stage_code.value,
                                 "stage_label": self._stage_label(stage_code),
-                                "products_success": job.products_success,
-                                "products_error": job.products_error,
-                                "progress_percent": round(job.current_progress_percent, 2),
+                                "products_applied": job.products_applied,
+                                "failed_products": job.failed_products,
+                                "progress_percent": round(job.progress_percent, 2),
                             },
                         )
                         self._append_event(
                             job,
                             "product_batch",
                             {
-                                "batch_id": f"batch_{source_key}_{job.current_source_index}_try{source_attempt}",
+                                "batch_id": f"batch_{source_key}_{source_index}_try{source_attempt}",
                                 "source_key": source_key,
                                 "strategy": strategy,
                                 "stage": stage,
@@ -514,22 +558,26 @@ class SyncOrchestratorService:
                                 "attempt": source_attempt,
                             },
                         )
+                        if error_payload:
+                            job.events[-1].payload.update(error_payload)
                 if should_requeue:
                     pending_sources.append(source_key)
                 elif status_value == "failed":
                     failed_sources += 1
             except Exception as exc:  # noqa: BLE001
                 should_requeue = source_attempt <= max_source_requeues
+                error_payload = self._build_exception_error_payload(exc)
                 with self._lock:
                     job = self._jobs[job_id]
-                    job.products_error += 1
+                    job.failed_products += 1
+                    job.products_seen = job.products_applied + job.failed_products
                     if should_requeue:
                         self._append_event(
                             job,
                             "source_progress",
                             {
                                 "source_key": source_key,
-                                "source_index": job.current_source_index,
+                                "source_index": source_index,
                                 "total_sources": len(job.source_keys),
                                 "stage": "source_requeued",
                                 "stage_code": SyncStageCode.SOURCE_PREPARE.value,
@@ -537,13 +585,13 @@ class SyncOrchestratorService:
                                 "attempt": source_attempt,
                                 "max_attempts": max_source_requeues + 1,
                                 "error": str(exc),
-                                "progress_percent": round(job.current_progress_percent, 2),
+                                "progress_percent": round(job.progress_percent, 2),
                             },
                         )
                     else:
                         job.processed_sources = min(len(job.source_keys), job.processed_sources + 1)
                         completed_sources_progress = max(0.0, min(100.0, (job.processed_sources / max(1, len(job.source_keys))) * 100.0))
-                        job.current_progress_percent = max(float(job.current_progress_percent or 0.0), completed_sources_progress)
+                        job.progress_percent = max(float(job.progress_percent or 0.0), completed_sources_progress)
                         self._append_event(
                             job,
                             "source_finished",
@@ -554,9 +602,9 @@ class SyncOrchestratorService:
                                 "stage_code": SyncStageCode.SOURCE_FAILED.value,
                                 "stage_label": self._stage_label(SyncStageCode.SOURCE_FAILED),
                                 "attempt": source_attempt,
-                                "error": str(exc),
                             },
                         )
+                        job.events[-1].payload.update(error_payload)
                 if should_requeue:
                     pending_sources.append(source_key)
                 else:
@@ -567,11 +615,11 @@ class SyncOrchestratorService:
         with self._lock:
             job = self._jobs[job_id]
             if job.cancel_requested:
-                job.status = "cancelled"
+                job.status = "canceled"
                 self._append_event(
                     job,
-                    "job_cancelled",
-                    {"reason": "cancel_requested", "stage_code": SyncStageCode.JOB_CANCELLED.value, "stage_label": self._stage_label(SyncStageCode.JOB_CANCELLED)},
+                    "job_canceled",
+                    {"reason": "cancel_requested", "stage_code": SyncStageCode.JOB_CANCELED.value, "stage_label": self._stage_label(SyncStageCode.JOB_CANCELED)},
                 )
             elif failed_sources > 0:
                 job.status = "failed"
@@ -584,6 +632,5 @@ class SyncOrchestratorService:
                 job.status = "completed"
                 self._append_event(job, "job_finished", {"stage_code": SyncStageCode.JOB_DONE.value, "stage_label": self._stage_label(SyncStageCode.JOB_DONE)})
             job.finished_at = _utcnow()
-            job.current_stage = job.status
             if self._active_job_id == job.job_id:
                 self._active_job_id = None

@@ -45,7 +45,7 @@ class ConfigValidationService:
     def require_strategy_settings(config: dict, strategy_sequence: list[str]) -> None:
         if any(item.startswith('shopify_') for item in strategy_sequence):
             ConfigValidationService._require_shopify_sitemap_policy(config)
-            ConfigValidationService._require_shopify_currency_policy(config)
+            ConfigValidationService._require_shopify_market_policy(config)
         if 'shopify_json' in strategy_sequence:
             ConfigValidationService._require_shopify_json_quality(config)
         if 'shopify_js' in strategy_sequence:
@@ -73,16 +73,16 @@ class ConfigValidationService:
 
 
     @staticmethod
-    def _require_shopify_currency_policy(config: dict) -> None:
-        raw = config.get('shopify_currency')
+    def _require_shopify_market_policy(config: dict) -> None:
+        raw = config.get('shopify_market')
         if not isinstance(raw, dict):
-            raise ConfigError('Missing source.config.shopify_currency')
-        method = str(raw.get('method') or 'priority_list').strip().lower()
-        if method not in {'priority_list', 'locked_param_currency', 'locked_no_currency'}:
-            raise ConfigError('Invalid source.config.shopify_currency.method')
-        priority = raw.get('requested_currency_priority')
+            raise ConfigError('Missing source.config.shopify_market')
+        request_mode = str(raw.get('request_mode') or 'prefer_list').strip().lower()
+        if request_mode not in {'prefer_list', 'fixed_param', 'fixed_ambient'}:
+            raise ConfigError('Invalid source.config.shopify_market.request_mode')
+        priority = raw.get('preferred_currencies')
         if not isinstance(priority, list) or not priority:
-            raise ConfigError('Missing source.config.shopify_currency.requested_currency_priority')
+            raise ConfigError('Missing source.config.shopify_market.preferred_currencies')
         valid_codes: list[str] = []
         for value in priority:
             code = str(value or '').strip().upper()
@@ -90,19 +90,17 @@ class ConfigValidationService:
                 code = 'GBP'
             if code in ALLOWED_CURRENCY_CODES:
                 valid_codes.append(code)
-        # Ignore unknown currencies from legacy configs,
-        # but require at least one supported code so runtime selection remains deterministic.
         if not valid_codes:
-            raise ConfigError('Invalid source.config.shopify_currency.requested_currency_priority')
-        if method in {'locked_param_currency', 'locked_no_currency'}:
-            locked = str(raw.get('locked_currency') or '').strip().upper()
-            if locked == 'GBR':
-                locked = 'GBP'
-            if locked not in ALLOWED_CURRENCY_CODES:
-                raise ConfigError('Invalid source.config.shopify_currency.locked_currency')
-        locked_country = str(raw.get('locked_country') or '').strip().upper()
-        if locked_country and (len(locked_country) != 2 or not locked_country.isalpha()):
-            raise ConfigError('Invalid source.config.shopify_currency.locked_country')
+            raise ConfigError('Invalid source.config.shopify_market.preferred_currencies')
+        if request_mode in {'fixed_param', 'fixed_ambient'}:
+            fixed_currency = str(raw.get('fixed_currency') or '').strip().upper()
+            if fixed_currency == 'GBR':
+                fixed_currency = 'GBP'
+            if fixed_currency not in ALLOWED_CURRENCY_CODES:
+                raise ConfigError('Invalid source.config.shopify_market.fixed_currency')
+        fixed_country = str(raw.get('fixed_country') or '').strip().upper()
+        if fixed_country and (len(fixed_country) != 2 or not fixed_country.isalpha()):
+            raise ConfigError('Invalid source.config.shopify_market.fixed_country')
     @staticmethod
     def _require_shopify_json_quality(config: dict) -> None:
         raw = config.get('shopify_json_quality')

@@ -84,7 +84,7 @@ class VintedJsonLdStrategy:
             size=(runtime_meta.get('size') if isinstance(runtime_meta, dict) else None) or dom_size,
             color=(runtime_meta.get('color') if isinstance(runtime_meta, dict) else None) or dom_color,
         )
-        product_type = self._extract_product_type(html)
+        category_name = self._extract_product_type(html)
         root_breadcrumb = self._extract_root_breadcrumb(soup)
         offers = payload.get('offers') if isinstance(payload.get('offers'), dict) else {}
         currency = str(offers.get('priceCurrency') or '').strip().upper()
@@ -95,7 +95,7 @@ class VintedJsonLdStrategy:
         handle_match = re.search(r'/items/(\d+)', item_url)
         handle = f'item-{handle_match.group(1)}' if handle_match else ''
         brand = payload.get('brand') if isinstance(payload.get('brand'), dict) else {}
-        vendor = str(brand.get('name') or '').strip()
+        designer = str(brand.get('name') or '').strip()
         runtime_price = runtime_meta.get('price')
         runtime_total_price = runtime_meta.get('total_item_price')
         runtime_fee = runtime_meta.get('service_fee')
@@ -124,15 +124,14 @@ class VintedJsonLdStrategy:
             'handle': handle,
             'title': payload.get('name'),
             'description': payload.get('description'),
-            'vendor': vendor,
-            'product_type': product_type,
+            'designer': designer,
+            'category': category_name,
             'price': price,
             'currency': currency or None,
             'image_url': image_urls[0] if image_urls else '',
             'images': image_urls,
             'variants': [variant],
             'tags': [],
-            'status': 'available' if bool(available) else 'out_of_stock',
         }
         if root_breadcrumb:
             out['source_gender_hints'] = root_breadcrumb

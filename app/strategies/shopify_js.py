@@ -8,11 +8,14 @@ from urllib.parse import urlparse
 import time
 
 from app.adapters.contracts import StrategyContext
+from app.adapters.base import BaseProductAdapter
 from app.services.run_logger import RunLogger
+from app.services.shopify_catalog_metadata_service import ShopifyCatalogMetadataService
 from app.services.shopify_currency_resolver import ShopifyCurrencyResolver
 from app.services.shopify_http_client import ShopifyHttpClient
 from app.services.shopify_policies import ShopifyJsQualityPolicy, ShopifyPolicyFactory, ShopifySitemapPolicy
 from app.services.shopify_sitemap_discovery import ShopifySitemapDiscovery
+from app.services.shopify_weight_service import ShopifyWeightService
 
 
 class ShopifyJsStrategy:
@@ -28,23 +31,23 @@ class ShopifyJsStrategy:
         currency_policy = ShopifyPolicyFactory.currency(cfg)
         storefront_currency = ''
         storefront_currency_source = 'disabled'
-        requested_priority = list(currency_policy.requested_currency_priority)
-        currency_method = str(currency_policy.method or 'priority_list').strip().lower()
-        locked_currency = str(currency_policy.locked_currency or '').strip().upper()
-        locked_country = str(currency_policy.locked_country or '').strip().upper()
-        if currency_method == 'locked_param_currency' and locked_currency:
-            effective_currency_priority = tuple([locked_currency])
-            storefront_currency = locked_currency
-            storefront_currency_source = 'shopify_currency_locked_param_currency'
-        elif currency_method == 'locked_no_currency':
+        preferred_currencies = list(currency_policy.preferred_currencies)
+        request_mode = str(currency_policy.request_mode or 'prefer_list').strip().lower()
+        fixed_currency = str(currency_policy.fixed_currency or '').strip().upper()
+        fixed_country = str(currency_policy.fixed_country or '').strip().upper()
+        if request_mode == 'fixed_param' and fixed_currency:
+            effective_currency_priority = tuple([fixed_currency])
+            storefront_currency = fixed_currency
+            storefront_currency_source = 'shopify_market_fixed_param'
+        elif request_mode == 'fixed_ambient':
             effective_currency_priority = tuple()
-            if locked_currency:
-                storefront_currency = locked_currency
-                storefront_currency_source = 'shopify_currency_locked_no_currency'
-        elif requested_priority:
-            effective_currency_priority = tuple(requested_priority)
-            storefront_currency = requested_priority[0]
-            storefront_currency_source = 'shopify_currency_requested_priority'
+            if fixed_currency:
+                storefront_currency = fixed_currency
+                storefront_currency_source = 'shopify_market_fixed_ambient'
+        elif preferred_currencies:
+            effective_currency_priority = tuple(preferred_currencies)
+            storefront_currency = preferred_currencies[0]
+            storefront_currency_source = 'shopify_market_preferred_currencies'
         else:
             effective_currency_priority = tuple()
         quality = ShopifyPolicyFactory.js_quality(cfg)
@@ -93,7 +96,7 @@ class ShopifyJsStrategy:
                 allowed_currencies=('EUR', 'USD', 'GBP', 'JPY'),
                 currency_priority=effective_currency_priority,
                 storefront_currency=storefront_currency,
-                locked_country=locked_country,
+                fixed_country=fixed_country,
             )
             return url, item, fail_type
 
@@ -151,7 +154,7 @@ class ShopifyJsStrategy:
                     allowed_currencies=('EUR', 'USD', 'GBP', 'JPY'),
                     currency_priority=effective_currency_priority,
                     storefront_currency=storefront_currency,
-                    locked_country=locked_country,
+                    fixed_country=fixed_country,
                 )
                 if item is not None:
                     out.append(item)
@@ -172,9 +175,9 @@ class ShopifyJsStrategy:
                 'max_products': sitemap_policy.max_products,
                 'storefront_currency': storefront_currency,
                 'storefront_currency_source': storefront_currency_source,
-                'currency_method': currency_method,
-                'locked_currency': locked_currency,
-                'locked_country': locked_country,
+                'request_mode': request_mode,
+                'fixed_currency': fixed_currency,
+                'fixed_country': fixed_country,
             })
         else:
             context.diagnostics.update({
@@ -192,9 +195,9 @@ class ShopifyJsStrategy:
                 'max_products': sitemap_policy.max_products,
                 'storefront_currency': storefront_currency,
                 'storefront_currency_source': storefront_currency_source,
-                'currency_method': currency_method,
-                'locked_currency': locked_currency,
-                'locked_country': locked_country,
+                'request_mode': request_mode,
+                'fixed_currency': fixed_currency,
+                'fixed_country': fixed_country,
             })
         logger.strategy_event('done', self.name, parsed=len(out), total=total)
         return out
@@ -229,7 +232,7 @@ class ShopifyJsStrategy:
         allowed_currencies: tuple[str, ...],
         currency_priority: tuple[str, ...],
         storefront_currency: str,
-        locked_country: str,
+        fixed_country: str,
     ) -> dict | None:
         handle = ShopifyJsStrategy._extract_handle(product_url)
         if not handle:
@@ -239,7 +242,7 @@ class ShopifyJsStrategy:
         currencies = [x for x in currency_priority if x] or ([storefront_currency] if storefront_currency else [''])
         for js_url in ShopifyJsStrategy._build_js_urls(base_url, product_url, handle):
             for cur in currencies:
-                params = ShopifyJsStrategy._shopify_market_params(currency=cur, locked_country=locked_country)
+                params = ShopifyJsStrategy._shopify_market_params(currency=cur, fixed_country=fixed_country)
                 response = ShopifyHttpClient.get_json(js_url, timeout, params=params)
                 if response.status_code != 200:
                     continue
@@ -254,7 +257,7 @@ class ShopifyJsStrategy:
         variants = payload.get('variants') if isinstance(payload.get('variants'), list) else []
         currency = ShopifyJsStrategy._resolve_currency(payload.get('currency'), storefront_currency, allowed_currencies)
         price = ShopifyJsStrategy._min_variant_price(variants, currency)
-        weight_grams = ShopifyJsStrategy._best_variant_weight(variants)
+        source_weight_grams = ShopifyJsStrategy._best_variant_weight(variants)
         images = payload.get('images') if isinstance(payload.get('images'), list) else []
         normalized_images = [ShopifyJsStrategy._normalize_image_url(str(x), base_url) for x in images if str(x).strip()]
         normalized_images = [x for x in normalized_images if x]
@@ -265,12 +268,16 @@ class ShopifyJsStrategy:
             'handle': handle,
             'title': str(payload.get('title') or '').strip(),
             'description': str(payload.get('body_html') or payload.get('description') or '').strip() or None,
-            'vendor': str(payload.get('vendor') or '').strip(),
-            'product_type': str(payload.get('type') or '').strip(),
-            'tags': payload.get('tags') if isinstance(payload.get('tags'), list) else [],
+            'designer': str(payload.get('vendor') or '').strip(),
+            'category': ShopifyCatalogMetadataService.resolve_category(
+                payload,
+                product_url=f'{base_url}/products/{handle}',
+                timeout=timeout,
+            ),
+            'tags': BaseProductAdapter._normalize_tags(payload.get('tags')),
             'price': price,
             'currency': currency,
-            'weight_grams': weight_grams,
+            'source_weight_grams': source_weight_grams,
             'variants': variants,
             'images': normalized_images,
             'image_url': image_url,
@@ -287,7 +294,7 @@ class ShopifyJsStrategy:
         allowed_currencies: tuple[str, ...],
         currency_priority: tuple[str, ...],
         storefront_currency: str,
-        locked_country: str,
+        fixed_country: str,
     ) -> tuple[dict | None, str | None]:
         backoffs = quality.retry_backoff_sec
         result, fail_type = ShopifyJsStrategy._parse_with_classification(
@@ -297,7 +304,7 @@ class ShopifyJsStrategy:
             allowed_currencies=allowed_currencies,
             currency_priority=currency_priority,
             storefront_currency=storefront_currency,
-            locked_country=locked_country,
+            fixed_country=fixed_country,
         )
         if result is not None:
             return result, None
@@ -313,7 +320,7 @@ class ShopifyJsStrategy:
                 allowed_currencies=allowed_currencies,
                 currency_priority=currency_priority,
                 storefront_currency=storefront_currency,
-                locked_country=locked_country,
+                fixed_country=fixed_country,
             )
             if result is not None:
                 return result, None
@@ -331,7 +338,7 @@ class ShopifyJsStrategy:
         allowed_currencies: tuple[str, ...],
         currency_priority: tuple[str, ...],
         storefront_currency: str,
-        locked_country: str,
+        fixed_country: str,
     ) -> tuple[dict | None, str | None]:
         handle = ShopifyJsStrategy._extract_handle(product_url)
         if not handle:
@@ -342,7 +349,7 @@ class ShopifyJsStrategy:
         for js_url in ShopifyJsStrategy._build_js_urls(base_url, product_url, handle):
             for cur in currencies:
                 try:
-                    params = ShopifyJsStrategy._shopify_market_params(currency=cur, locked_country=locked_country)
+                    params = ShopifyJsStrategy._shopify_market_params(currency=cur, fixed_country=fixed_country)
                     response = ShopifyHttpClient.get_json(js_url, timeout, params=params)
                 except Exception:
                     last_fail = 'network'
@@ -369,7 +376,7 @@ class ShopifyJsStrategy:
         variants = payload.get('variants') if isinstance(payload.get('variants'), list) else []
         currency = ShopifyJsStrategy._resolve_currency(payload.get('currency'), storefront_currency, allowed_currencies)
         price = ShopifyJsStrategy._min_variant_price(variants, currency)
-        weight_grams = ShopifyJsStrategy._best_variant_weight(variants)
+        source_weight_grams = ShopifyJsStrategy._best_variant_weight(variants)
         images = payload.get('images') if isinstance(payload.get('images'), list) else []
         normalized_images = [ShopifyJsStrategy._normalize_image_url(str(x), base_url) for x in images if str(x).strip()]
         normalized_images = [x for x in normalized_images if x]
@@ -378,12 +385,12 @@ class ShopifyJsStrategy:
             'url': f'{base_url}/products/{handle}',
             'handle': handle,
             'title': str(payload.get('title') or '').strip(),
-            'vendor': str(payload.get('vendor') or '').strip(),
-            'product_type': str(payload.get('type') or '').strip(),
-            'tags': payload.get('tags') if isinstance(payload.get('tags'), list) else [],
+            'designer': str(payload.get('vendor') or '').strip(),
+            'category': ShopifyCatalogMetadataService.resolve_category(payload),
+            'tags': BaseProductAdapter._normalize_tags(payload.get('tags')),
             'price': price,
             'currency': currency,
-            'weight_grams': weight_grams,
+            'source_weight_grams': source_weight_grams,
             'variants': variants,
             'images': normalized_images,
             'image_url': image_url,
@@ -429,20 +436,9 @@ class ShopifyJsStrategy:
 
     @staticmethod
     def _best_variant_weight(variants: list[dict]) -> int | None:
-        values: list[int] = []
-        for variant in variants:
-            if not isinstance(variant, dict):
-                continue
-            raw = variant.get('grams')
-            if raw is None:
-                raw = variant.get('weight')
-            try:
-                grams = int(raw)
-            except Exception:
-                continue
-            if grams > 0:
-                values.append(grams)
-        return min(values) if values else None
+        return ShopifyWeightService.resolve_variant_weight_grams(
+            [variant for variant in variants if isinstance(variant, dict)]
+        )
 
     @staticmethod
     def _normalize_image_url(value: str, base_url: str) -> str:
@@ -456,12 +452,12 @@ class ShopifyJsStrategy:
         return raw
 
     @staticmethod
-    def _shopify_market_params(*, currency: str, locked_country: str) -> dict[str, str] | None:
+    def _shopify_market_params(*, currency: str, fixed_country: str) -> dict[str, str] | None:
         params: dict[str, str] = {}
         if currency:
             params['currency'] = currency
-        if locked_country:
-            params['country'] = locked_country
+        if fixed_country:
+            params['country'] = fixed_country
         return params or None
 
     @staticmethod

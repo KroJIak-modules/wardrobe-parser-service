@@ -10,12 +10,14 @@ from shutil import which
 
 from app.adapters.contracts import StrategyContext
 from app.services.run_logger import RunLogger
+from app.services.shopify_catalog_metadata_service import ShopifyCatalogMetadataService
 from app.services.shopify_policies import ShopifyPolicyFactory
+from app.services.shopify_weight_service import ShopifyWeightService
 
 
 class ShopifyBrowserExtensionStrategy:
     """
-    Browser fallback strategy (legacy-like behavior):
+    Browser fallback strategy:
     - real Chromium profile + extension runner
     - integrated into new strategy contract
     - candidate-only fallback input
@@ -33,7 +35,6 @@ class ShopifyBrowserExtensionStrategy:
         candidate_urls = [str(x).strip() for x in context.candidate_urls if str(x).strip()]
 
         raw_browser_cfg = cfg.get('browser_extension') if isinstance(cfg.get('browser_extension'), dict) else {}
-        raw_currency_cfg = cfg.get('shopify_currency') if isinstance(cfg.get('shopify_currency'), dict) else {}
         script_path = str(raw_browser_cfg.get('script_path') or '').strip()
         if not script_path:
             raise RuntimeError('Missing source.config.browser_extension.script_path')
@@ -49,16 +50,16 @@ class ShopifyBrowserExtensionStrategy:
         max_collection_pages = int(raw_browser_cfg.get('max_collection_pages', 0))
         skip_discovery_for_limited_json_export = bool(raw_browser_cfg.get('skip_discovery_for_limited_json_export', False))
         prefer_bridge_fetch = bool(raw_browser_cfg.get('prefer_bridge_fetch', False))
-        country_code = str(raw_currency_cfg.get('country_code') or '').strip().upper()
-        requested_currency_priority = list(currency_policy.requested_currency_priority)
-        currency_method = str(currency_policy.method or 'priority_list').strip().lower()
-        locked_currency = str(currency_policy.locked_currency or '').strip().upper()
-        if currency_method == 'locked_param_currency' and locked_currency:
-            effective_currency_priority = [locked_currency]
-        elif currency_method == 'locked_no_currency':
+        fixed_country = str(currency_policy.fixed_country or '').strip().upper()
+        preferred_currencies = list(currency_policy.preferred_currencies)
+        request_mode = str(currency_policy.request_mode or 'prefer_list').strip().lower()
+        fixed_currency = str(currency_policy.fixed_currency or '').strip().upper()
+        if request_mode == 'fixed_param' and fixed_currency:
+            effective_currency_priority = [fixed_currency]
+        elif request_mode == 'fixed_ambient':
             effective_currency_priority = []
         else:
-            effective_currency_priority = requested_currency_priority
+            effective_currency_priority = preferred_currencies
 
         logger.strategy_event('start', self.name, base_url=base_url, total=len(candidate_urls))
         payload = self._run_runner(
@@ -75,7 +76,7 @@ class ShopifyBrowserExtensionStrategy:
             max_collection_pages=max(0, max_collection_pages),
             skip_discovery_for_limited_json_export=skip_discovery_for_limited_json_export,
             prefer_bridge_fetch=prefer_bridge_fetch,
-            country_code=country_code,
+            fixed_country=fixed_country,
             currency_priority=effective_currency_priority,
             logger=logger,
         )
@@ -108,8 +109,9 @@ class ShopifyBrowserExtensionStrategy:
                 'products_fetch_failed': int(payload.get('products_fetch_failed') or 0),
                 'http_429_count': int(payload.get('http_429_count') or 0),
                 'retry_backoff_sec': ','.join(str(x) for x in quality.retry_backoff_sec),
-                'currency_method': currency_method,
-                'locked_currency': locked_currency,
+                'request_mode': request_mode,
+                'fixed_currency': fixed_currency,
+                'fixed_country': fixed_country,
             }
         )
         logger.strategy_event('done', self.name, parsed=len(out), total=len(candidate_urls))
@@ -131,7 +133,7 @@ class ShopifyBrowserExtensionStrategy:
         max_collection_pages: int,
         skip_discovery_for_limited_json_export: bool,
         prefer_bridge_fetch: bool,
-        country_code: str,
+        fixed_country: str,
         currency_priority: list[str],
         logger: RunLogger,
     ) -> dict:
@@ -178,8 +180,8 @@ class ShopifyBrowserExtensionStrategy:
             cmd += ['--scenario-id', scenario_id]
         if currency_priority:
             cmd += ['--currency-priority', ','.join(currency_priority)]
-        if country_code:
-            cmd += ['--country-code', country_code]
+        if fixed_country:
+            cmd += ['--country-code', fixed_country]
 
         proc = subprocess.Popen(
             cmd,
@@ -296,16 +298,22 @@ class ShopifyBrowserExtensionStrategy:
             'url': raw_url,
             'handle': str(item.get('handle') or '').strip(),
             'title': str(item.get('title') or '').strip(),
-            'product_type': str(item.get('product_type') or '').strip(),
+            'category': ShopifyCatalogMetadataService.resolve_category(
+                item,
+                product_url=raw_url or None,
+                timeout=10,
+            ),
             'tags': [],
             'price': ShopifyBrowserExtensionStrategy._to_decimal(raw_price),
             'currency': raw_currency,
-            'weight_grams': None,
+            'source_weight_grams': ShopifyWeightService.resolve_variant_weight_grams(
+                [variant for variant in variants if isinstance(variant, dict)]
+            ),
             'variants': variants,
             'images': [str(x).strip() for x in image_urls if str(x).strip()],
             'image_url': str(image_urls[0]).strip() if image_urls else '',
             'description': str(item.get('description') or '').strip() or None,
-            'vendor': str(item.get('vendor') or '').strip(),
+            'designer': str(item.get('vendor') or '').strip(),
         }
 
     @staticmethod

@@ -61,6 +61,25 @@ function normalizeProductUrl(rawUrl, baseUrl) {
   }
 }
 
+function normalizeTags(rawTags) {
+  const source = typeof rawTags === 'string'
+    ? rawTags.split(',')
+    : Array.isArray(rawTags)
+      ? rawTags
+      : rawTags === null || rawTags === undefined || rawTags === ''
+        ? []
+        : [rawTags];
+  const out = [];
+  const seen = new Set();
+  for (const item of source) {
+    const text = String(item ?? '').trim();
+    if (!text || seen.has(text)) continue;
+    seen.add(text);
+    out.push(text);
+  }
+  return out;
+}
+
 function mapProductForExport(product, sourceUrl, currencyCode = null) {
   const payloadCurrencyRaw = String(product?.currency || product?.currency_code || '').trim().toUpperCase();
   const payloadCurrency = payloadCurrencyRaw.length === 3 ? payloadCurrencyRaw : null;
@@ -90,7 +109,7 @@ function mapProductForExport(product, sourceUrl, currencyCode = null) {
     description: product?.description ?? product?.body_html ?? null,
     vendor: product?.vendor ?? null,
     product_type: product?.product_type ?? product?.type ?? null,
-    tags: Array.isArray(product?.tags) ? product.tags : [],
+    tags: normalizeTags(product?.tags),
     status: product?.status ?? null,
     published_at: product?.published_at ?? null,
     url: sourceUrl,

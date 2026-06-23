@@ -16,7 +16,7 @@ class SyncStageCode(str, Enum):
     SOURCE_FAILED = "source_failed"
     JOB_DONE = "job_done"
     JOB_FAILED = "job_failed"
-    JOB_CANCELLED = "job_cancelled"
+    JOB_CANCELED = "job_canceled"
 
 
 STAGE_LABEL_RU: dict[SyncStageCode, str] = {
@@ -32,5 +32,5 @@ STAGE_LABEL_RU: dict[SyncStageCode, str] = {
     SyncStageCode.SOURCE_FAILED: "Ошибка обработки источника",
     SyncStageCode.JOB_DONE: "Синхронизация завершена",
     SyncStageCode.JOB_FAILED: "Синхронизация завершена с ошибками",
-    SyncStageCode.JOB_CANCELLED: "Синхронизация отменена",
+    SyncStageCode.JOB_CANCELED: "Синхронизация отменена",
 }

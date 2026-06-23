@@ -8,16 +8,10 @@ class SourceStatus(str, Enum):
     AUTH_REQUIRED = 'auth_required'
 
 
-class SourceProductStatus(str, Enum):
-    AVAILABLE = 'available'
-    OUT_OF_STOCK = 'out_of_stock'
-    UNAVAILABLE = 'unavailable'
-
-
 class SourceRunStatus(str, Enum):
-    PENDING = 'pending'
-    IN_PROGRESS = 'in_progress'
+    QUEUED = 'queued'
+    RUNNING = 'running'
     SUCCESS = 'success'
     PARTIAL = 'partial'
     FAILED = 'failed'
-    CANCELLED = 'cancelled'
+    CANCELED = 'canceled'

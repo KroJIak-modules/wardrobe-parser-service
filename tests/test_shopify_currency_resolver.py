@@ -18,54 +18,54 @@ def test_resolve_currency_uses_storefront_currency_without_usd_fallback() -> Non
     assert ShopifyJsonStrategy._resolve_currency('CAD', 'CAD', ('EUR', 'USD', 'GBP')) == ''
 
 
-def test_currency_policy_requested_currency_priority_is_normalized() -> None:
+def test_currency_policy_preferred_currencies_are_normalized() -> None:
     from app.services.shopify_policies import ShopifyPolicyFactory
 
     policy = ShopifyPolicyFactory.currency({
-        'shopify_currency': {
-            'requested_currency_priority': ['gbr', 'usd'],
+        'shopify_market': {
+            'preferred_currencies': ['gbr', 'usd'],
         }
     })
-    assert policy.requested_currency_priority[0] == 'GBP'
+    assert policy.preferred_currencies[0] == 'GBP'
 
 
 def test_currency_policy_filters_unsupported_codes() -> None:
     from app.services.shopify_policies import ShopifyPolicyFactory
 
     policy = ShopifyPolicyFactory.currency({
-        'shopify_currency': {
-            'requested_currency_priority': ['JPY', 'usd', 'ZZZ', 'gbr'],
+        'shopify_market': {
+            'preferred_currencies': ['JPY', 'usd', 'ZZZ', 'gbr'],
         }
     })
-    assert policy.requested_currency_priority == ('JPY', 'USD', 'GBP')
+    assert policy.preferred_currencies == ('JPY', 'USD', 'GBP')
 
 
-def test_currency_policy_locked_no_currency_mode() -> None:
+def test_currency_policy_fixed_ambient_mode() -> None:
     from app.services.shopify_policies import ShopifyPolicyFactory
 
     policy = ShopifyPolicyFactory.currency({
-        'shopify_currency': {
-            'method': 'locked_no_currency',
-            'locked_currency': 'eur',
-            'requested_currency_priority': ['USD', 'EUR', 'GBP'],
+        'shopify_market': {
+            'request_mode': 'fixed_ambient',
+            'fixed_currency': 'eur',
+            'preferred_currencies': ['USD', 'EUR', 'GBP'],
         }
     })
-    assert policy.method == 'locked_no_currency'
-    assert policy.locked_currency == 'EUR'
+    assert policy.request_mode == 'fixed_ambient'
+    assert policy.fixed_currency == 'EUR'
 
 
-def test_currency_policy_locked_param_currency_mode() -> None:
+def test_currency_policy_fixed_param_mode() -> None:
     from app.services.shopify_policies import ShopifyPolicyFactory
 
     policy = ShopifyPolicyFactory.currency({
-        'shopify_currency': {
-            'method': 'locked_param_currency',
-            'locked_currency': 'gbr',
-            'requested_currency_priority': ['USD', 'EUR', 'GBP'],
+        'shopify_market': {
+            'request_mode': 'fixed_param',
+            'fixed_currency': 'gbr',
+            'preferred_currencies': ['USD', 'EUR', 'GBP'],
         }
     })
-    assert policy.method == 'locked_param_currency'
-    assert policy.locked_currency == 'GBP'
+    assert policy.request_mode == 'fixed_param'
+    assert policy.fixed_currency == 'GBP'
 
 
 def test_shopify_js_weight_accepts_weight_field() -> None:

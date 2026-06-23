@@ -16,7 +16,7 @@ class WeightResolution:
 class WeightEnrichmentService:
     @classmethod
     def resolve(cls, product: Mapping[str, object]) -> WeightResolution:
-        source_weight = cls._coerce_positive_weight(product.get("weight_grams"))
+        source_weight = cls._coerce_positive_weight(product.get("source_weight_grams"))
         if source_weight is not None:
             return WeightResolution(
                 source_weight_grams=source_weight,
