@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1 import api_router
 from app.core.config import settings
+from app.services.source_registry_bootstrap_service import SourceRegistryBootstrapService
 
 
 def create_app() -> FastAPI:
@@ -25,6 +26,13 @@ def create_app() -> FastAPI:
     @app.get('/health')
     def health() -> dict[str, str]:
         return {'status': 'ok'}
+
+    @app.on_event("startup")
+    def bootstrap_source_registry() -> None:
+        try:
+            SourceRegistryBootstrapService().ensure_backend_seeded()
+        except Exception as exc:  # noqa: BLE001
+            logging.getLogger(__name__).warning("Source registry bootstrap skipped: %s", exc)
 
     app.include_router(api_router)
     return app

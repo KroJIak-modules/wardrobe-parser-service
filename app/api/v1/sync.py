@@ -21,11 +21,6 @@ sync_orchestrator = SyncOrchestratorService(max_workers=1)
 probe_orchestrator = SyncOrchestratorService(max_workers=2)
 
 
-class SourceFlagPatch(BaseModel):
-    enabled: bool | None = None
-    sync_enabled: bool | None = None
-
-
 class ProbeProductRequest(BaseModel):
     product_url: str
     dry_run: bool = False
@@ -192,27 +187,6 @@ def list_sources() -> list[dict]:
         }
         for item in items
     ]
-
-
-@router.patch('/sources/{source_key}')
-def patch_source(source_key: str, payload: SourceFlagPatch) -> dict:
-    svc = service_factory.build()
-    try:
-        updated = svc.source_repo.patch_flags(
-            source_key,
-            enabled=payload.enabled,
-            sync_enabled=payload.sync_enabled,
-        )
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return {
-        'id': updated.id,
-        'key': updated.key,
-        'url': updated.url,
-        'adapter_key': updated.adapter_key,
-        'enabled': updated.enabled,
-        'sync_enabled': updated.sync_enabled,
-    }
 
 
 @router.post('/sources/{source_key}/run', response_model=SourceRunReport)

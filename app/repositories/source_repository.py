@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import json
-import os
-from pathlib import Path
+from typing import Any
+
+import requests
+
+from app.core.config import settings
+from app.core.exceptions import ConfigError
+from app.services.source_registry_bootstrap_service import SourceRegistryBootstrapService
 
 
 @dataclass
@@ -14,92 +18,55 @@ class SourceRecord:
     adapter_key: str
     enabled: bool
     sync_enabled: bool
-    config: dict
+    config: dict[str, Any]
 
 
 class SourceRepository:
-    """File-backed source registry for rework stage."""
+    """Backend-backed source registry for runtime parser operations."""
 
-    def __init__(self, config_path: str = 'config/sources.json') -> None:
-        explicit_env = str(os.getenv("SOURCES_CONFIG_PATH") or "").strip()
-        candidate_raw = explicit_env or config_path
-        self.config_path = Path(candidate_raw)
+    def __init__(self) -> None:
+        self._bootstrap = SourceRegistryBootstrapService()
 
-    def get_by_key(self, source_key: str) -> SourceRecord:
-        if not self.config_path.exists():
-            raise KeyError(f'Sources config not found: {self.config_path}')
-        raw = json.loads(self.config_path.read_text(encoding='utf-8'))
-        items = raw.get('sources') if isinstance(raw, dict) else None
-        if not isinstance(items, list):
-            raise KeyError('Invalid sources config format: expected {"sources": [...]}')
-        for item in items:
-            if not isinstance(item, dict):
-                continue
-            key = str(item.get('key') or '').strip()
-            if key != source_key:
-                continue
-            return SourceRecord(
-                id=int(item.get('id') or 0),
-                key=key,
-                url=str(item.get('url') or '').strip(),
-                adapter_key=str(item.get('adapter_key') or '').strip(),
-                enabled=bool(item.get('enabled', True)),
-                sync_enabled=bool(item.get('sync_enabled', True)),
-                config=dict(item.get('config') or {}),
-            )
-        raise KeyError(f'Unknown source key: {source_key}')
+    @staticmethod
+    def _base_url() -> str:
+        return f"{settings.backend_base_url.rstrip('/')}/api/v1/internal/service/sources"
+
+    @staticmethod
+    def _headers() -> dict[str, str]:
+        return {"X-Internal-Token": str(settings.internal_api_token or "").strip()}
+
+    @staticmethod
+    def _deserialize(item: dict[str, Any]) -> SourceRecord:
+        return SourceRecord(
+            id=int(item.get("id") or 0),
+            key=str(item.get("key") or "").strip(),
+            url=str(item.get("url") or "").strip(),
+            adapter_key=str(item.get("adapter_key") or "").strip(),
+            enabled=bool(item.get("enabled", True)),
+            sync_enabled=bool(item.get("sync_enabled", True)),
+            config=dict(item.get("config") or {}),
+        )
 
     def list_all(self) -> list[SourceRecord]:
-        if not self.config_path.exists():
-            raise KeyError(f'Sources config not found: {self.config_path}')
-        raw = json.loads(self.config_path.read_text(encoding='utf-8'))
-        items = raw.get('sources') if isinstance(raw, dict) else None
-        if not isinstance(items, list):
-            raise KeyError('Invalid sources config format: expected {"sources": [...]}')
-        out: list[SourceRecord] = []
-        for item in items:
-            if not isinstance(item, dict):
-                continue
-            out.append(
-                SourceRecord(
-                    id=int(item.get('id') or 0),
-                    key=str(item.get('key') or '').strip(),
-                    url=str(item.get('url') or '').strip(),
-                    adapter_key=str(item.get('adapter_key') or '').strip(),
-                    enabled=bool(item.get('enabled', True)),
-                    sync_enabled=bool(item.get('sync_enabled', True)),
-                    config=dict(item.get('config') or {}),
-                )
-            )
-        return out
+        self._bootstrap.ensure_backend_seeded()
+        try:
+            response = requests.get(self._base_url(), headers=self._headers(), timeout=(5, 30))
+            response.raise_for_status()
+            payload = response.json()
+        except requests.RequestException as exc:
+            raise ConfigError(f"backend_sources_unavailable:{exc}") from exc
+        items = payload if isinstance(payload, list) else []
+        return [
+            self._deserialize(item)
+            for item in items
+            if isinstance(item, dict) and str(item.get("key") or "").strip()
+        ]
 
-    def patch_flags(
-        self,
-        source_key: str,
-        *,
-        enabled: bool | None = None,
-        sync_enabled: bool | None = None,
-    ) -> SourceRecord:
-        if not self.config_path.exists():
-            raise KeyError(f'Sources config not found: {self.config_path}')
-        raw = json.loads(self.config_path.read_text(encoding='utf-8'))
-        items = raw.get('sources') if isinstance(raw, dict) else None
-        if not isinstance(items, list):
-            raise KeyError('Invalid sources config format: expected {"sources": [...]}')
-        found = False
-        for item in items:
-            if not isinstance(item, dict):
-                continue
-            key = str(item.get('key') or '').strip()
-            if key != source_key:
-                continue
-            if enabled is not None:
-                item['enabled'] = bool(enabled)
-            if sync_enabled is not None:
-                item['sync_enabled'] = bool(sync_enabled)
-            found = True
-            break
-        if not found:
-            raise KeyError(f'Unknown source key: {source_key}')
-        self.config_path.write_text(json.dumps({'sources': items}, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
-        return self.get_by_key(source_key)
+    def get_by_key(self, source_key: str) -> SourceRecord:
+        normalized = str(source_key or "").strip().lower()
+        if not normalized:
+            raise KeyError(source_key)
+        for item in self.list_all():
+            if str(item.key).strip().lower() == normalized:
+                return item
+        raise KeyError(source_key)
