@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import quote, urljoin
 
@@ -15,6 +16,13 @@ from app.services.run_logger import RunLogger
 class GrailedAlgoliaJsonLdStrategy:
     name = 'grailed_algolia_jsonld'
     _ua = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36'
+    _page_retry_backoff_sec = (0.25, 0.75, 1.5)
+    _request_headers = {
+        'User-Agent': _ua,
+        # Grailed intermittently breaks compressed responses mid-stream; plain transfer is more stable here.
+        'Accept-Encoding': 'identity',
+        'Connection': 'close',
+    }
 
     def run(self, context: StrategyContext) -> list[dict]:
         logger = RunLogger(context.run_id)
@@ -78,7 +86,7 @@ class GrailedAlgoliaJsonLdStrategy:
         return out
 
     def _extract_algolia_creds(self, base_url: str, timeout: int) -> tuple[str, str]:
-        html = requests.get(base_url, timeout=timeout, headers={'User-Agent': self._ua}).text
+        html, _ = self._get_text_with_retry(base_url, timeout=timeout, allow_redirects=True)
         next_data_match = re.search(r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', html, flags=re.S)
         if not next_data_match:
             raise RuntimeError('next_data_not_found')
@@ -123,13 +131,11 @@ class GrailedAlgoliaJsonLdStrategy:
         return urljoin(base_url, f'/listings/{listing_id}')
 
     def _fetch_one(self, item_url: str, timeout: int, logger: RunLogger) -> dict:
-        response = requests.get(item_url, timeout=timeout, headers={'User-Agent': self._ua}, allow_redirects=True)
-        response.raise_for_status()
-        final_url = response.url
-        payload = self._extract_product_ld_json(response.text)
-        next_data_images = self._extract_images_from_next_data(response.text)
-        size_hint, color_hint = self._extract_size_color_from_next_data(response.text)
-        gender_hints = self._extract_gender_hints_from_next_data(response.text)
+        html, final_url = self._get_text_with_retry(item_url, timeout=timeout, allow_redirects=True)
+        payload = self._extract_product_ld_json(html)
+        next_data_images = self._extract_images_from_next_data(html)
+        size_hint, color_hint = self._extract_size_color_from_next_data(html)
+        gender_hints = self._extract_gender_hints_from_next_data(html)
         if not size_hint or not color_hint:
             title_size, title_color = self._extract_size_color_from_title(str(payload.get('name') or ''))
             size_hint = size_hint or title_size
@@ -166,7 +172,7 @@ class GrailedAlgoliaJsonLdStrategy:
             'title': payload.get('name'),
             'description': payload.get('description'),
             'designer': designer,
-            'category': self._extract_product_type(response.text),
+            'category': self._extract_product_type(html),
             'price': price,
             'currency': currency or None,
             'image_url': image_urls[0] if image_urls else '',
@@ -177,6 +183,28 @@ class GrailedAlgoliaJsonLdStrategy:
         if gender_hints:
             out['source_gender_hints'] = gender_hints
         return out
+
+    def _get_text_with_retry(self, url: str, *, timeout: int, allow_redirects: bool) -> tuple[str, str]:
+        last_error: Exception | None = None
+        for attempt, backoff_sec in enumerate((0.0, *self._page_retry_backoff_sec), start=1):
+            if backoff_sec > 0:
+                time.sleep(backoff_sec)
+            try:
+                response = requests.get(
+                    url,
+                    timeout=timeout,
+                    headers=self._request_headers,
+                    allow_redirects=allow_redirects,
+                )
+                response.raise_for_status()
+                return response.text, response.url
+            except requests.RequestException as exc:
+                last_error = exc
+                if attempt > len(self._page_retry_backoff_sec):
+                    break
+        if last_error is not None:
+            raise last_error
+        raise RuntimeError('grailed_request_failed')
 
     @staticmethod
     def _extract_product_ld_json(html: str) -> dict:
