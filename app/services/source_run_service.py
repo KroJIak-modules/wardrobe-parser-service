@@ -71,6 +71,7 @@ class SourceRunService:
             'title': str(normalized.get('title') or '').strip(),
             'description_html': str(normalized.get('description_html') or '').strip() or None,
             'description': DescriptionTextService.normalize(normalized.get('description_html')),
+            'published_at': str(normalized.get('published_at') or '').strip() or None,
             'designer': str(normalized.get('designer') or '').strip() or None,
             'category': str(normalized.get('category') or '').strip() or None,
             'tags': normalized.get('tags') if isinstance(normalized.get('tags'), list) else [],

@@ -28,6 +28,7 @@ class BaseProductAdapter(SiteAdapter):
             "handle": self._derive_handle(raw_product=raw_product, url=url),
             "title": str(raw_product.get("title") or "").strip(),
             "description_html": description_html,
+            "published_at": self._coerce_optional_text(raw_product.get("published_at")),
             "designer": self._coerce_optional_text(raw_product.get("designer")),
             "category": self._coerce_optional_text(raw_product.get("category")),
             "tags": self._normalize_tags(raw_product.get("tags")),

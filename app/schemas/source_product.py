@@ -14,6 +14,7 @@ class SourceProductDraft(TypedDict):
     title: str
     description_html: str | None
     description: str | None
+    published_at: NotRequired[str | None]
     designer: str | None
     category: str | None
     tags: list[str]

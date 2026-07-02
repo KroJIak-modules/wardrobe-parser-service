@@ -41,6 +41,7 @@ class AdapterProductDraft(TypedDict):
     handle: str
     title: str
     description_html: str | None
+    published_at: NotRequired[str | None]
     designer: str | None
     category: str | None
     tags: list[str]

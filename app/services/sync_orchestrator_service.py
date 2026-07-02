@@ -269,6 +269,7 @@ class SyncOrchestratorService:
             "title": title,
             "description": description,
             "description_html": description_html,
+            "published_at": str(item.get("published_at") or "").strip() or None,
             "designer": designer,
             "category": category,
             "tags": tags,
