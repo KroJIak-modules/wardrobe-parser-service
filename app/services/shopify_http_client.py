@@ -49,6 +49,15 @@ class ShopifyHttpClient:
     RETRYABLE_STATUS_CODES = {403, 408, 409, 425, 429, 500, 502, 503, 504}
     DEFAULT_RETRY_BACKOFF_SEC = (0.8, 1.8, 3.2, 5.0)
 
+    def __init__(self) -> None:
+        # A source run represents one storefront visit. Reusing its connection
+        # pool and cookies avoids looking like a new automated client on every
+        # catalogue page.
+        self._session = requests.Session()
+
+    def close(self) -> None:
+        self._session.close()
+
     @staticmethod
     def _request_with_retry(
         *,
@@ -115,6 +124,27 @@ class ShopifyHttpClient:
         request_retries: int = 0,
     ) -> ShopifyHttpResult:
         response = ShopifyHttpClient.get_response(url, timeout, params=params, request_retries=request_retries)
+        payload: Any | None = None
+        try:
+            payload = response.json()
+        except Exception:
+            payload = None
+        return ShopifyHttpResult(status_code=response.status_code, text=response.text, payload=payload)
+
+    def get_json_with_session(
+        self,
+        url: str,
+        timeout: int,
+        *,
+        params: dict[str, object] | None = None,
+    ) -> ShopifyHttpResult:
+        response = self._session.get(
+            url,
+            params=params,
+            timeout=timeout,
+            headers=self.HEADERS,
+            allow_redirects=True,
+        )
         payload: Any | None = None
         try:
             payload = response.json()

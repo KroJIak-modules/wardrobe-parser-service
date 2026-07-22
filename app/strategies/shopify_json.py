@@ -117,19 +117,24 @@ class ShopifyJsonStrategy:
             logger.strategy_event('done', self.name, parsed=len(out), candidate_direct_only=1)
             return out
 
-        base_items, pages_fetched = self._collect_base_pages(
-            base_url,
-            timeout,
-            quality=quality,
-            max_products=sitemap_policy.max_products,
-            storefront_currency=storefront_currency,
-            currency_priority=effective_currency_priority,
-            logger=logger,
-            fail_types=fail_types,
-            candidate_urls=tuple(context.candidate_urls or ()),
-            request_without_currency=request_without_currency,
-            fixed_country=fixed_country,
-        )
+        http_client = ShopifyHttpClient()
+        try:
+            base_items, pages_fetched = self._collect_base_pages(
+                base_url,
+                timeout,
+                http_client=http_client,
+                quality=quality,
+                max_products=sitemap_policy.max_products,
+                storefront_currency=storefront_currency,
+                currency_priority=effective_currency_priority,
+                logger=logger,
+                fail_types=fail_types,
+                candidate_urls=tuple(context.candidate_urls or ()),
+                request_without_currency=request_without_currency,
+                fixed_country=fixed_country,
+            )
+        finally:
+            http_client.close()
         for item in base_items:
             pid = item.get('id')
             if isinstance(pid, int):
@@ -180,6 +185,7 @@ class ShopifyJsonStrategy:
         base_url: str,
         timeout: int,
         *,
+        http_client: ShopifyHttpClient,
         quality: ShopifyJsonQualityPolicy,
         max_products: int,
         storefront_currency: str,
@@ -219,6 +225,7 @@ class ShopifyJsonStrategy:
             items, state = self._fetch_products_page_with_retry(
                 base_url,
                 timeout,
+                http_client=http_client,
                 page=page,
                 storefront_currency=storefront_currency,
                 currency_priority=currency_priority,
@@ -283,16 +290,27 @@ class ShopifyJsonStrategy:
                         pages_fetched=pages_fetched,
                     )
                     break
+            # Keep a consistent request cadence. A large catalogue is still fast
+            # (250 products per request), while storefront WAFs no longer see a burst.
+            if quality.page_interval_sec > 0:
+                time.sleep(quality.page_interval_sec)
             page += 1
         if failed_pages:
+            # Revisit only the pages the storefront refused. Do not fan out to
+            # thousands of product .js endpoints: that both triggers WAFs and
+            # makes a normal source run take far longer than the catalogue itself.
+            if quality.antibot_pause_sec > 0:
+                time.sleep(quality.antibot_pause_sec)
             recovered = 0
             for page in failed_pages:
-                items, _state = self._fetch_products_page(
+                items, _state = self._fetch_products_page_with_retry(
                     base_url,
                     timeout,
+                    http_client=http_client,
                     page=page,
                     storefront_currency=storefront_currency,
                     currency_priority=currency_priority,
+                    quality=quality,
                     request_without_currency=request_without_currency,
                     fixed_country=fixed_country,
                 )
@@ -301,6 +319,8 @@ class ShopifyJsonStrategy:
                     recovered += 1
                 elif _state:
                     fail_types[_state] += 1
+                if quality.page_interval_sec > 0:
+                    time.sleep(quality.page_interval_sec)
             logger.strategy_event('second_pass_done', self.name, recovered_pages=recovered, still_failed=len(failed_pages) - recovered)
         if max_products > 0 and out:
             out = self._prioritize_by_candidates(out, candidate_handles, max_products)
@@ -377,6 +397,7 @@ class ShopifyJsonStrategy:
         base_url: str,
         timeout: int,
         *,
+        http_client: ShopifyHttpClient,
         page: int,
         storefront_currency: str,
         currency_priority: tuple[str, ...],
@@ -392,7 +413,7 @@ class ShopifyJsonStrategy:
             try:
                 params = {'limit': self.PAGE_LIMIT, 'page': page}
                 params.update(self._shopify_market_params(currency=cur, fixed_country=fixed_country))
-                response = ShopifyHttpClient.get_json(f'{base_url}/products.json', params=params, timeout=timeout)
+                response = http_client.get_json_with_session(f'{base_url}/products.json', params=params, timeout=timeout)
             except Exception:
                 last_state = 'network'
                 continue
@@ -492,6 +513,7 @@ class ShopifyJsonStrategy:
         base_url: str,
         timeout: int,
         *,
+        http_client: ShopifyHttpClient,
         page: int,
         storefront_currency: str,
         currency_priority: tuple[str, ...],
@@ -502,6 +524,7 @@ class ShopifyJsonStrategy:
         items, state = self._fetch_products_page(
             base_url,
             timeout,
+            http_client=http_client,
             page=page,
             storefront_currency=storefront_currency,
             currency_priority=currency_priority,
@@ -510,14 +533,16 @@ class ShopifyJsonStrategy:
         )
         if items is not None:
             return items, None
-        if state == 'antibot':
-            time.sleep(quality.antibot_pause_sec)
-            return None, state
         for wait_s in quality.retry_backoff_sec:
-            time.sleep(wait_s)
+            # A 403/429 is temporary storefront throttling. Retry the same
+            # catalogue page after the configured cooling period instead of
+            # abandoning it or fanning out into per-product requests.
+            cooldown = max(wait_s, quality.antibot_pause_sec) if state == 'antibot' else wait_s
+            time.sleep(cooldown)
             items, state = self._fetch_products_page(
                 base_url,
                 timeout,
+                http_client=http_client,
                 page=page,
                 storefront_currency=storefront_currency,
                 currency_priority=currency_priority,
@@ -526,9 +551,6 @@ class ShopifyJsonStrategy:
             )
             if items is not None:
                 return items, None
-            if state == 'antibot':
-                time.sleep(quality.antibot_pause_sec)
-                return None, state
         return None, state
 
     @staticmethod
@@ -571,12 +593,12 @@ class ShopifyJsonStrategy:
             'handle': handle,
             'title': str(item.get('title') or '').strip(),
             'description': str(item.get('body_html') or item.get('description') or '').strip() or None,
+            'published_at': str(item.get('published_at') or '').strip() or None,
             'designer': str(item.get('vendor') or '').strip(),
-            'category': ShopifyCatalogMetadataService.resolve_category(
-                item,
-                product_url=(f'{base_url}/products/{handle}' if handle else None),
-                timeout=timeout,
-            ),
+            # The catalog payload is the authoritative batch input. Fetching every
+            # product page only to infer a missing category makes a source sync
+            # network-bound and does not improve the published timestamp.
+            'category': ShopifyCatalogMetadataService.resolve_category(item),
             'tags': BaseProductAdapter._normalize_tags(item.get('tags')),
             'price': price,
             'currency': currency,

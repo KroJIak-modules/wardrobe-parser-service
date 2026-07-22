@@ -114,6 +114,8 @@ class ConfigValidationService:
             if not isinstance(field, str) or field not in allowed_enrichment_fields:
                 raise ConfigError('Invalid source.config.shopify_json_quality.enrich_from_js_fields')
         ConfigValidationService._require_number(raw, 'antibot_pause_sec')
+        if 'page_interval_sec' in raw:
+            ConfigValidationService._require_number(raw, 'page_interval_sec')
         ConfigValidationService._require_backoffs(raw, 'shopify_json_quality')
 
     @staticmethod

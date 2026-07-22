@@ -305,6 +305,24 @@ def test_config_validation_ignores_unsupported_currency_codes_if_any_valid_left(
     ConfigValidationService.require_strategy_settings(cfg, ['shopify_json'])
 
 
+def test_config_validation_accepts_shopify_catalog_page_interval() -> None:
+    cfg = _base_config()
+    cfg['shopify_sitemap'] = {
+        'max_products': 50000,
+        'include_locale_sitemaps': False,
+        'request_retries': 1,
+    }
+    cfg['shopify_market'] = {'preferred_currencies': ['USD']}
+    cfg['shopify_json_quality'] = {
+        'antibot_pause_sec': 3,
+        'retry_backoff_sec': [1, 3],
+        'page_interval_sec': 0.2,
+        'enrich_from_js_fields': [],
+    }
+
+    ConfigValidationService.require_strategy_settings(cfg, ['shopify_json'])
+
+
 def test_config_validation_rejects_currency_priority_without_any_supported_code() -> None:
     cfg = _base_config()
     cfg['shopify_sitemap'] = {

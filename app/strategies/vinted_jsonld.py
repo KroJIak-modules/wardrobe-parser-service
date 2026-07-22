@@ -124,6 +124,7 @@ class VintedJsonLdStrategy:
             'handle': handle,
             'title': payload.get('name'),
             'description': payload.get('description'),
+            'published_at': runtime_meta.get('created_at'),
             'designer': designer,
             'category': category_name,
             'price': price,
@@ -237,6 +238,9 @@ class VintedJsonLdStrategy:
         title_match = re.search(r'\\"title\\":\\"([^"]+)\\"', chunk)
         if title_match:
             out['title'] = str(title_match.group(1) or '').replace('\\/', '/').strip()
+        created_at_match = re.search(r'\\"created_at\\":\\"([^"]+)\\"', chunk)
+        if created_at_match:
+            out['created_at'] = str(created_at_match.group(1) or '').replace('\\/', '/').strip()
         # sold/hidden/closed item should be treated as unavailable.
         closing_match = re.search(r'\\"item_closing_action\\":\\"([^"]*)\\"', chunk)
         if closing_match:

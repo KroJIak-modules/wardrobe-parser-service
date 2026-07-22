@@ -29,6 +29,7 @@ class ShopifyJsonQualityPolicy:
     antibot_pause_sec: float
     retry_backoff_sec: tuple[float, ...]
     enrich_from_js_fields: tuple[str, ...]
+    page_interval_sec: float
 
 
 @dataclass(frozen=True)
@@ -94,6 +95,9 @@ class ShopifyPolicyFactory:
             antibot_pause_sec=float(raw.get('antibot_pause_sec')),
             retry_backoff_sec=tuple(float(x) for x in (raw.get('retry_backoff_sec') or [])),
             enrich_from_js_fields=tuple(str(x).strip() for x in (raw.get('enrich_from_js_fields') or []) if str(x).strip()),
+            # Shopify catalogue endpoints tolerate steady, sequential polling far
+            # better than short request bursts. Sources may override this value.
+            page_interval_sec=float(raw.get('page_interval_sec', 0.15)),
         )
 
     @staticmethod

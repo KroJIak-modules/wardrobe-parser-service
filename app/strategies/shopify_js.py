@@ -268,6 +268,7 @@ class ShopifyJsStrategy:
             'handle': handle,
             'title': str(payload.get('title') or '').strip(),
             'description': str(payload.get('body_html') or payload.get('description') or '').strip() or None,
+            'published_at': str(payload.get('published_at') or '').strip() or None,
             'designer': str(payload.get('vendor') or '').strip(),
             'category': ShopifyCatalogMetadataService.resolve_category(
                 payload,

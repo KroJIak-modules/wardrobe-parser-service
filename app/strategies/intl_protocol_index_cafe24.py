@@ -27,17 +27,20 @@ class IntlProtocolIndexCafe24Strategy:
         category_max_pages = max(1, int(cfg.get("intl_protocol_index_category_max_pages") or 12))
         base_url = context.source.source_url.rstrip("/")
 
-        product_urls = self._discover_product_urls(
+        product_entries = self._discover_product_entries(
             base_url=base_url,
             timeout=timeout,
             limit=max_products,
             category_max_pages=category_max_pages,
             logger=logger,
         )
-        logger.strategy_event("progress", self.name, stage="discover_done", discovered=len(product_urls))
+        logger.strategy_event("progress", self.name, stage="discover_done", discovered=len(product_entries))
         out: list[dict] = []
         with ThreadPoolExecutor(max_workers=workers) as pool:
-            futures = {pool.submit(self._fetch_one, url, timeout): url for url in product_urls}
+            futures = {
+                pool.submit(self._fetch_one, url, timeout, sitemap_lastmod): url
+                for url, sitemap_lastmod in product_entries
+            }
             done = 0
             for fut in as_completed(futures):
                 done += 1
@@ -46,20 +49,20 @@ class IntlProtocolIndexCafe24Strategy:
                     out.append(fut.result())
                 except Exception as exc:  # noqa: BLE001
                     logger.strategy_event("progress", self.name, stage="fetch_skip", url=url, reason=str(exc))
-                if done % 10 == 0 or done == len(product_urls):
-                    logger.strategy_event("progress", self.name, stage="fetch_progress", processed=f"{done}/{len(product_urls)}", parsed=len(out))
+                if done % 10 == 0 or done == len(product_entries):
+                    logger.strategy_event("progress", self.name, stage="fetch_progress", processed=f"{done}/{len(product_entries)}", parsed=len(out))
 
         context.diagnostics.update(
             {
-                "candidate_urls": len(product_urls),
+                "candidate_urls": len(product_entries),
                 "mapped_products": len(out),
                 "workers": workers,
             }
         )
-        logger.strategy_event("progress", self.name, stage="run_done", parsed=len(out), discovered=len(product_urls))
+        logger.strategy_event("progress", self.name, stage="run_done", parsed=len(out), discovered=len(product_entries))
         return out
 
-    def _discover_product_urls(
+    def _discover_product_entries(
         self,
         *,
         base_url: str,
@@ -67,43 +70,52 @@ class IntlProtocolIndexCafe24Strategy:
         limit: int,
         category_max_pages: int,
         logger: RunLogger,
-    ) -> list[str]:
+    ) -> list[tuple[str, str | None]]:
         # Union of sources:
         # 1) sitemap product URLs (fast baseline)
         # 2) category pagination crawl (captures URLs missing from sitemap)
         seen: set[str] = set()
-        out: list[str] = []
+        out: list[tuple[str, str | None]] = []
 
-        for u in self._discover_product_urls_from_sitemap(base_url=base_url, timeout=timeout):
-            if u in seen:
+        for url, lastmod in self._discover_product_entries_from_sitemap(base_url=base_url, timeout=timeout):
+            if url in seen:
                 continue
-            seen.add(u)
-            out.append(u)
+            seen.add(url)
+            out.append((url, lastmod))
             if len(out) >= limit:
                 return out
         logger.strategy_event("progress", self.name, stage="discover_sitemap_done", discovered=len(out))
 
-        for u in self._discover_product_urls_from_categories(
+        for url in self._discover_product_urls_from_categories(
             base_url=base_url,
             timeout=timeout,
             max_pages=category_max_pages,
             logger=logger,
         ):
-            if u in seen:
+            if url in seen:
                 continue
-            seen.add(u)
-            out.append(u)
+            seen.add(url)
+            out.append((url, None))
             if len(out) >= limit:
                 break
         return out
 
-    def _discover_product_urls_from_sitemap(self, *, base_url: str, timeout: int) -> list[str]:
+    def _discover_product_entries_from_sitemap(self, *, base_url: str, timeout: int) -> list[tuple[str, str | None]]:
         sm_url = urljoin(base_url + "/", "sitemap.xml")
         resp = requests.get(sm_url, timeout=timeout, headers={"User-Agent": self._ua})
         resp.raise_for_status()
         root = ET.fromstring(resp.text)
-        locs = [n.text.strip() for n in root.findall(".//sm:loc", self._ns) if n.text]
-        return [u for u in locs if "/product/" in u]
+        entries: list[tuple[str, str | None]] = []
+        for node in root.findall(".//sm:url", self._ns):
+            loc = node.find("sm:loc", self._ns)
+            if loc is None or not loc.text:
+                continue
+            url = loc.text.strip()
+            if "/product/" not in url:
+                continue
+            lastmod = node.find("sm:lastmod", self._ns)
+            entries.append((url, lastmod.text.strip() if lastmod is not None and lastmod.text else None))
+        return entries
 
     def _discover_product_urls_from_categories(
         self,
@@ -177,7 +189,7 @@ class IntlProtocolIndexCafe24Strategy:
         # Keep deterministic order.
         return sorted(ids)
 
-    def _fetch_one(self, url: str, timeout: int) -> dict:
+    def _fetch_one(self, url: str, timeout: int, sitemap_lastmod: str | None) -> dict:
         r = requests.get(url, timeout=timeout, headers={"User-Agent": self._ua})
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
@@ -194,6 +206,7 @@ class IntlProtocolIndexCafe24Strategy:
             "handle": handle,
             "title": title,
             "description": self._extract_description(soup),
+            "published_at": sitemap_lastmod,
             "designer": "",
             "category": "",
             "price": price,

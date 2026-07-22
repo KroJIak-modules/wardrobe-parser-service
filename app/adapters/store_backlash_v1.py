@@ -1,15 +1,7 @@
-from urllib.parse import parse_qs, urlparse
-
-from app.adapters.base import PassiveCatalogAdapter
+from app.adapters.base import ShopifyCatalogAdapter
 
 
-class StoreBacklashV1Adapter(PassiveCatalogAdapter):
+class StoreBacklashV1Adapter(ShopifyCatalogAdapter):
     adapter_key = "store_backlash__v1"
-    allowed_strategies = ("store_backlash_colorme",)
+    allowed_strategies = ("shopify_json", "shopify_js")
     allowed_currencies = frozenset({"USD", "EUR", "GBP", "JPY"})
-
-    @staticmethod
-    def _extract_handle(url: str) -> str:
-        parsed = urlparse(str(url or "").strip())
-        pid = (parse_qs(parsed.query).get("pid") or [""])[0].strip()
-        return f"pid-{pid}" if pid else ""

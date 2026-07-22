@@ -147,7 +147,9 @@ class ShopifyCatalogMetadataService:
         if tag_category:
             return tag_category
 
-        return cls._resolve_html_category(product_url=product_url, timeout=timeout)
+        if product_url and timeout is not None and int(timeout) > 0:
+            return cls._resolve_html_category(product_url=product_url, timeout=timeout)
+        return None
 
     @classmethod
     def _resolve_html_category(cls, *, product_url: str | None, timeout: int | None) -> str | None:

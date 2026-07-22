@@ -171,6 +171,7 @@ class GrailedAlgoliaJsonLdStrategy:
             'handle': handle,
             'title': payload.get('name'),
             'description': payload.get('description'),
+            'published_at': self._extract_listing_created_at(html),
             'designer': designer,
             'category': self._extract_product_type(html),
             'price': price,
@@ -183,6 +184,24 @@ class GrailedAlgoliaJsonLdStrategy:
         if gender_hints:
             out['source_gender_hints'] = gender_hints
         return out
+
+    @staticmethod
+    def _extract_listing_created_at(html: str) -> str | None:
+        match = re.search(r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', html, flags=re.S)
+        if not match:
+            return None
+        try:
+            payload = json.loads(match.group(1))
+        except json.JSONDecodeError:
+            return None
+        listing = ((payload.get('props') or {}).get('pageProps') or {}).get('listing')
+        if not isinstance(listing, dict):
+            return None
+        for key in ('created_at', 'createdAt', 'published_at', 'publishedAt'):
+            value = str(listing.get(key) or '').strip()
+            if value:
+                return value
+        return None
 
     def _get_text_with_retry(self, url: str, *, timeout: int, allow_redirects: bool) -> tuple[str, str]:
         last_error: Exception | None = None

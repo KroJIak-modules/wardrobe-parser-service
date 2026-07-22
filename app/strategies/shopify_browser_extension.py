@@ -313,6 +313,7 @@ class ShopifyBrowserExtensionStrategy:
             'images': [str(x).strip() for x in image_urls if str(x).strip()],
             'image_url': str(image_urls[0]).strip() if image_urls else '',
             'description': str(item.get('description') or '').strip() or None,
+            'published_at': str(item.get('published_at') or '').strip() or None,
             'designer': str(item.get('vendor') or '').strip(),
         }
 
