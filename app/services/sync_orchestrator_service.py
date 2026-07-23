@@ -560,6 +560,7 @@ class SyncOrchestratorService:
                                 "stage_label": self._stage_label(stage_code),
                                 "valid_products": len(valid_products),
                                 "unavailable_products": len(unavailable_products),
+                                "issue_counts": dict(report.aggregated_status_reasons or {}),
                                 "attempt": source_attempt,
                             },
                         )
