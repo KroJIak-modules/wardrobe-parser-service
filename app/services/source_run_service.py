@@ -324,6 +324,7 @@ class SourceRunService:
         else:
             report.status = SourceRunStatus.PARTIAL
 
+        report.reconcile_missing = sync_mode == 'auto' and not force_candidates and report.status == SourceRunStatus.SUCCESS
         report.total_valid_products = len(valid_products)
         report.valid_products = valid_products
         report.unavailable_products = unavailable_products

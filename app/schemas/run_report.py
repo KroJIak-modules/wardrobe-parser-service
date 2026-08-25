@@ -19,6 +19,7 @@ class SourceRunReport(BaseModel):
     visible_catalog_products: int = 0
     parsed_visible_products: int = 0
     visible_coverage: float = 0.0
+    reconcile_missing: bool = False
     status: SourceRunStatus = SourceRunStatus.QUEUED
     attempts: list[StrategyAttempt] = Field(default_factory=list)
     aggregated_status_reasons: dict[str, int] = Field(default_factory=dict)

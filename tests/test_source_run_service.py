@@ -98,6 +98,8 @@ class PayloadStrategy(Strategy):
                             'available': True,
                         }
                     ]
+            if context.candidate_only and str(raw.get('url') or '').strip() not in context.candidate_urls:
+                continue
             out.append(raw)
         return out
 
@@ -532,6 +534,50 @@ def test_product_without_variants_is_marked_unavailable() -> None:
     assert len(report.unavailable_products) == 1
     reasons = set(report.unavailable_products[0].get('status_reasons') or [])
     assert 'missing_variants' in reasons
+
+
+def test_manual_mode_syncs_only_saved_candidates_without_reconciling_catalog() -> None:
+    cfg = _base_config()
+    cfg['mode'] = 'manual'
+    cfg['strategy_payloads']['s1'] = [
+        {'url': 'https://example.test/selected', 'price': 10, 'currency': 'USD'},
+    ]
+    svc = _build_service(cfg)
+
+    report = svc.run('jadedldn.com', candidate_urls=['https://example.test/selected'])
+
+    assert report.status.value == 'success'
+    assert report.reconcile_missing is False
+    assert report.visible_catalog_products == 1
+    assert [item['url'] for item in report.valid_products] == ['https://example.test/selected']
+
+
+def test_auto_mode_candidate_refresh_does_not_reconcile_catalog_products() -> None:
+    cfg = _base_config()
+    cfg['visible_catalog_set'] = ['https://example.test/selected']
+    cfg['strategy_payloads']['s1'] = [
+        {'url': 'https://example.test/selected', 'price': 10, 'currency': 'USD'},
+    ]
+    svc = _build_service(cfg)
+
+    report = svc.run('jadedldn.com', candidate_urls=['https://example.test/selected'], prefer_candidate_urls=True)
+
+    assert report.status.value == 'success'
+    assert report.reconcile_missing is False
+
+
+def test_auto_mode_complete_sync_reconciles_missing_catalog_products() -> None:
+    cfg = _base_config()
+    cfg['visible_catalog_set'] = ['https://example.test/selected']
+    cfg['strategy_payloads']['s1'] = [
+        {'url': 'https://example.test/selected', 'price': 10, 'currency': 'USD'},
+    ]
+    svc = _build_service(cfg)
+
+    report = svc.run('jadedldn.com')
+
+    assert report.status.value == 'success'
+    assert report.reconcile_missing is True
 
 
 def test_manual_mode_without_candidates_is_success_noop() -> None:

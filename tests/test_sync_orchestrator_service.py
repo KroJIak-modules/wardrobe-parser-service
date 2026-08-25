@@ -276,6 +276,33 @@ def test_execute_emits_report_error_details_in_source_finished_payload() -> None
     }
 
 
+def test_execute_uses_source_run_reconciliation_decision() -> None:
+    svc = SyncOrchestratorService(max_workers=1)
+    job = RuntimeJob(
+        job_id="job-manual-catalog",
+        status="queued",
+        created_at=datetime.now(timezone.utc),
+        dry_run=False,
+        source_keys=["demo-source"],
+    )
+    svc._jobs[job.job_id] = job
+    svc._active_job_id = job.job_id
+
+    def runner(source_key: str, dry_run: bool, run_id: str, candidate_urls: list[str]) -> SourceRunReport:
+        return SourceRunReport(
+            source_key=source_key,
+            adapter_key="demo-adapter",
+            status=SourceRunStatus.SUCCESS,
+            reconcile_missing=False,
+            valid_products=[{"url": "https://demo.example/products/a", "title": "A", "variants": []}],
+        )
+
+    svc._execute(job.job_id, runner)
+
+    event = next(evt for evt in job.events if evt.type == "product_batch")
+    assert event.payload["reconcile_missing"] is False
+
+
 def test_execute_marks_product_batch_incomplete_for_partial_source_response() -> None:
     svc = SyncOrchestratorService(max_workers=1)
     job = RuntimeJob(

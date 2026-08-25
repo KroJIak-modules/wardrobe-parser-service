@@ -541,10 +541,7 @@ class SyncOrchestratorService:
                                 "source_key": source_key,
                                 "strategy": strategy,
                                 "stage": stage,
-                                # A partial source response is useful to update
-                                # delivered products, but cannot prove the rest
-                                # were removed from the seller's catalogue.
-                                "reconcile_missing": status_value == "success",
+                                "reconcile_missing": bool(report.reconcile_missing),
                                 "items": all_products,
                             },
                         )
