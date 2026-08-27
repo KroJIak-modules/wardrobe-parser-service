@@ -322,6 +322,14 @@ class ShopifyJsonStrategy:
                 if quality.page_interval_sec > 0:
                     time.sleep(quality.page_interval_sec)
             logger.strategy_event('second_pass_done', self.name, recovered_pages=recovered, still_failed=len(failed_pages) - recovered)
+        # Candidate sync must never publish items the saved links did not ask
+        # for: the feed scan may only stop early, it may not widen the result.
+        if candidate_handles:
+            out = [
+                item
+                for item in out
+                if isinstance(item, dict) and str(item.get('handle') or '').strip() in candidate_handles
+            ]
         if max_products > 0 and out:
             out = self._prioritize_by_candidates(out, candidate_handles, max_products)
         return out, pages_fetched
