@@ -247,8 +247,6 @@
       "enabled": true,
       "sync_enabled": true,
       "config": {
-        "adapter_ready": true,
-        "adapter_revision": "jadedldn__v1-r2",
         "strategy_sequence": [
           "shopify_json"
         ],
@@ -298,8 +296,6 @@
       "enabled": true,
       "sync_enabled": true,
       "config": {
-        "adapter_ready": true,
-        "adapter_revision": "racerworldwide__v1-r1",
         "strategy_sequence": [
           "shopify_json"
         ],
@@ -346,8 +342,6 @@
       "enabled": true,
       "sync_enabled": true,
       "config": {
-        "adapter_ready": true,
-        "adapter_revision": "nofaithstudios__v1-r1",
         "strategy_sequence": [
           "shopify_json"
         ],
@@ -394,8 +388,6 @@
       "enabled": true,
       "sync_enabled": true,
       "config": {
-        "adapter_ready": true,
-        "adapter_revision": "professore__v1-r1",
         "strategy_sequence": [
           "shopify_json"
         ],
@@ -442,8 +434,6 @@
       "enabled": true,
       "sync_enabled": true,
       "config": {
-        "adapter_ready": true,
-        "adapter_revision": "essxnyc__v1-r1",
         "strategy_sequence": [
           "shopify_json"
         ],
@@ -490,8 +480,6 @@
       "enabled": true,
       "sync_enabled": true,
       "config": {
-        "adapter_ready": true,
-        "adapter_revision": "paradoxeparis__v1-r1",
         "strategy_sequence": [
           "shopify_json"
         ],
@@ -538,8 +526,6 @@
       "enabled": true,
       "sync_enabled": true,
       "config": {
-        "adapter_ready": true,
-        "adapter_revision": "thelastconspiracy__v1-r1",
         "strategy_sequence": [
           "shopify_json"
         ],
@@ -586,8 +572,6 @@
       "enabled": true,
       "sync_enabled": true,
       "config": {
-        "adapter_ready": true,
-        "adapter_revision": "juliusgarden__v1-r1",
         "strategy_sequence": [
           "shopify_json"
         ],
@@ -634,8 +618,6 @@
       "enabled": true,
       "sync_enabled": true,
       "config": {
-        "adapter_ready": true,
-        "adapter_revision": "fourteenthaddiction__v1-r1",
         "strategy_sequence": [
           "shopify_json"
         ],
@@ -682,8 +664,6 @@
       "enabled": true,
       "sync_enabled": true,
       "config": {
-        "adapter_ready": true,
-        "adapter_revision": "prayingg__v1-r1",
         "strategy_sequence": [
           "shopify_json"
         ],
@@ -730,8 +710,6 @@
       "enabled": true,
       "sync_enabled": true,
       "config": {
-        "adapter_ready": true,
-        "adapter_revision": "fourtwofour__v1-r1",
         "strategy_sequence": [
           "shopify_json"
         ],
@@ -778,8 +756,6 @@
       "enabled": true,
       "sync_enabled": true,
       "config": {
-        "adapter_ready": true,
-        "adapter_revision": "remnantsvintage__v1-r1",
         "strategy_sequence": [
           "shopify_json"
         ],
@@ -826,8 +802,6 @@
       "enabled": true,
       "sync_enabled": true,
       "config": {
-        "adapter_ready": true,
-        "adapter_revision": "misssixty__v1-r1",
         "strategy_sequence": [
           "shopify_json"
         ],
@@ -874,8 +848,6 @@
       "enabled": true,
       "sync_enabled": true,
       "config": {
-        "adapter_ready": true,
-        "adapter_revision": "hlorenzo__v1-r1",
         "strategy_sequence": [
           "shopify_json"
         ],
@@ -922,8 +894,6 @@
       "enabled": true,
       "sync_enabled": true,
       "config": {
-        "adapter_ready": true,
-        "adapter_revision": "simonerocha__v1-r1",
         "strategy_sequence": [
           "shopify_json"
         ],
@@ -970,8 +940,6 @@
       "enabled": true,
       "sync_enabled": true,
       "config": {
-        "adapter_ready": true,
-        "adapter_revision": "orimono__v1-r1",
         "strategy_sequence": [
           "shopify_json"
         ],
@@ -1018,8 +986,6 @@
       "enabled": true,
       "sync_enabled": true,
       "config": {
-        "adapter_ready": true,
-        "adapter_revision": "pauleasterlin__v1-r1",
         "strategy_sequence": [
           "shopify_json"
         ],
@@ -1066,8 +1032,6 @@
       "enabled": true,
       "sync_enabled": true,
       "config": {
-        "adapter_ready": true,
-        "adapter_revision": "driewgarments__v1-r1",
         "strategy_sequence": [
           "shopify_json"
         ],
@@ -1114,8 +1078,6 @@
       "enabled": true,
       "sync_enabled": true,
       "config": {
-        "adapter_ready": true,
-        "adapter_revision": "junalyx__v1-r1",
         "strategy_sequence": [
           "shopify_json"
         ],
@@ -1161,8 +1123,6 @@
       "enabled": true,
       "sync_enabled": true,
       "config": {
-        "adapter_ready": true,
-        "adapter_revision": "archived__v1-r1",
         "strategy_sequence": [
           "shopify_json"
         ],
@@ -1209,8 +1169,6 @@
       "enabled": true,
       "sync_enabled": false,
       "config": {
-        "adapter_ready": true,
-        "adapter_revision": "dolcevitahub__v1-r1",
         "strategy_sequence": [
           "shopify_browser_extension"
         ],
@@ -1252,7 +1210,6 @@
           "skip_discovery_for_limited_json_export": false,
           "js_sample_size": 40,
           "show_ui": false,
-          "includeLocaleSitemaps": false,
           "export_mode": "js",
           "prefer_bridge_fetch": true
         },
@@ -1267,8 +1224,6 @@
       "enabled": true,
       "sync_enabled": true,
       "config": {
-        "adapter_ready": true,
-        "adapter_revision": "store_backlash__v1-r2",
         "strategy_sequence": [
           "shopify_json"
         ],
@@ -1314,8 +1269,6 @@
       "enabled": true,
       "sync_enabled": true,
       "config": {
-        "adapter_ready": false,
-        "adapter_revision": "vinted__v1-r1",
         "strategy_sequence": [
           "vinted_jsonld"
         ],
@@ -1341,8 +1294,6 @@
       "enabled": true,
       "sync_enabled": true,
       "config": {
-        "adapter_ready": false,
-        "adapter_revision": "grailed__v1-r1",
         "strategy_sequence": [
           "grailed_algolia_jsonld"
         ],
@@ -1368,8 +1319,6 @@
       "enabled": true,
       "sync_enabled": true,
       "config": {
-        "adapter_ready": true,
-        "adapter_revision": "newrock__v1-r2",
         "strategy_sequence": [
           "shopify_json"
         ],
@@ -1417,8 +1366,6 @@
       "enabled": true,
       "sync_enabled": true,
       "config": {
-        "adapter_ready": true,
-        "adapter_revision": "rickowens__v1-r2",
         "strategy_sequence": [
           "shopify_json"
         ],
@@ -1465,23 +1412,11 @@
       "enabled": true,
       "sync_enabled": true,
       "config": {
-        "adapter_ready": true,
-        "adapter_revision": "intlprotocolindex__v1-r1",
         "strategy_sequence": [
           "intl_protocol_index_cafe24"
         ],
         "shopify_sitemap": {
-          "max_products": 50000,
-          "include_locale_sitemaps": false,
-          "request_retries": 1
-        },
-        "shopify_json_quality": {
-          "antibot_pause_sec": 3,
-          "retry_backoff_sec": [
-            1,
-            3
-          ],
-          "enrich_from_js_fields": []
+          "max_products": 50000
         },
         "retry_limits": {
           "intl_protocol_index_cafe24": 0
@@ -1489,13 +1424,6 @@
         "timeouts": {
           "product_sec": 30,
           "source_run_sec": 1800
-        },
-        "shopify_market": {
-          "preferred_currencies": [
-            "USD"
-          ],
-          "request_mode": "prefer_list",
-          "fixed_currency": ""
         },
         "intl_protocol_index_workers": 6,
         "mode": "auto",
