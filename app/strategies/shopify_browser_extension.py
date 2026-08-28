@@ -27,6 +27,8 @@ class ShopifyBrowserExtensionStrategy:
 
     def run(self, context: StrategyContext) -> list[dict]:
         logger = RunLogger(context.run_id)
+        if context.cancelled():
+            return []
         cfg = context.source.source_config
         quality = ShopifyPolicyFactory.browser_extension_quality(cfg)
         currency_policy = ShopifyPolicyFactory.currency(cfg)

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from collections.abc import Callable
 import time
 from urllib.parse import unquote, urlparse
 
@@ -117,6 +118,7 @@ class SourceRunService:
         run_id: str | None = None,
         candidate_urls: list[str] | tuple[str, ...] | None = None,
         prefer_candidate_urls: bool = False,
+        cancel_check: Callable[[], bool] | None = None,
     ) -> SourceRunReport:
         logger = RunLogger(run_id)
         started_at = time.perf_counter()
@@ -190,7 +192,13 @@ class SourceRunService:
                 run_id=run_id or '',
                 candidate_urls=tuple(sorted(pending_candidate_urls)) if pending_candidate_urls else (),
                 candidate_only=bool(sync_mode == 'manual' or force_candidates),
+                should_cancel=cancel_check,
             )
+            if cancel_check is not None and cancel_check():
+                logger.event('strategy_skip_canceled', name=strategy_name)
+                attempt.success = True
+                report.attempts.append(attempt)
+                break
             if (sync_mode == 'manual' or force_candidates) and not strategy_context.candidate_urls:
                 logger.event('strategy_skip_manual_no_candidates', name=strategy_name)
                 attempt.success = True
@@ -323,6 +331,9 @@ class SourceRunService:
             report.status = SourceRunStatus.FAILED
         else:
             report.status = SourceRunStatus.PARTIAL
+        if cancel_check is not None and cancel_check() and report.status in {SourceRunStatus.SUCCESS, SourceRunStatus.FAILED}:
+            report.status = SourceRunStatus.PARTIAL
+            logger.event('run_canceled_midway', status=report.status)
 
         report.reconcile_missing = sync_mode == 'auto' and not force_candidates and report.status == SourceRunStatus.SUCCESS
         report.total_valid_products = len(valid_products)

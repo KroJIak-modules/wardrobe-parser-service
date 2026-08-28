@@ -22,6 +22,8 @@ class ShopifyJsStrategy:
     name = 'shopify_js'
 
     def run(self, context: StrategyContext) -> list[dict]:
+        if context.cancelled():
+            return []
         cfg = context.source.source_config
         logger = RunLogger(context.run_id)
 
@@ -101,8 +103,16 @@ class ShopifyJsStrategy:
             return url, item, fail_type
 
         with ThreadPoolExecutor(max_workers=workers) as pool:
-            pending = {pool.submit(worker, u): u for u in product_urls}
+            pending: dict = {}
+            for url in product_urls:
+                if context.cancelled():
+                    break
+                pending[pool.submit(worker, url)] = url
             while pending:
+                if context.cancelled():
+                    for fut in list(pending):
+                        fut.cancel()
+                    break
                 done, not_done = wait(pending.keys(), timeout=quality.wait_log_sec, return_when=FIRST_COMPLETED)
                 if not done:
                     pct = (processed / total) * 100 if total else 100
@@ -144,7 +154,7 @@ class ShopifyJsStrategy:
                             http_other=fail_types.get('http_other', 0),
                         )
 
-        if failed_urls:
+        if failed_urls and not context.cancelled():
             recovered = 0
             for url in failed_urls:
                 item = self._parse_product_js(

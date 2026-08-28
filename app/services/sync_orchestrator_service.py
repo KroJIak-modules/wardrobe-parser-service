@@ -352,7 +352,7 @@ class SyncOrchestratorService:
             },
         }
 
-    def _execute(self, job_id: str, runner: Callable[[str, bool, str, list[str]], SourceRunReport]) -> None:
+    def _execute(self, job_id: str, runner: Callable[..., SourceRunReport]) -> None:
         with self._lock:
             job = self._jobs.get(job_id)
             if not job:
@@ -470,10 +470,18 @@ class SyncOrchestratorService:
                     )
 
             subscribe_run_events(progress_run_id, _on_strategy_progress)
+
+            def _should_cancel() -> bool:
+                with self._lock:
+                    live = self._jobs.get(job_id)
+                    return bool(live and live.cancel_requested)
+
             try:
-                report = runner(source_key, job.dry_run, progress_run_id, candidate_urls)
-                valid_products = list(report.valid_products or [])
-                unavailable_products = list(report.unavailable_products or [])
+                report = runner(source_key, job.dry_run, progress_run_id, candidate_urls, _should_cancel)
+                with self._lock:
+                    cancel_after_run = bool(self._jobs[job_id].cancel_requested)
+                valid_products = [] if cancel_after_run else list(report.valid_products or [])
+                unavailable_products = [] if cancel_after_run else list(report.unavailable_products or [])
                 all_products = self._build_product_batch_items(
                     valid_products=valid_products,
                     unavailable_products=unavailable_products,
@@ -488,6 +496,11 @@ class SyncOrchestratorService:
                 status_value = str(report.status.value).lower()
                 should_requeue = status_value == "failed" and source_attempt <= max_source_requeues
                 error_payload = self._build_report_error_payload(report)
+
+                if cancel_after_run:
+                    # Canceled mid-source: drop the partial batch; the loop tail
+                    # emits job_canceled and stops the remaining sources.
+                    break
 
                 with self._lock:
                     job = self._jobs[job_id]

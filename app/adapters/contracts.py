@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import NotRequired, Protocol, Sequence, TypedDict
@@ -20,7 +21,11 @@ class StrategyContext:
     run_id: str = ''
     candidate_urls: tuple[str, ...] = ()
     candidate_only: bool = False
+    should_cancel: Callable[[], bool] | None = None
     diagnostics: dict[str, int | float | str] = field(default_factory=dict)
+
+    def cancelled(self) -> bool:
+        return bool(self.should_cancel is not None and self.should_cancel())
 
 
 class AdapterVariantDraft(TypedDict):

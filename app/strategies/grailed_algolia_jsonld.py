@@ -26,6 +26,8 @@ class GrailedAlgoliaJsonLdStrategy:
 
     def run(self, context: StrategyContext) -> list[dict]:
         logger = RunLogger(context.run_id)
+        if context.cancelled():
+            return []
         base_url = context.source.source_url.rstrip('/')
         timeout = int((context.source.source_config.get('timeouts') or {}).get('product_sec', 20))
         search_text = str((context.source.source_config.get('grailed') or {}).get('search_text') or 'leather jacket').strip()
@@ -43,10 +45,15 @@ class GrailedAlgoliaJsonLdStrategy:
         with ThreadPoolExecutor(max_workers=workers) as pool:
             future_to_ctx: dict = {}
             for idx, item_url in enumerate(item_urls, start=1):
+                if context.cancelled():
+                    break
                 future = pool.submit(self._fetch_one, item_url, timeout, logger)
                 future_to_ctx[future] = (idx, item_url)
             processed = 0
             for future in as_completed(future_to_ctx):
+                if context.cancelled():
+                    pool.shutdown(wait=False, cancel_futures=True)
+                    break
                 idx, item_url = future_to_ctx[future]
                 processed += 1
                 try:

@@ -20,6 +20,8 @@ class IntlProtocolIndexCafe24Strategy:
 
     def run(self, context: StrategyContext) -> list[dict]:
         logger = RunLogger(context.run_id)
+        if context.cancelled():
+            return []
         cfg = context.source.source_config
         timeout = int((cfg.get("timeouts") or {}).get("product_sec", 12))
         workers = max(1, int(cfg.get("intl_protocol_index_workers") or 6))
@@ -37,12 +39,16 @@ class IntlProtocolIndexCafe24Strategy:
         logger.strategy_event("progress", self.name, stage="discover_done", discovered=len(product_entries))
         out: list[dict] = []
         with ThreadPoolExecutor(max_workers=workers) as pool:
-            futures = {
-                pool.submit(self._fetch_one, url, timeout, sitemap_lastmod): url
-                for url, sitemap_lastmod in product_entries
-            }
+            futures: dict = {}
+            for url, sitemap_lastmod in product_entries:
+                if context.cancelled():
+                    break
+                futures[pool.submit(self._fetch_one, url, timeout, sitemap_lastmod)] = url
             done = 0
             for fut in as_completed(futures):
+                if context.cancelled():
+                    pool.shutdown(wait=False, cancel_futures=True)
+                    break
                 done += 1
                 url = futures[fut]
                 try:

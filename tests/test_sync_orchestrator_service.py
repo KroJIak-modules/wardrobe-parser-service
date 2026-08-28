@@ -245,7 +245,7 @@ def test_execute_emits_report_error_details_in_source_finished_payload() -> None
     svc._jobs[job.job_id] = job
     svc._active_job_id = job.job_id
 
-    def runner(source_key: str, dry_run: bool, run_id: str, candidate_urls: list[str]) -> SourceRunReport:
+    def runner(source_key: str, dry_run: bool, run_id: str, candidate_urls: list[str], should_cancel=None) -> SourceRunReport:
         assert source_key == "demo-source"
         assert dry_run is False
         assert candidate_urls == []
@@ -288,7 +288,7 @@ def test_execute_uses_source_run_reconciliation_decision() -> None:
     svc._jobs[job.job_id] = job
     svc._active_job_id = job.job_id
 
-    def runner(source_key: str, dry_run: bool, run_id: str, candidate_urls: list[str]) -> SourceRunReport:
+    def runner(source_key: str, dry_run: bool, run_id: str, candidate_urls: list[str], should_cancel=None) -> SourceRunReport:
         return SourceRunReport(
             source_key=source_key,
             adapter_key="demo-adapter",
@@ -315,7 +315,7 @@ def test_execute_marks_product_batch_incomplete_for_partial_source_response() ->
     svc._jobs[job.job_id] = job
     svc._active_job_id = job.job_id
 
-    def runner(source_key: str, dry_run: bool, run_id: str, candidate_urls: list[str]) -> SourceRunReport:
+    def runner(source_key: str, dry_run: bool, run_id: str, candidate_urls: list[str], should_cancel=None) -> SourceRunReport:
         return SourceRunReport(
             source_key=source_key,
             adapter_key="demo-adapter",
@@ -341,7 +341,7 @@ def test_execute_emits_exception_error_details_in_source_finished_payload() -> N
     svc._jobs[job.job_id] = job
     svc._active_job_id = job.job_id
 
-    def runner(source_key: str, dry_run: bool, run_id: str, candidate_urls: list[str]) -> SourceRunReport:
+    def runner(source_key: str, dry_run: bool, run_id: str, candidate_urls: list[str], should_cancel=None) -> SourceRunReport:
         raise RuntimeError("hard fail")
 
     svc._execute(job.job_id, runner)

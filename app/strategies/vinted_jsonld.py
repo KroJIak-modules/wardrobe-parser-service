@@ -18,6 +18,8 @@ class VintedJsonLdStrategy:
 
     def run(self, context: StrategyContext) -> list[dict]:
         logger = RunLogger(context.run_id)
+        if context.cancelled():
+            return []
         base_url = context.source.source_url.rstrip('/')
         timeout = int((context.source.source_config.get('timeouts') or {}).get('product_sec', 15))
         search_text = str((context.source.source_config.get('vinted') or {}).get('search_text') or 'nike').strip()
@@ -31,10 +33,15 @@ class VintedJsonLdStrategy:
         with ThreadPoolExecutor(max_workers=workers) as pool:
             future_to_idx: dict = {}
             for idx, item_url in enumerate(item_urls, start=1):
+                if context.cancelled():
+                    break
                 future = pool.submit(self._fetch_one, item_url, timeout)
                 future_to_idx[future] = idx
             processed = 0
             for future in as_completed(future_to_idx):
+                if context.cancelled():
+                    pool.shutdown(wait=False, cancel_futures=True)
+                    break
                 idx = future_to_idx[future]
                 processed += 1
                 try:

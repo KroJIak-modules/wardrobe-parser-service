@@ -1,5 +1,6 @@
 from __future__ import annotations
 from collections import Counter
+from collections.abc import Callable
 from decimal import Decimal
 import time
 
@@ -20,6 +21,8 @@ class ShopifyJsonStrategy:
     def run(self, context: StrategyContext) -> list[dict]:
         cfg = context.source.source_config
         logger = RunLogger(context.run_id)
+        if context.cancelled():
+            return []
 
         base_url = context.source.source_url.rstrip('/')
         timeout = int(cfg.get('timeouts', {}).get('product_sec', 10))
@@ -71,6 +74,7 @@ class ShopifyJsonStrategy:
                 fixed_country=fixed_country,
                 logger=logger,
                 fail_types=fail_types,
+                should_cancel=context.cancelled,
             )
             for item in direct_items:
                 pid = item.get('id')
@@ -132,6 +136,7 @@ class ShopifyJsonStrategy:
                 candidate_urls=tuple(context.candidate_urls or ()),
                 request_without_currency=request_without_currency,
                 fixed_country=fixed_country,
+                should_cancel=context.cancelled,
             )
         finally:
             http_client.close()
@@ -195,6 +200,7 @@ class ShopifyJsonStrategy:
         candidate_urls: tuple[str, ...] = (),
         request_without_currency: bool = False,
         fixed_country: str = "",
+        should_cancel: Callable[[], bool] | None = None,
     ) -> tuple[list[dict], int]:
         out: list[dict] = []
         seen_signatures: set[str] = set()
@@ -211,6 +217,9 @@ class ShopifyJsonStrategy:
         candidate_handles = {self._extract_handle_from_url(x) for x in candidate_urls if str(x).strip()}
         candidate_handles.discard('')
         while page <= max_pages_cap:
+            if should_cancel is not None and should_cancel():
+                logger.strategy_event('progress', self.name, stage='feed_canceled', pages_fetched=pages_fetched)
+                break
             effective_before = min(len(out), max_products) if max_products > 0 else len(out)
             pre_pct = (effective_before / max_products) * 100 if max_products > 0 else 0
             logger.strategy_event(
@@ -299,6 +308,8 @@ class ShopifyJsonStrategy:
             # Revisit only the pages the storefront refused. Do not fan out to
             # thousands of product .js endpoints: that both triggers WAFs and
             # makes a normal source run take far longer than the catalogue itself.
+            if should_cancel is not None and should_cancel():
+                return out, pages_fetched
             if quality.antibot_pause_sec > 0:
                 time.sleep(quality.antibot_pause_sec)
             recovered = 0
@@ -346,9 +357,13 @@ class ShopifyJsonStrategy:
         fixed_country: str,
         logger: RunLogger,
         fail_types: Counter[str],
+        should_cancel: Callable[[], bool] | None = None,
     ) -> list[dict]:
         out: list[dict] = []
         for handle in handles:
+            if should_cancel is not None and should_cancel():
+                logger.strategy_event('progress', self.name, stage='candidate_direct_canceled', collected=len(out))
+                break
             item, state = self._fetch_product_by_handle(
                 base_url,
                 timeout,

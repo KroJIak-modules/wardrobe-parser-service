@@ -243,12 +243,13 @@ def create_sync_job(payload: SyncJobCreateRequest) -> SyncJobCreateResponse:
             source_keys=source_keys,
             source_candidate_urls=candidate_urls_by_source,
             dry_run=bool(payload.dry_run),
-            runner=lambda source_key, dry_run, run_id, candidate_urls: svc.run(
+            runner=lambda source_key, dry_run, run_id, candidate_urls, should_cancel=None: svc.run(
                 source_key=source_key,
                 dry_run=dry_run,
                 run_id=run_id,
                 candidate_urls=candidate_urls,
                 prefer_candidate_urls=bool(candidate_urls),
+                cancel_check=should_cancel,
             ),
         )
     except RuntimeError as exc:
@@ -281,13 +282,14 @@ def create_probe_product_job(payload: ProbeProductRequest) -> SyncJobCreateRespo
             source_keys=[matched_source_key],
             source_candidate_urls={matched_source_key: [product_url]},
             dry_run=bool(payload.dry_run),
-            runner=lambda source_key, dry_run, run_id, candidate_urls: _filter_report_by_product_url(
+            runner=lambda source_key, dry_run, run_id, candidate_urls, should_cancel=None: _filter_report_by_product_url(
                 svc.run(
                     source_key=source_key,
                     dry_run=dry_run,
                     run_id=run_id,
                     candidate_urls=candidate_urls,
                     prefer_candidate_urls=True,
+                    cancel_check=should_cancel,
                 ),
                 product_url,
             ),
