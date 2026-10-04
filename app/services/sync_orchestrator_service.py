@@ -190,6 +190,14 @@ class SyncOrchestratorService:
             return None
 
     @staticmethod
+    def _is_coming_soon(tags: list[str]) -> bool:
+        for tag in tags:
+            normalized = " ".join(str(tag or "").replace("_", " ").replace("-", " ").split()).lower()
+            if normalized == "coming soon":
+                return True
+        return False
+
+    @staticmethod
     def _to_int(value: object) -> int | None:
         try:
             if value is None:
@@ -254,6 +262,14 @@ class SyncOrchestratorService:
             if compare_at_price is not None:
                 normalized_variant["compare_at_price"] = compare_at_price
             variants.append(normalized_variant)
+        # Coming soon is a storefront tag, not a stock signal. Shopify still
+        # marks those variants unavailable, which would hide a priced product
+        # as sold out. A missing or zero price stays unavailable.
+        if SyncOrchestratorService._is_coming_soon(tags):
+            for variant in variants:
+                price = variant.get("price")
+                if isinstance(price, (int, float)) and price > 0:
+                    variant["available"] = True
         available_variants = [v for v in variants if bool(v.get("available", False))]
         if variants and orderability_status == "orderable" and not available_variants:
             orderability_status = "sold_out"
