@@ -4,6 +4,7 @@
       "markup_multiplier": 1,
       "weight_tolerance": 1,
       "customs_threshold_eur": 200,
+      "shipping_alt_threshold_eur": 300,
       "customs_duty_rate": 0.15,
       "eur_to_usd_rate": 1.105263,
       "gbp_to_usd_rate": 1.4,
